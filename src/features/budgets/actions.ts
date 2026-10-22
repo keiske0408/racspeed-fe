@@ -5,7 +5,6 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireUser, assertPermission } from "@/lib/auth/session";
-import { toCentavos } from "@/lib/utils/money";
 
 export async function createBudgetRequestAction(formData: FormData) {
   const user = await requireUser();
@@ -20,17 +19,13 @@ export async function createBudgetRequestAction(formData: FormData) {
     return { success: false, error: "Please enter a valid title, justification, and amount." };
   }
 
-  const supabase = await createClient();
-  const centavos = toCentavos(amountPHP);
+  const adminClient = createAdminClient();
 
-  const { error } = await supabase.from("budget_requests").insert({
-    club_id: rawClubId,
+  const { error } = await adminClient.from("budget_requests").insert({
     requester_id: user.id,
     title,
     justification,
-    total_requested_centavos: centavos,
-    president_approved: false,
-    treasurer_approved: false,
+    total_requested_amount: amountPHP,
     status: "PENDING_APPROVAL",
   });
 
@@ -42,7 +37,11 @@ export async function createBudgetRequestAction(formData: FormData) {
   return { success: true, message: `Budget proposal for ${title} submitted for dual approval.` };
 }
 
-export async function approveBudgetByOfficerAction(requestId: string, role: "PRESIDENT" | "TREASURER", clubId = "00000000-0000-0000-0000-000000000001") {
+export async function approveBudgetByOfficerAction(
+  requestId: string,
+  role: "PRESIDENT" | "TREASURER",
+  clubId = "00000000-0000-0000-0000-000000000001"
+) {
   const user = await requireUser();
   if (role === "PRESIDENT") {
     await assertPermission(clubId, "BUDGET_APPROVE_PRESIDENT");
@@ -52,32 +51,30 @@ export async function approveBudgetByOfficerAction(requestId: string, role: "PRE
 
   const adminClient = createAdminClient();
 
-  // Fetch current approval status
-  const { data: request, error: fetchError } = await adminClient
-    .from("budget_requests")
-    .select("president_approved, treasurer_approved")
-    .eq("id", requestId)
-    .single();
+  // 1. Record the officer approval
+  await adminClient.from("budget_approvals").upsert({
+    request_id: requestId,
+    approver_id: user.id,
+    role_at_decision: role,
+    approved: true,
+    comments: `${role} signed and approved via platform portal`,
+  }, { onConflict: "request_id,role_at_decision" });
 
-  if (fetchError || !request) {
-    return { success: false, error: "Budget request not found." };
-  }
+  // 2. Check if both President and Treasurer have approved
+  const { data: approvals } = await adminClient
+    .from("budget_approvals")
+    .select("role_at_decision, approved")
+    .eq("request_id", requestId);
 
-  const newPresident = role === "PRESIDENT" ? true : request.president_approved;
-  const newTreasurer = role === "TREASURER" ? true : request.treasurer_approved;
-  const fullyApproved = newPresident && newTreasurer;
+  const hasPres = approvals?.some((a) => a.role_at_decision === "PRESIDENT" && a.approved);
+  const hasTreas = approvals?.some((a) => a.role_at_decision === "TREASURER" && a.approved);
+  const fullyApproved = hasPres && hasTreas;
 
-  const { error: updateError } = await adminClient
-    .from("budget_requests")
-    .update({
-      president_approved: newPresident,
-      treasurer_approved: newTreasurer,
-      status: fullyApproved ? "APPROVED" : "PENDING_APPROVAL",
-    })
-    .eq("id", requestId);
-
-  if (updateError) {
-    return { success: false, error: updateError.message };
+  if (fullyApproved) {
+    await adminClient
+      .from("budget_requests")
+      .update({ status: "APPROVED" })
+      .eq("id", requestId);
   }
 
   revalidatePath("/budgets");

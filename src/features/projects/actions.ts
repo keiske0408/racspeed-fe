@@ -56,7 +56,7 @@ export async function createProjectAction(formData: FormData) {
     total_volunteer_hours: volunteerHours,
     funds_raised: fundsRaised,
     total_expenses: 0,
-    status: "APPROVED",
+    status: "ONGOING",
   });
 
   if (error) {

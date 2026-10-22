@@ -66,13 +66,14 @@ export async function createEventAction(formData: FormData) {
   const token = `racspeed-${newEvent.id.slice(0, 8)}-${Date.now().toString(36)}`;
   const expiresAt = new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(); // 4 hours
 
-  await adminClient.from("attendance_sessions").insert({
-    event_id: newEvent.id,
-    session_token: token,
-    status: "ACTIVE",
-    created_by: user.id,
-    expires_at: expiresAt,
-  });
+    await adminClient.from("attendance_sessions").insert({
+      event_id: newEvent.id,
+      session_token: token,
+      secret_hash: token,
+      status: "ACTIVE",
+      created_by: user.id,
+      expires_at: expiresAt,
+    });
 
   revalidatePath("/events");
   revalidatePath("/dashboard");
@@ -99,6 +100,7 @@ export async function startQrAttendanceSessionAction(eventId: string) {
     .insert({
       event_id: eventId,
       session_token: token,
+      secret_hash: token,
       status: "ACTIVE",
       created_by: user.id,
       expires_at: expiresAt,

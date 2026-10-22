@@ -35,26 +35,37 @@ export async function createInvoiceAction(formData: FormData) {
   }
 
   const { profileId, title, description, amountPHP, dueDate, clubId } = validated.data;
-  const supabase = await createClient();
+  const adminClient = createAdminClient();
 
   const invoiceNumber = `INV-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-  const centavos = toCentavos(amountPHP);
 
-  const { error } = await supabase.from("invoices").insert({
-    club_id: clubId,
-    profile_id: profileId,
-    invoice_number: invoiceNumber,
-    title,
-    description: description || null,
-    amount_centavos: centavos,
-    due_date: dueDate,
-    status: "ISSUED",
-    created_by: user.id,
-  });
+  const { data: newInvoice, error: invError } = await adminClient
+    .from("invoices")
+    .insert({
+      club_id: clubId,
+      profile_id: profileId,
+      invoice_number: invoiceNumber,
+      title,
+      description: description || null,
+      due_date: dueDate,
+      status: "ISSUED",
+      created_by: user.id,
+    })
+    .select()
+    .single();
 
-  if (error) {
-    return { success: false, error: `Failed to issue invoice: ${error.message}` };
+  if (invError || !newInvoice) {
+    return { success: false, error: `Failed to issue invoice: ${invError?.message}` };
   }
+
+  // Insert associated line item
+  await adminClient.from("invoice_items").insert({
+    invoice_id: newInvoice.id,
+    description: title,
+    category: "DUES",
+    amount: amountPHP,
+    quantity: 1,
+  });
 
   revalidatePath("/treasury");
   revalidatePath("/dashboard");
@@ -65,7 +76,6 @@ export async function submitPaymentProofAction(formData: FormData) {
   const user = await requireUser();
   const rawClubId = (formData.get("clubId") as string) || "00000000-0000-0000-0000-000000000001";
 
-  const invoiceId = formData.get("invoiceId") as string;
   const claimedAmount = Number(formData.get("claimedAmount") || 0);
   const paymentChannel = (formData.get("paymentChannel") as string) || "GCash";
   const referenceNumber = (formData.get("referenceNumber") as string) || "";
@@ -74,16 +84,16 @@ export async function submitPaymentProofAction(formData: FormData) {
     return { success: false, error: "Please enter a valid payment amount." };
   }
 
-  const supabase = await createClient();
-  const centavos = toCentavos(claimedAmount);
+  const adminClient = createAdminClient();
 
-  const { error } = await supabase.from("payment_submissions").insert({
+  const { error } = await adminClient.from("payment_submissions").insert({
     club_id: rawClubId,
-    invoice_id: invoiceId || null,
     submitted_by: user.id,
-    claimed_amount_centavos: centavos,
+    claimed_amount: claimedAmount,
+    claimed_date: new Date().toISOString().split("T")[0],
     payment_channel: paymentChannel,
-    referenceNumber: referenceNumber || null,
+    reference_number: referenceNumber || `REF-${Date.now()}`,
+    receipt_storage_path: `receipts/proof-${Date.now()}.png`,
     status: "SUBMITTED",
   });
 
@@ -101,19 +111,7 @@ export async function verifyPaymentSubmissionAction(submissionId: string, clubId
 
   const adminClient = createAdminClient();
 
-  // Retrieve submission
-  const { data: submission, error: subError } = await adminClient
-    .from("payment_submissions")
-    .select("id, invoice_id, claimed_amount_centavos")
-    .eq("id", submissionId)
-    .single();
-
-  if (subError || !submission) {
-    return { success: false, error: "Payment submission not found." };
-  }
-
-  // Update submission status to VERIFIED
-  await adminClient
+  const { error } = await adminClient
     .from("payment_submissions")
     .update({
       status: "VERIFIED",
@@ -122,12 +120,8 @@ export async function verifyPaymentSubmissionAction(submissionId: string, clubId
     })
     .eq("id", submissionId);
 
-  // If associated with invoice, mark invoice as PAID
-  if (submission.invoice_id) {
-    await adminClient
-      .from("invoices")
-      .update({ status: "PAID" })
-      .eq("id", submission.invoice_id);
+  if (error) {
+    return { success: false, error: `Failed to verify payment: ${error.message}` };
   }
 
   revalidatePath("/treasury");
@@ -140,7 +134,7 @@ export async function rejectPaymentSubmissionAction(submissionId: string, notes 
   await assertPermission(clubId, "PAYMENT_VERIFY");
 
   const adminClient = createAdminClient();
-  await adminClient
+  const { error } = await adminClient
     .from("payment_submissions")
     .update({
       status: "REJECTED",
@@ -149,6 +143,10 @@ export async function rejectPaymentSubmissionAction(submissionId: string, notes 
       verified_at: new Date().toISOString(),
     })
     .eq("id", submissionId);
+
+  if (error) {
+    return { success: false, error: `Failed to reject payment: ${error.message}` };
+  }
 
   revalidatePath("/treasury");
   return { success: true, message: "Payment proof marked as REJECTED." };
