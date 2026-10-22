@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { Permission, hasPermission, PermissionMap } from "@/lib/permissions/keys";
@@ -12,7 +13,7 @@ export interface CurrentUserContext {
   avatarUrl?: string | null;
 }
 
-export async function getCurrentUser(): Promise<CurrentUserContext | null> {
+export const getCurrentUser = cache(async function getCurrentUser(): Promise<CurrentUserContext | null> {
   const supabase = await createClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
 
@@ -34,11 +35,11 @@ export async function getCurrentUser(): Promise<CurrentUserContext | null> {
     id: profile.id,
     email: profile.email,
     fullName: profile.full_name,
-    status: profile.status as any,
+    status: profile.status as CurrentUserContext["status"],
     isPlatformAdmin: profile.is_platform_admin,
     avatarUrl: profile.avatar_url,
   };
-}
+});
 
 export async function requireUser(): Promise<CurrentUserContext> {
   const user = await getCurrentUser();

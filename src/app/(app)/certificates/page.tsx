@@ -31,41 +31,28 @@ const SAMPLE_CERTIFICATES: Certificate[] = [
   },
 ];
 
+import { generatePrintableCertificateHTML } from "@/lib/documents/certificate";
+
 export default function CertificatesPage() {
   const [certs, setCerts] = useState<Certificate[]>(SAMPLE_CERTIFICATES);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   function handleDownloadCert(cert: Certificate) {
     setDownloadingId(cert.id);
-    setTimeout(() => {
-      const content = `===========================================================
-ROTARACT CLUB OF SAN PEDRO EAST
-Rotary District 3820 — Laguna, Philippines
+    const html = generatePrintableCertificateHTML({
+      recipientName: cert.recipientName,
+      category: cert.category,
+      eventOrProjectTitle: cert.eventTitle,
+      certificateNumber: cert.certificateNumber,
+      issueDate: cert.issueDate,
+    });
 
-CERTIFICATE OF APPRECIATION
-Presented with gratitude to:
-${cert.recipientName}
-
-In recognition of valuable participation and service in:
-"${cert.eventTitle}"
-
-Certificate No.: ${cert.certificateNumber}
-Date of Issuance: ${cert.issueDate}
-
-Signed:
-Club President, RY 2026-27      Club Secretary, RY 2026-27
-===========================================================`;
-
-      const blob = new Blob([content], { type: "text/plain;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `${cert.certificateNumber}_${cert.recipientName.replace(/\s+/g, "_")}.txt`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      setDownloadingId(null);
-    }, 600);
+    const printWindow = window.open("", "_blank");
+    if (printWindow) {
+      printWindow.document.write(html);
+      printWindow.document.close();
+    }
+    setDownloadingId(null);
   }
 
   return (

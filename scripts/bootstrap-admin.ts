@@ -105,7 +105,7 @@ async function bootstrap() {
     .upsert({
       club_id: defaultClubId,
       profile_id: userId,
-      status: "ACTIVE",
+      membership_status: "ACTIVE",
     }, { onConflict: "club_id,profile_id" })
     .select()
     .single();
@@ -115,8 +115,8 @@ async function bootstrap() {
   }
 
   // 4. Assign PRESIDENT role if available
-  const { data: roles } = await supabase.from("roles").select("id, name");
-  const presRole = roles?.find((r) => r.name === "PRESIDENT");
+  const { data: roles } = await supabase.from("roles").select("id, key, name");
+  const presRole = roles?.find((r) => r.key === "PRESIDENT" || r.name === "Club President" || r.name === "PRESIDENT");
 
   if (presRole && membership) {
     await supabase.from("membership_roles").upsert({

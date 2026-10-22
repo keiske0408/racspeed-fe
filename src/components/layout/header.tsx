@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
-import { Bell, Menu, X, LogOut, User } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Bell, Menu, X, LogOut, Sun, Moon } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 
@@ -14,10 +14,40 @@ export interface HeaderProps {
 export function Header({ userEmail, userFullName = "Member", onMobileMenuToggle }: HeaderProps) {
   const router = useRouter();
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [isDark, setIsDark] = useState(false);
+
+  useEffect(() => {
+    // Check initial dark mode state
+    const isDarkMode =
+      localStorage.theme === "dark" ||
+      (!("theme" in localStorage) && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    setIsDark(isDarkMode);
+    if (isDarkMode) {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  }, []);
+
+  function toggleTheme() {
+    if (isDark) {
+      document.documentElement.classList.remove("dark");
+      localStorage.theme = "light";
+      setIsDark(false);
+    } else {
+      document.documentElement.classList.add("dark");
+      localStorage.theme = "dark";
+      setIsDark(true);
+    }
+  }
 
   async function handleSignOut() {
-    const supabase = createClient();
-    await supabase.auth.signOut();
+    try {
+      const supabase = createClient();
+      await supabase.auth.signOut();
+    } catch {
+      // Fallback
+    }
     router.push("/login");
   }
 
@@ -27,7 +57,7 @@ export function Header({ userEmail, userFullName = "Member", onMobileMenuToggle 
         <button
           onClick={onMobileMenuToggle}
           className="md:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
-          aria-label="Toggle menu"
+          aria-label="Toggle mobile menu"
         >
           <Menu className="w-5 h-5" />
         </button>
@@ -41,19 +71,32 @@ export function Header({ userEmail, userFullName = "Member", onMobileMenuToggle 
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3">
+        {/* Theme Toggle Button */}
+        <button
+          onClick={toggleTheme}
+          className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+          aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
+        >
+          {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-600" />}
+        </button>
+
+        {/* Notifications */}
         <button
           className="relative p-2 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
-          aria-label="Notifications"
+          aria-label="View notifications"
         >
           <Bell className="w-5 h-5" />
           <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-600" />
         </button>
 
+        {/* User Profile Dropdown */}
         <div className="relative">
           <button
             onClick={() => setDropdownOpen(!dropdownOpen)}
-            className="flex items-center gap-2.5 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+            className="flex items-center gap-2.5 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+            aria-label="User profile menu"
+            aria-expanded={dropdownOpen}
           >
             <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-700 dark:text-slate-300 font-bold text-xs">
               {userFullName.charAt(0).toUpperCase()}
@@ -72,7 +115,7 @@ export function Header({ userEmail, userFullName = "Member", onMobileMenuToggle 
               </div>
               <button
                 onClick={handleSignOut}
-                className="w-full flex items-center gap-2 px-4 py-2 text-xs text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition text-left"
+                className="w-full flex items-center gap-2 px-4 py-2 text-xs text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition text-left cursor-pointer"
               >
                 <LogOut className="w-4 h-4" />
                 Sign out

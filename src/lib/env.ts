@@ -1,4 +1,7 @@
+import "server-only";
 import { z } from "zod";
+
+const isProduction = process.env.NODE_ENV === "production";
 
 const envSchema = z.object({
   NEXT_PUBLIC_SUPABASE_URL: z.string().url().default("http://127.0.0.1:54321"),
@@ -11,7 +14,9 @@ const envSchema = z.object({
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().default("Rotaract San Pedro East <notifications@rotaract.local>"),
   EMAIL_TEST_RECIPIENT: z.string().optional(),
-  CRON_SECRET: z.string().default("local_dev_cron_secret"),
+  CRON_SECRET: isProduction
+    ? z.string().min(16, "CRON_SECRET must be at least 16 chars in production")
+    : z.string().default("local_dev_cron_secret"),
 });
 
 export const env = envSchema.parse({
@@ -27,3 +32,4 @@ export const env = envSchema.parse({
   EMAIL_TEST_RECIPIENT: process.env.EMAIL_TEST_RECIPIENT,
   CRON_SECRET: process.env.CRON_SECRET,
 });
+

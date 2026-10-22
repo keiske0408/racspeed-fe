@@ -14,6 +14,7 @@ import {
   Award,
   Settings,
   ShieldAlert,
+  Globe,
 } from "lucide-react";
 
 interface NavItem {
@@ -31,6 +32,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Projects & Reports", href: "/projects", icon: FolderKanban },
   { label: "Treasury & Dues", href: "/treasury", icon: Receipt },
   { label: "Budget & Liquidation", href: "/budgets", icon: FileSpreadsheet },
+  { label: "Sister Clubs & Partners", href: "/partnerships", icon: Globe },
   { label: "Certificates", href: "/certificates", icon: Award },
   { label: "Retention Alerts", href: "/retention-alerts", icon: ShieldAlert },
   { label: "Club Settings", href: "/settings", icon: Settings },

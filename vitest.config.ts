@@ -9,5 +9,8 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./tests/setup.ts"],
     include: ["tests/unit/**/*.test.ts", "tests/unit/**/*.test.tsx"],
+    pool: "threads",
+    fileParallelism: false,
+    isolate: false,
   },
 });
