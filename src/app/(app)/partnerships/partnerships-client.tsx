@@ -80,9 +80,16 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
       const res = await createPartnershipInitiativeAction(formData);
       if (res.success) {
         setNotification(res.message || "Joint initiative registered successfully");
+        const newInit = (res as any).initiative;
         setSisterClubs((prev) =>
           prev.map((c) =>
-            c.id === selectedClubId ? { ...c, initiativesCount: c.initiativesCount + 1 } : c
+            c.id === selectedClubId
+              ? {
+                  ...c,
+                  initiativesCount: c.initiativesCount + 1,
+                  initiatives: newInit ? [newInit, ...(c.initiatives || [])] : c.initiatives,
+                }
+              : c
           )
         );
         setShowInitiativeModal(false);
@@ -255,6 +262,30 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
                   )}
                 </div>
               </div>
+
+              {/* Recorded Initiatives */}
+              {club.initiatives && club.initiatives.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 space-y-1.5">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                    Recent Collaborative Projects:
+                  </span>
+                  <div className="space-y-1">
+                    {club.initiatives.slice(0, 3).map((init) => (
+                      <div
+                        key={init.id}
+                        className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs"
+                      >
+                        <span className="font-medium text-slate-800 dark:text-slate-200 truncate pr-2">
+                          {init.title}
+                        </span>
+                        <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300 font-semibold">
+                          {init.jointVolunteers} vols
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2">
@@ -445,9 +476,16 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-2xl">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                Record Joint Initiative
-              </h3>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                  Record Joint Initiative
+                </h3>
+                {sisterClubs.find((c) => c.id === selectedClubId) && (
+                  <p className="text-xs text-rose-600 dark:text-rose-400 font-semibold mt-0.5">
+                    Partner: {sisterClubs.find((c) => c.id === selectedClubId)?.partnerClubName}
+                  </p>
+                )}
+              </div>
               <button
                 onClick={() => setShowInitiativeModal(false)}
                 aria-label="Close modal"
