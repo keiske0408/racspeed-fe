@@ -1,5 +1,13 @@
 export type InitiativeStatus = "PROPOSED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
 
+export type PartnershipType =
+  | "SISTER_CLUB_MOA"
+  | "DISTRICT_TWIN_CLUB"
+  | "PROJECT_PARTNER"
+  | "SPONSOR_ROTARY_CLUB";
+
+export type ClubPartnershipStatus = "ACTIVE" | "PENDING_MOA" | "INACTIVE";
+
 export interface StoredInitiative {
   id: string;
   sisterClubId: string;
@@ -17,13 +25,17 @@ export interface StoredSisterClub {
   partnerClubName: string;
   district: string;
   country: string;
-  partnershipType: "SISTER_CLUB_MOA" | "DISTRICT_TWIN_CLUB" | "PROJECT_PARTNER" | "SPONSOR_ROTARY_CLUB";
+  partnershipType: PartnershipType;
   agreementSignedDate: string;
   renewalDate: string;
   liaisonOfficerName: string;
   liaisonEmail: string;
   liaisonPhone: string;
-  status: "ACTIVE" | "PENDING_MOA" | "INACTIVE";
+  status: ClubPartnershipStatus;
   notes: string;
   initiativesCount: number;
+}
+
+export interface SisterClubDTO extends StoredSisterClub {
+  initiatives?: StoredInitiative[];
 }

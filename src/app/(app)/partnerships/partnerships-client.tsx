@@ -27,6 +27,8 @@ import {
 import { StatusBadge } from "@/components/shared/badge";
 import {
   createSisterClubAction,
+  updateSisterClubAction,
+  deleteSisterClubAction,
   createPartnershipInitiativeAction,
   updatePartnershipInitiativeAction,
   deletePartnershipInitiativeAction,
@@ -35,6 +37,8 @@ import {
   SisterClubDTO,
   StoredInitiative,
   InitiativeStatus,
+  PartnershipType,
+  ClubPartnershipStatus,
 } from "@/features/partnerships/queries";
 
 interface PartnershipsClientProps {
@@ -69,11 +73,13 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
 
   // Modals state
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditClubModal, setShowEditClubModal] = useState(false);
   const [showInitiativeModal, setShowInitiativeModal] = useState(false);
   const [showEditInitiativeModal, setShowEditInitiativeModal] = useState(false);
   const [showAllInitiativesModal, setShowAllInitiativesModal] = useState(false);
 
   const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
+  const [editingClub, setEditingClub] = useState<SisterClubDTO | null>(null);
   const [editingInitiative, setEditingInitiative] = useState<StoredInitiative | null>(null);
   const [initiativesViewFilter, setInitiativesViewFilter] = useState<string>("ALL");
 
@@ -101,14 +107,13 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
       const res = await createSisterClubAction(formData);
       if (res.success) {
         setNotification(res.message || "Sister club registered successfully");
-        const newClub: SisterClubDTO = {
+        const newClub: SisterClubDTO = res.club || {
           id: res.partnerId || `sc-${Date.now()}`,
           partnerClubName: formData.get("partnerClubName") as string,
           district: formData.get("district") as string,
           country: (formData.get("country") as string) || "Philippines",
           partnershipType:
-            (formData.get("partnershipType") as SisterClubDTO["partnershipType"]) ||
-            "SISTER_CLUB_MOA",
+            (formData.get("partnershipType") as PartnershipType) || "SISTER_CLUB_MOA",
           agreementSignedDate:
             (formData.get("agreementSignedDate") as string) ||
             new Date().toISOString().split("T")[0],
@@ -133,6 +138,73 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
       setIsSubmitting(false);
       setTimeout(() => setNotification(null), 4000);
     }
+  }
+
+  // Edit Sister Club
+  function handleOpenEditClub(club: SisterClubDTO) {
+    setEditingClub(club);
+    setShowEditClubModal(true);
+  }
+
+  async function handleUpdateSisterClub(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!editingClub) return;
+    setIsSubmitting(true);
+    const formData = new FormData(e.currentTarget);
+    formData.append("clubId", editingClub.id);
+
+    try {
+      const res = await updateSisterClubAction(formData);
+      if (res.success && res.club) {
+        const updated = res.club;
+        setSisterClubs((prev) =>
+          prev.map((c) =>
+            c.id === updated.id
+              ? {
+                  ...c,
+                  ...updated,
+                  initiatives: c.initiatives,
+                  initiativesCount: c.initiativesCount,
+                }
+              : c
+          )
+        );
+        setShowEditClubModal(false);
+        setEditingClub(null);
+        setNotification(res.message || "Partner club details updated successfully!");
+        setTimeout(() => setNotification(null), 3500);
+      } else {
+        alert(res.error || "Failed to update sister club");
+      }
+    } catch (err: any) {
+      alert(err?.message || "Failed to update sister club");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  // Delete Sister Club
+  function handleDeleteSisterClub(clubId: string, clubName: string) {
+    if (
+      !confirm(
+        `Are you sure you want to delete partner club "${clubName}" and all its collaborative initiatives?`
+      )
+    ) {
+      return;
+    }
+
+    startTransition(async () => {
+      // Optimistic UI update
+      setSisterClubs((prev) => prev.filter((c) => c.id !== clubId));
+
+      const res = await deleteSisterClubAction(clubId);
+      if (res.success) {
+        setNotification(res.message || "Partner club removed successfully.");
+        setTimeout(() => setNotification(null), 3000);
+      } else {
+        alert(res.error || "Failed to delete partner club");
+      }
+    });
   }
 
   // Record New Initiative
@@ -380,16 +452,37 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
               className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition"
             >
               <div>
+                {/* Header with Title, Status & Club Edit/Delete Controls */}
                 <div className="flex items-start justify-between gap-3 mb-2">
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-900 mb-1.5">
                       District {club.district} · {club.country}
                     </span>
-                    <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                    <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 truncate">
                       {club.partnerClubName}
                     </h3>
                   </div>
-                  <StatusBadge status={club.status} />
+
+                  {/* Status & Edit/Delete Club Actions */}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <StatusBadge status={club.status} />
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEditClub(club)}
+                      className="p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                      title="Edit Partner Club"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteSisterClub(club.id, club.partnerClubName)}
+                      className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                      title="Delete Partner Club"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
 
                 <p className="text-xs text-slate-600 dark:text-slate-300 mt-2">{club.notes}</p>
@@ -468,7 +561,7 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
 
                   {initiatives.length === 0 ? (
                     <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 text-center text-xs text-slate-400">
-                      No joint initiatives recorded yet.
+                      No joint initiatives recorded yet. Click below to add one!
                     </div>
                   ) : (
                     <div className="space-y-1.5">
@@ -501,7 +594,7 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
                                 )}
                               </div>
 
-                              {/* Action Buttons: Edit & Delete */}
+                              {/* Action Buttons: Volunteers + Edit & Delete Initiative */}
                               <div className="flex items-center gap-1 shrink-0">
                                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300 font-semibold">
                                   {init.jointVolunteers} vols
@@ -509,7 +602,7 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
                                 <button
                                   type="button"
                                   onClick={() => handleOpenEditInitiative(init)}
-                                  className="p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+                                  className="p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
                                   title="Edit Initiative"
                                 >
                                   <Edit2 className="w-3.5 h-3.5" />
@@ -517,7 +610,7 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteInitiative(init.id, init.title)}
-                                  className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                                  className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
                                   title="Delete Initiative"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
@@ -712,6 +805,197 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
                   className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs shadow-xs disabled:opacity-50"
                 >
                   {isSubmitting ? "Saving..." : "Save Partnership"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Edit Partner or Sister Club */}
+      {showEditClubModal && editingClub && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                Edit Partner Club: {editingClub.partnerClubName}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowEditClubModal(false);
+                  setEditingClub(null);
+                }}
+                aria-label="Close modal"
+                className="p-1 rounded-md text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateSisterClub} className="mt-4 space-y-3.5">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Partner Club Name *
+                </label>
+                <input
+                  type="text"
+                  name="partnerClubName"
+                  required
+                  defaultValue={editingClub.partnerClubName}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Rotary District *
+                  </label>
+                  <input
+                    type="text"
+                    name="district"
+                    required
+                    defaultValue={editingClub.district}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Country *
+                  </label>
+                  <input
+                    type="text"
+                    name="country"
+                    required
+                    defaultValue={editingClub.country}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Partnership Category *
+                  </label>
+                  <select
+                    name="partnershipType"
+                    defaultValue={editingClub.partnershipType}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  >
+                    <option value="SISTER_CLUB_MOA">Sister Club MOA (Official Bilateral)</option>
+                    <option value="DISTRICT_TWIN_CLUB">District Twin Club (District-level)</option>
+                    <option value="PROJECT_PARTNER">Collaborative Project Partner</option>
+                    <option value="SPONSOR_ROTARY_CLUB">Sponsor Rotary Club</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Partnership Status *
+                  </label>
+                  <select
+                    name="status"
+                    defaultValue={editingClub.status}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  >
+                    <option value="ACTIVE">Active</option>
+                    <option value="PENDING_MOA">Pending MOA</option>
+                    <option value="INACTIVE">Inactive</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Agreement Signed Date
+                  </label>
+                  <input
+                    type="date"
+                    name="agreementSignedDate"
+                    defaultValue={editingClub.agreementSignedDate}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Renewal / Expiration Date
+                  </label>
+                  <input
+                    type="date"
+                    name="renewalDate"
+                    defaultValue={editingClub.renewalDate}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Designated Liaison Officer
+                </label>
+                <input
+                  type="text"
+                  name="liaisonOfficerName"
+                  defaultValue={editingClub.liaisonOfficerName}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Liaison Email
+                  </label>
+                  <input
+                    type="email"
+                    name="liaisonEmail"
+                    defaultValue={editingClub.liaisonEmail}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Liaison Phone
+                  </label>
+                  <input
+                    type="text"
+                    name="liaisonPhone"
+                    defaultValue={editingClub.liaisonPhone}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Scope of Partnership / Notes
+                </label>
+                <textarea
+                  name="notes"
+                  rows={2}
+                  defaultValue={editingClub.notes}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEditClubModal(false);
+                    setEditingClub(null);
+                  }}
+                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs shadow-xs disabled:opacity-50"
+                >
+                  {isSubmitting ? "Saving..." : "Save Changes"}
                 </button>
               </div>
             </form>
@@ -1044,7 +1328,7 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
 
                           <button
                             onClick={() => handleOpenEditInitiative(init)}
-                            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs transition"
+                            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs transition cursor-pointer"
                             title="Edit Initiative"
                           >
                             <Edit2 className="w-3.5 h-3.5" />
@@ -1052,7 +1336,7 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
 
                           <button
                             onClick={() => handleDeleteInitiative(init.id, init.title)}
-                            className="p-1.5 rounded-lg border border-rose-200 dark:border-rose-900 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs transition"
+                            className="p-1.5 rounded-lg border border-rose-200 dark:border-rose-900 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs transition cursor-pointer"
                             title="Delete Initiative"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -1068,7 +1352,7 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
             <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
               <button
                 onClick={() => setShowAllInitiativesModal(false)}
-                className="px-5 py-2 rounded-xl bg-slate-900 dark:bg-slate-800 text-white font-semibold text-xs transition hover:bg-slate-800"
+                className="px-5 py-2 rounded-xl bg-slate-900 dark:bg-slate-800 text-white font-semibold text-xs transition hover:bg-slate-800 cursor-pointer"
               >
                 Close
               </button>

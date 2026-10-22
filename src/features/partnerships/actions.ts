@@ -6,13 +6,17 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireUser, assertPermission } from "@/lib/auth/session";
 import {
   addCustomSisterClub,
+  updateCustomSisterClub,
+  deleteCustomSisterClub,
   addCustomInitiative,
   updateCustomInitiative,
   deleteCustomInitiative,
   StoredInitiative,
   InitiativeStatus,
+  PartnershipType,
+  ClubPartnershipStatus,
+  SisterClubDTO,
 } from "@/lib/data/partnerships-storage";
-import { SisterClubDTO } from "./queries";
 
 const createSisterClubSchema = z.object({
   partnerClubName: z.string().min(3, "Club name must be at least 3 characters"),
@@ -101,7 +105,6 @@ export async function createSisterClubAction(formData: FormData) {
     console.warn("Direct Supabase sister_clubs insert fallback:", err);
   }
 
-  // Also persist in local storage store to guarantee persistence
   const clubDTO: SisterClubDTO = {
     id: savedId,
     partnerClubName,
@@ -122,7 +125,106 @@ export async function createSisterClubAction(formData: FormData) {
 
   revalidatePath("/partnerships");
   revalidatePath("/dashboard");
-  return { success: true, message: `Partner club '${partnerClubName}' registered successfully!`, partnerId: savedId };
+  return { success: true, message: `Partner club '${partnerClubName}' registered successfully!`, partnerId: savedId, club: clubDTO };
+}
+
+export async function updateSisterClubAction(formData: FormData) {
+  const user = await requireUser();
+  const rawClubId = (formData.get("homeClubId") as string) || "00000000-0000-0000-0000-000000000001";
+  await assertPermission(rawClubId, "SETTINGS_MANAGE");
+
+  const clubId = formData.get("clubId") as string;
+  const partnerClubName = (formData.get("partnerClubName") as string)?.trim();
+  const district = (formData.get("district") as string)?.trim();
+  const country = (formData.get("country") as string)?.trim() || "Philippines";
+  const partnershipType = (formData.get("partnershipType") as PartnershipType) || "SISTER_CLUB_MOA";
+  const agreementSignedDate = (formData.get("agreementSignedDate") as string) || "";
+  const renewalDate = (formData.get("renewalDate") as string) || "";
+  const liaisonOfficerName = (formData.get("liaisonOfficerName") as string) || "";
+  const liaisonEmail = (formData.get("liaisonEmail") as string) || "";
+  const liaisonPhone = (formData.get("liaisonPhone") as string) || "";
+  const status = (formData.get("status") as ClubPartnershipStatus) || "ACTIVE";
+  const notes = (formData.get("notes") as string) || "";
+
+  if (!clubId || !partnerClubName) {
+    return { success: false, error: "Club ID and partner club name are required." };
+  }
+
+  // 1. Update in Supabase if exists
+  try {
+    const adminClient = createAdminClient();
+    await adminClient
+      .from("sister_clubs")
+      .update({
+        partner_club_name: partnerClubName,
+        district,
+        country,
+        partnership_type: partnershipType,
+        agreement_signed_date: agreementSignedDate || null,
+        renewal_date: renewalDate || null,
+        liaison_officer_name: liaisonOfficerName || null,
+        liaison_email: liaisonEmail || null,
+        liaison_phone: liaisonPhone || null,
+        status,
+        notes: notes || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", clubId);
+  } catch (err) {
+    console.warn("Direct Supabase sister_clubs update fallback:", err);
+  }
+
+  // 2. Update in persistent store
+  const updated = updateCustomSisterClub(clubId, {
+    partnerClubName,
+    district,
+    country,
+    partnershipType,
+    agreementSignedDate,
+    renewalDate,
+    liaisonOfficerName,
+    liaisonEmail,
+    liaisonPhone,
+    status,
+    notes,
+  });
+
+  revalidatePath("/partnerships");
+  revalidatePath("/dashboard");
+
+  return {
+    success: true,
+    message: `Partner club '${partnerClubName}' updated successfully!`,
+    club: updated,
+  };
+}
+
+export async function deleteSisterClubAction(clubId: string) {
+  const user = await requireUser();
+  await assertPermission("00000000-0000-0000-0000-000000000001", "SETTINGS_MANAGE");
+
+  if (!clubId) {
+    return { success: false, error: "Club ID is required." };
+  }
+
+  // 1. Delete from Supabase if exists
+  try {
+    const adminClient = createAdminClient();
+    await adminClient.from("sister_clubs").delete().eq("id", clubId);
+  } catch (err) {
+    console.warn("Direct Supabase sister_clubs delete fallback:", err);
+  }
+
+  // 2. Delete from persistent store
+  deleteCustomSisterClub(clubId);
+
+  revalidatePath("/partnerships");
+  revalidatePath("/dashboard");
+
+  return {
+    success: true,
+    message: "Partner club and its associated collaborative initiatives have been removed.",
+  };
 }
 
 export async function createPartnershipInitiativeAction(formData: FormData) {
@@ -140,7 +242,6 @@ export async function createPartnershipInitiativeAction(formData: FormData) {
 
   const generatedId = `init-${Date.now()}`;
 
-  // Try saving to Supabase if table exists
   try {
     const adminClient = createAdminClient();
     await adminClient.from("partnership_initiatives").insert({
@@ -157,7 +258,6 @@ export async function createPartnershipInitiativeAction(formData: FormData) {
     console.warn("Direct Supabase initiative insert fallback:", err);
   }
 
-  // Save to persistent storage so it is guaranteed to persist and be viewable
   const newInitiative: StoredInitiative = {
     id: generatedId,
     sisterClubId,
@@ -192,7 +292,6 @@ export async function updatePartnershipInitiativeAction(formData: FormData) {
     return { success: false, error: "Initiative ID and title are required." };
   }
 
-  // 1. Update in Supabase if exists
   try {
     const adminClient = createAdminClient();
     await adminClient
@@ -210,7 +309,6 @@ export async function updatePartnershipInitiativeAction(formData: FormData) {
     console.warn("Direct Supabase initiative update fallback:", err);
   }
 
-  // 2. Update in persistent store
   const updated = updateCustomInitiative(initiativeId, {
     title,
     description,
@@ -243,7 +341,6 @@ export async function deletePartnershipInitiativeAction(initiativeId: string) {
     return { success: false, error: "Initiative ID is required." };
   }
 
-  // 1. Delete from Supabase if exists
   try {
     const adminClient = createAdminClient();
     await adminClient
@@ -254,7 +351,6 @@ export async function deletePartnershipInitiativeAction(initiativeId: string) {
     console.warn("Direct Supabase initiative delete fallback:", err);
   }
 
-  // 2. Delete from persistent storage
   deleteCustomInitiative(initiativeId);
 
   revalidatePath("/partnerships");
