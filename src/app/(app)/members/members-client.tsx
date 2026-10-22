@@ -380,6 +380,12 @@ export function MembersClient({ initialMembers, currentUser }: MembersClientProp
                     <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
                       PENDING APPROVAL
                     </span>
+                    {pending.crmStage && (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                        CRM: {pending.crmStage.replace(/_/g, " ")}
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-slate-500">{pending.email}</p>
                   <p className="text-[11px] text-slate-400 mt-0.5">Classification: {pending.classification}</p>

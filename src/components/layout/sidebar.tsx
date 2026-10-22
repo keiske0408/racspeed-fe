@@ -15,6 +15,7 @@ import {
   Settings,
   ShieldAlert,
   Globe,
+  CheckSquare,
 } from "lucide-react";
 
 interface NavItem {
@@ -30,6 +31,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Recruitment CRM", href: "/recruitment", icon: UserPlus },
   { label: "Events & Check-in", href: "/events", icon: Calendar },
   { label: "Projects & Reports", href: "/projects", icon: FolderKanban },
+  { label: "Task Center", href: "/tasks", icon: CheckSquare },
   { label: "Treasury & Dues", href: "/treasury", icon: Receipt },
   { label: "Budget & Liquidation", href: "/budgets", icon: FileSpreadsheet },
   { label: "Sister Clubs & Partners", href: "/partnerships", icon: Globe },
@@ -38,7 +40,13 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Club Settings", href: "/settings", icon: Settings },
 ];
 
-export function Sidebar({ className = "" }: { className?: string }) {
+export function Sidebar({
+  className = "",
+  onNavigate,
+}: {
+  className?: string;
+  onNavigate?: () => void;
+}) {
   const pathname = usePathname();
 
   return (
@@ -69,6 +77,7 @@ export function Sidebar({ className = "" }: { className?: string }) {
             <Link
               key={item.href}
               href={item.href}
+              onClick={() => onNavigate?.()}
               className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition ${
                 isActive
                   ? "bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400 font-semibold"

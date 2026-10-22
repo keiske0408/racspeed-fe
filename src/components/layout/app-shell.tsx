@@ -35,7 +35,10 @@ export function AppShell({ children, userEmail, userFullName }: AppShellProps) {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <Sidebar className="w-full flex-1 border-r-0" />
+            <Sidebar
+              className="w-full flex-1 border-r-0"
+              onNavigate={() => setMobileMenuOpen(false)}
+            />
           </div>
         </div>
       )}

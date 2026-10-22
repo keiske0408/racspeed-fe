@@ -12,6 +12,7 @@ export interface MemberDTO {
   classification: string;
   rotaryId?: string;
   isPlatformAdmin: boolean;
+  crmStage?: string;
 }
 
 export async function getClubMembersList(clubId = "00000000-0000-0000-0000-000000000001"): Promise<MemberDTO[]> {
@@ -51,6 +52,18 @@ export async function getClubMembersList(clubId = "00000000-0000-0000-0000-00000
 
     const membershipMap = new Map((memberships || []).map((m) => [m.profile_id, m]));
 
+    // 3. Fetch prospects to bridge CRM milestones
+    const { data: prospects } = await adminClient
+      .from("prospects")
+      .select("email, stage")
+      .eq("club_id", clubId);
+
+    const prospectMap = new Map(
+      (prospects || [])
+        .filter((pr) => Boolean(pr.email))
+        .map((pr) => [pr.email!.toLowerCase(), pr.stage])
+    );
+
     return profiles.map((p) => {
       const mem = membershipMap.get(p.id);
       const roleRecord = (mem?.membership_roles as any[])?.[0]?.roles;
@@ -61,6 +74,8 @@ export async function getClubMembersList(clubId = "00000000-0000-0000-0000-00000
       if (p.status === "PENDING" || (status as string) === "PROSPECTIVE") {
         status = "PENDING";
       }
+
+      const crmStage = prospectMap.get(p.email.toLowerCase());
 
       return {
         id: p.id,
@@ -74,6 +89,7 @@ export async function getClubMembersList(clubId = "00000000-0000-0000-0000-00000
         classification: mem?.classification || "Rotaract General",
         rotaryId: mem?.rotary_id || undefined,
         isPlatformAdmin: Boolean(p.is_platform_admin),
+        crmStage,
       };
     });
   } catch (err) {

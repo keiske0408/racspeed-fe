@@ -3,8 +3,8 @@
 import React, { useState, useTransition } from "react";
 import { ONBOARDING_STAGES, ONBOARDING_STAGE_LABELS, OnboardingStage } from "@/lib/services/workflows/onboarding";
 import { StatusBadge } from "@/components/shared/badge";
-import { UserPlus, ArrowRight, CheckCircle2, Phone, Mail, Plus, X } from "lucide-react";
-import { createProspectAction, updateProspectStageAction } from "@/features/recruitment/actions";
+import { UserPlus, ArrowRight, CheckCircle2, Phone, Mail, Plus, X, UserCheck } from "lucide-react";
+import { createProspectAction, updateProspectStageAction, inductProspectToMemberAction } from "@/features/recruitment/actions";
 import { ProspectDTO } from "@/features/recruitment/queries";
 
 interface RecruitmentClientProps {
@@ -35,6 +35,28 @@ export function RecruitmentClient({ initialProspects }: RecruitmentClientProps) 
       );
       setNotification(`Prospect stage updated to: ${ONBOARDING_STAGE_LABELS[newStage]} in Supabase`);
       setTimeout(() => setNotification(null), 3000);
+    });
+  }
+
+  function handleInduct(id: string, name: string) {
+    if (!confirm(`Are you ready to officially induct ${name} and activate their official Club Member account?`)) {
+      return;
+    }
+    startTransition(async () => {
+      try {
+        const res = await inductProspectToMemberAction(id);
+        if (res.success) {
+          setProspects((prev) =>
+            prev.map((p) => (p.id === id ? { ...p, stage: "INDUCTED" as any } : p))
+          );
+          setNotification(res.message || `${name} inducted and activated in Members!`);
+        } else {
+          alert(res.error || "Failed to induct member");
+        }
+      } catch (err: any) {
+        alert(err?.message || "Failed to induct member");
+      }
+      setTimeout(() => setNotification(null), 5000);
     });
   }
 
@@ -168,6 +190,18 @@ export function RecruitmentClient({ initialProspects }: RecruitmentClientProps) 
                         ))}
                       </select>
                     </div>
+
+                    {/* Smart 1-click Induct & Convert to Member Account */}
+                    {prospect.stage !== "INDUCTED" && (
+                      <button
+                        onClick={() => handleInduct(prospect.id, prospect.name)}
+                        disabled={isPending}
+                        className="mt-2.5 w-full flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[11px] transition shadow-xs cursor-pointer disabled:opacity-50"
+                      >
+                        <UserCheck className="w-3.5 h-3.5" />
+                        Induct & Activate in Members
+                      </button>
+                    )}
                   </div>
                 ))}
 

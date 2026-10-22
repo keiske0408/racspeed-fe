@@ -138,9 +138,16 @@ export async function approveMemberAction(profileId: string, clubId = "00000000-
     membership_status: "ACTIVE",
   }, { onConflict: "club_id,profile_id" });
 
+  // Sync with Recruitment CRM: automatically advance matching prospect to INDUCTED
+  const { data: prof } = await adminClient.from("profiles").select("email").eq("id", profileId).single();
+  if (prof?.email) {
+    await adminClient.from("prospects").update({ stage: "INDUCTED" }).eq("email", prof.email);
+  }
+
   revalidatePath("/members");
+  revalidatePath("/recruitment");
   revalidatePath("/dashboard");
-  return { success: true, message: "Member account approved and activated successfully." };
+  return { success: true, message: "Member account approved, activated, and linked to Recruitment CRM!" };
 }
 
 export async function rejectMemberAction(profileId: string, clubId = "00000000-0000-0000-0000-000000000001") {

@@ -1,0 +1,278 @@
+{
+  "PRESIDENT": {
+    "roleKey": "PRESIDENT",
+    "roleLabel": "Club President",
+    "description": "Default authority and page accessibility for Club President under District 3820 guidelines.",
+    "allowedPages": [
+      "dashboard",
+      "members",
+      "recruitment",
+      "events",
+      "projects",
+      "tasks",
+      "treasury",
+      "budgets",
+      "partnerships",
+      "certificates",
+      "retention",
+      "settings"
+    ],
+    "allowedPermissions": [
+      "EVENT_VIEW",
+      "PAYMENT_SUBMIT",
+      "MEMBER_VIEW",
+      "RETENTION_ALERT_VIEW",
+      "PROJECT_CREATE",
+      "PROJECT_UPDATE",
+      "PROJECT_SUBMIT_REPORT",
+      "BUDGET_REQUEST",
+      "LIQUIDATION_SUBMIT",
+      "EVENT_CREATE",
+      "EVENT_UPDATE",
+      "ATTENDANCE_MANAGE",
+      "MEMBER_CREATE",
+      "MEMBER_UPDATE",
+      "MEMBER_APPROVE",
+      "MEMBER_SUSPEND",
+      "MEMBER_SENSITIVE_VIEW",
+      "ROLE_ASSIGN",
+      "RECRUITMENT_MANAGE",
+      "REPORT_APPROVE",
+      "REPORT_TEMPLATE_MANAGE",
+      "CERTIFICATE_GENERATE",
+      "TREASURY_VIEW",
+      "BUDGET_APPROVE_PRESIDENT",
+      "LIQUIDATION_VERIFY",
+      "NOTIFICATION_SEND",
+      "AUDIT_LOG_VIEW",
+      "SETTINGS_MANAGE",
+      "DATA_EXPORT"
+    ]
+  },
+  "VICE_PRESIDENT": {
+    "roleKey": "VICE_PRESIDENT",
+    "roleLabel": "Vice President",
+    "description": "Default authority and page accessibility for Vice President under District 3820 guidelines.",
+    "allowedPages": [
+      "dashboard",
+      "members",
+      "recruitment",
+      "events",
+      "projects",
+      "tasks",
+      "partnerships",
+      "certificates",
+      "retention"
+    ],
+    "allowedPermissions": [
+      "EVENT_VIEW",
+      "PAYMENT_SUBMIT",
+      "MEMBER_VIEW",
+      "RETENTION_ALERT_VIEW",
+      "PROJECT_CREATE",
+      "PROJECT_UPDATE",
+      "PROJECT_SUBMIT_REPORT",
+      "BUDGET_REQUEST",
+      "LIQUIDATION_SUBMIT",
+      "EVENT_CREATE",
+      "EVENT_UPDATE",
+      "ATTENDANCE_MANAGE",
+      "MEMBER_CREATE",
+      "MEMBER_UPDATE",
+      "MEMBER_APPROVE",
+      "RECRUITMENT_MANAGE",
+      "REPORT_APPROVE",
+      "CERTIFICATE_GENERATE"
+    ]
+  },
+  "SECRETARY": {
+    "roleKey": "SECRETARY",
+    "roleLabel": "Secretary",
+    "description": "Default authority and page accessibility for Secretary under District 3820 guidelines.",
+    "allowedPages": [
+      "dashboard",
+      "members",
+      "recruitment",
+      "events",
+      "projects",
+      "tasks",
+      "partnerships",
+      "certificates",
+      "retention"
+    ],
+    "allowedPermissions": [
+      "EVENT_VIEW",
+      "PAYMENT_SUBMIT",
+      "MEMBER_VIEW",
+      "RETENTION_ALERT_VIEW",
+      "PROJECT_CREATE",
+      "PROJECT_UPDATE",
+      "PROJECT_SUBMIT_REPORT",
+      "BUDGET_REQUEST",
+      "LIQUIDATION_SUBMIT",
+      "EVENT_CREATE",
+      "EVENT_UPDATE",
+      "ATTENDANCE_MANAGE",
+      "MEMBER_CREATE",
+      "MEMBER_UPDATE",
+      "MEMBER_APPROVE",
+      "RECRUITMENT_MANAGE",
+      "REPORT_APPROVE",
+      "REPORT_TEMPLATE_MANAGE",
+      "CERTIFICATE_GENERATE",
+      "NOTIFICATION_SEND",
+      "DATA_EXPORT"
+    ]
+  },
+  "TREASURER": {
+    "roleKey": "TREASURER",
+    "roleLabel": "Treasurer",
+    "description": "Default authority and page accessibility for Treasurer under District 3820 guidelines.",
+    "allowedPages": [
+      "dashboard",
+      "members",
+      "events",
+      "projects",
+      "tasks",
+      "treasury",
+      "budgets",
+      "partnerships"
+    ],
+    "allowedPermissions": [
+      "EVENT_VIEW",
+      "PAYMENT_SUBMIT",
+      "MEMBER_VIEW",
+      "RETENTION_ALERT_VIEW",
+      "PROJECT_CREATE",
+      "PROJECT_UPDATE",
+      "PROJECT_SUBMIT_REPORT",
+      "BUDGET_REQUEST",
+      "LIQUIDATION_SUBMIT",
+      "EVENT_CREATE",
+      "EVENT_UPDATE",
+      "ATTENDANCE_MANAGE",
+      "TREASURY_VIEW",
+      "INVOICE_CREATE",
+      "PAYMENT_VERIFY",
+      "LEDGER_ADJUST",
+      "BUDGET_APPROVE_TREASURER",
+      "DISBURSEMENT_RECORD",
+      "LIQUIDATION_VERIFY",
+      "NOTIFICATION_SEND",
+      "DATA_EXPORT"
+    ]
+  },
+  "PROJECT_CHAIR": {
+    "roleKey": "PROJECT_CHAIR",
+    "roleLabel": "Project Chair",
+    "description": "Default authority and page accessibility for Project Chair under District 3820 guidelines.",
+    "allowedPages": [
+      "dashboard",
+      "members",
+      "events",
+      "projects",
+      "tasks",
+      "budgets",
+      "certificates"
+    ],
+    "allowedPermissions": [
+      "EVENT_VIEW",
+      "PAYMENT_SUBMIT",
+      "PROJECT_CREATE",
+      "PROJECT_UPDATE",
+      "PROJECT_SUBMIT_REPORT",
+      "BUDGET_REQUEST",
+      "LIQUIDATION_SUBMIT",
+      "EVENT_CREATE",
+      "EVENT_UPDATE",
+      "ATTENDANCE_MANAGE",
+      "CERTIFICATE_GENERATE"
+    ]
+  },
+  "MEMBERSHIP_CHAIR": {
+    "roleKey": "MEMBERSHIP_CHAIR",
+    "roleLabel": "Membership Chair",
+    "description": "Default authority and page accessibility for Membership Chair under District 3820 guidelines.",
+    "allowedPages": [
+      "dashboard",
+      "members",
+      "recruitment",
+      "events",
+      "tasks",
+      "retention"
+    ],
+    "allowedPermissions": [
+      "EVENT_VIEW",
+      "PAYMENT_SUBMIT",
+      "MEMBER_VIEW",
+      "MEMBER_CREATE",
+      "MEMBER_UPDATE",
+      "RECRUITMENT_MANAGE",
+      "RETENTION_ALERT_VIEW"
+    ]
+  },
+  "BOARD_OFFICER": {
+    "roleKey": "BOARD_OFFICER",
+    "roleLabel": "Board Officer",
+    "description": "Default authority and page accessibility for Board Officer under District 3820 guidelines.",
+    "allowedPages": [
+      "dashboard",
+      "members",
+      "events",
+      "projects",
+      "tasks",
+      "budgets",
+      "partnerships",
+      "retention"
+    ],
+    "allowedPermissions": [
+      "EVENT_VIEW",
+      "PAYMENT_SUBMIT",
+      "MEMBER_VIEW",
+      "RETENTION_ALERT_VIEW",
+      "PROJECT_CREATE",
+      "PROJECT_UPDATE",
+      "PROJECT_SUBMIT_REPORT",
+      "BUDGET_REQUEST",
+      "LIQUIDATION_SUBMIT",
+      "EVENT_CREATE",
+      "EVENT_UPDATE",
+      "ATTENDANCE_MANAGE"
+    ]
+  },
+  "GENERAL_MEMBER": {
+    "roleKey": "GENERAL_MEMBER",
+    "roleLabel": "General Member",
+    "description": "Default authority and page accessibility for General Member under District 3820 guidelines.",
+    "allowedPages": [
+      "dashboard",
+      "events",
+      "projects",
+      "tasks",
+      "treasury",
+      "certificates"
+    ],
+    "allowedPermissions": [
+      "EVENT_VIEW",
+      "PAYMENT_SUBMIT"
+    ]
+  },
+  "AUDITOR": {
+    "roleKey": "AUDITOR",
+    "roleLabel": "Auditor",
+    "description": "Default authority and page accessibility for Auditor under District 3820 guidelines.",
+    "allowedPages": [
+      "dashboard",
+      "members",
+      "treasury",
+      "budgets",
+      "retention"
+    ],
+    "allowedPermissions": [
+      "EVENT_VIEW",
+      "MEMBER_VIEW",
+      "TREASURY_VIEW",
+      "AUDIT_LOG_VIEW"
+    ]
+  }
+}
