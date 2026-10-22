@@ -4,7 +4,14 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireUser, assertPermission } from "@/lib/auth/session";
-import { addCustomSisterClub, addCustomInitiative, StoredInitiative } from "@/lib/data/partnerships-storage";
+import {
+  addCustomSisterClub,
+  addCustomInitiative,
+  updateCustomInitiative,
+  deleteCustomInitiative,
+  StoredInitiative,
+  InitiativeStatus,
+} from "@/lib/data/partnerships-storage";
 import { SisterClubDTO } from "./queries";
 
 const createSisterClubSchema = z.object({
@@ -121,9 +128,11 @@ export async function createSisterClubAction(formData: FormData) {
 export async function createPartnershipInitiativeAction(formData: FormData) {
   const user = await requireUser();
   const sisterClubId = formData.get("sisterClubId") as string;
-  const title = formData.get("title") as string;
-  const description = (formData.get("description") as string) || "";
+  const title = (formData.get("title") as string)?.trim();
+  const description = ((formData.get("description") as string) || "").trim();
   const jointVolunteers = Number(formData.get("jointVolunteers") || 0);
+  const status = (formData.get("status") as InitiativeStatus) || "IN_PROGRESS";
+  const rotaryYear = (formData.get("rotaryYear") as string) || "2026-27";
 
   if (!sisterClubId || !title) {
     return { success: false, error: "Sister club and initiative title are required." };
@@ -135,11 +144,13 @@ export async function createPartnershipInitiativeAction(formData: FormData) {
   try {
     const adminClient = createAdminClient();
     await adminClient.from("partnership_initiatives").insert({
+      id: generatedId,
       sister_club_id: sisterClubId,
       title,
       description: description || null,
       joint_volunteer_count: jointVolunteers,
-      rotary_year: "2026-27",
+      rotary_year: rotaryYear,
+      status,
       shared_funding_centavos: 0,
     });
   } catch (err) {
@@ -153,11 +164,102 @@ export async function createPartnershipInitiativeAction(formData: FormData) {
     title,
     description,
     jointVolunteers,
-    rotaryYear: "2026-27",
+    rotaryYear,
+    status,
     createdAt: new Date().toISOString(),
   };
   addCustomInitiative(newInitiative);
 
   revalidatePath("/partnerships");
-  return { success: true, message: `Collaborative initiative '${title}' recorded successfully!`, initiative: newInitiative };
+  return {
+    success: true,
+    message: `Collaborative initiative '${title}' recorded successfully!`,
+    initiative: newInitiative,
+  };
+}
+
+export async function updatePartnershipInitiativeAction(formData: FormData) {
+  await requireUser();
+
+  const initiativeId = formData.get("initiativeId") as string;
+  const title = (formData.get("title") as string)?.trim();
+  const description = ((formData.get("description") as string) || "").trim();
+  const jointVolunteers = Number(formData.get("jointVolunteers") || 0);
+  const status = (formData.get("status") as InitiativeStatus) || "IN_PROGRESS";
+  const rotaryYear = (formData.get("rotaryYear") as string) || "2026-27";
+
+  if (!initiativeId || !title) {
+    return { success: false, error: "Initiative ID and title are required." };
+  }
+
+  // 1. Update in Supabase if exists
+  try {
+    const adminClient = createAdminClient();
+    await adminClient
+      .from("partnership_initiatives")
+      .update({
+        title,
+        description: description || null,
+        joint_volunteer_count: jointVolunteers,
+        rotary_year: rotaryYear,
+        status,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", initiativeId);
+  } catch (err) {
+    console.warn("Direct Supabase initiative update fallback:", err);
+  }
+
+  // 2. Update in persistent store
+  const updated = updateCustomInitiative(initiativeId, {
+    title,
+    description,
+    jointVolunteers,
+    status,
+    rotaryYear,
+  });
+
+  revalidatePath("/partnerships");
+  return {
+    success: true,
+    message: `Initiative '${title}' updated successfully.`,
+    initiative: updated || {
+      id: initiativeId,
+      sisterClubId: "",
+      title,
+      description,
+      jointVolunteers,
+      status,
+      rotaryYear,
+      createdAt: new Date().toISOString(),
+    },
+  };
+}
+
+export async function deletePartnershipInitiativeAction(initiativeId: string) {
+  await requireUser();
+
+  if (!initiativeId) {
+    return { success: false, error: "Initiative ID is required." };
+  }
+
+  // 1. Delete from Supabase if exists
+  try {
+    const adminClient = createAdminClient();
+    await adminClient
+      .from("partnership_initiatives")
+      .delete()
+      .eq("id", initiativeId);
+  } catch (err) {
+    console.warn("Direct Supabase initiative delete fallback:", err);
+  }
+
+  // 2. Delete from persistent storage
+  deleteCustomInitiative(initiativeId);
+
+  revalidatePath("/partnerships");
+  return {
+    success: true,
+    message: "Collaborative project removed successfully.",
+  };
 }

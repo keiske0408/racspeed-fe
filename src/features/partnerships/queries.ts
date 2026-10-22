@@ -1,5 +1,11 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { readPartnershipsStore, StoredInitiative } from "@/lib/data/partnerships-storage";
+import {
+  readPartnershipsStore,
+  StoredInitiative,
+  InitiativeStatus,
+} from "@/lib/data/partnerships-storage";
+
+export * from "@/lib/data/partnerships-types";
 
 export interface SisterClubDTO {
   id: string;
@@ -33,6 +39,38 @@ export const FALLBACK_SISTER_CLUBS: SisterClubDTO[] = [
     status: "ACTIVE",
     notes: "Active sister club agreement focusing on youth literacy and joint medical missions.",
     initiativesCount: 3,
+    initiatives: [
+      {
+        id: "init-fallback-1",
+        sisterClubId: "sc-1",
+        title: "Dual-Club Coastal Mangrove Reforestation Drive",
+        description: "Joint youth environmental conservation drive at Las Piñas-Parañaque Wetland Park planting 500 propagules.",
+        jointVolunteers: 35,
+        rotaryYear: "2026-27",
+        status: "COMPLETED",
+        createdAt: "2026-09-12T08:00:00Z",
+      },
+      {
+        id: "init-fallback-2",
+        sisterClubId: "sc-1",
+        title: "Metro-Laguna Youth Leadership Academy (RYLA)",
+        description: "Weekend leadership workshop and vocational skill sessions for 50 public high school student council leaders.",
+        jointVolunteers: 20,
+        rotaryYear: "2026-27",
+        status: "IN_PROGRESS",
+        createdAt: "2026-10-05T10:30:00Z",
+      },
+      {
+        id: "init-fallback-3",
+        sisterClubId: "sc-1",
+        title: "Basic Literacy Book & School Supplies Distribution",
+        description: "Donation drive targeting 300 elementary school students in underserved coastal communities.",
+        jointVolunteers: 15,
+        rotaryYear: "2026-27",
+        status: "PROPOSED",
+        createdAt: "2026-10-18T14:00:00Z",
+      },
+    ],
   },
   {
     id: "sc-2",
@@ -48,6 +86,28 @@ export const FALLBACK_SISTER_CLUBS: SisterClubDTO[] = [
     status: "ACTIVE",
     notes: "Cross-district sister club agreement for international cultural exchange and global grant projects.",
     initiativesCount: 2,
+    initiatives: [
+      {
+        id: "init-fallback-4",
+        sisterClubId: "sc-2",
+        title: "Cross-Strait Virtual Cultural Exchange & Fellowship Forum",
+        description: "Online forum exploring technology adoption and micro-grants in community service.",
+        jointVolunteers: 40,
+        rotaryYear: "2026-27",
+        status: "COMPLETED",
+        createdAt: "2026-07-20T11:00:00Z",
+      },
+      {
+        id: "init-fallback-5",
+        sisterClubId: "sc-2",
+        title: "Global Grant Water Filtration Feasibility Study",
+        description: "Joint proposal drafting for clean potable water facilities in rural Laguna communities.",
+        jointVolunteers: 12,
+        rotaryYear: "2026-27",
+        status: "IN_PROGRESS",
+        createdAt: "2026-09-28T09:15:00Z",
+      },
+    ],
   },
   {
     id: "sc-3",
@@ -62,7 +122,39 @@ export const FALLBACK_SISTER_CLUBS: SisterClubDTO[] = [
     liaisonPhone: "+63 918 555 7722",
     status: "ACTIVE",
     notes: "Mother Rotary sponsor club supporting RYLA sponsorships and community water projects.",
-    initiativesCount: 5,
+    initiativesCount: 3,
+    initiatives: [
+      {
+        id: "init-fallback-6",
+        sisterClubId: "sc-3",
+        title: "Annual End Polio Now Bike & Walkathon",
+        description: "Fundraising walk for Rotary International PolioPlus fund with 150 community participants.",
+        jointVolunteers: 60,
+        rotaryYear: "2026-27",
+        status: "COMPLETED",
+        createdAt: "2026-08-10T06:00:00Z",
+      },
+      {
+        id: "init-fallback-7",
+        sisterClubId: "sc-3",
+        title: "Clean Water Installation at San Antonio Elementary",
+        description: "Installation of 3 multi-stage UV water dispensers for 800 elementary students.",
+        jointVolunteers: 25,
+        rotaryYear: "2026-27",
+        status: "IN_PROGRESS",
+        createdAt: "2026-10-02T13:00:00Z",
+      },
+      {
+        id: "init-fallback-8",
+        sisterClubId: "sc-3",
+        title: "Vocational Career Clinic for Graduating Scholars",
+        description: "Resume writing and mock interview prep conducted by Rotarian business leaders.",
+        jointVolunteers: 18,
+        rotaryYear: "2026-27",
+        status: "PROPOSED",
+        createdAt: "2026-10-15T15:30:00Z",
+      },
+    ],
   },
   {
     id: "sc-4",
@@ -78,6 +170,18 @@ export const FALLBACK_SISTER_CLUBS: SisterClubDTO[] = [
     status: "PENDING_MOA",
     notes: "Pending final District Governor sign-off on mutual twinning agreement.",
     initiativesCount: 1,
+    initiatives: [
+      {
+        id: "init-fallback-9",
+        sisterClubId: "sc-4",
+        title: "Twin Club Friendship Itinerary Alignment",
+        description: "Planning bilateral club delegation visits for upcoming District 3820 DISAS.",
+        jointVolunteers: 10,
+        rotaryYear: "2026-27",
+        status: "PROPOSED",
+        createdAt: "2026-10-10T12:00:00Z",
+      },
+    ],
   },
 ];
 
@@ -103,7 +207,7 @@ export async function getSisterClubsList(clubId = "00000000-0000-0000-0000-00000
         liaison_phone,
         status,
         notes,
-        partnership_initiatives ( id, title, description, joint_volunteer_count, created_at )
+        partnership_initiatives ( id, title, description, joint_volunteer_count, created_at, status )
       `)
       .eq("home_club_id", clubId)
       .order("created_at", { ascending: false });
@@ -131,6 +235,7 @@ export async function getSisterClubsList(clubId = "00000000-0000-0000-0000-00000
               description: i.description || "",
               jointVolunteers: i.joint_volunteer_count || 0,
               rotaryYear: "2026-27",
+              status: (i.status as InitiativeStatus) || "IN_PROGRESS",
               createdAt: i.created_at,
             }))
           : [],
@@ -145,22 +250,31 @@ export async function getSisterClubsList(clubId = "00000000-0000-0000-0000-00000
     baseClubs = [...FALLBACK_SISTER_CLUBS];
   }
 
-  // Merge with custom clubs from store (prepend if not duplicate)
+  // Merge with custom clubs from store
   for (const custom of store.customClubs) {
     if (!baseClubs.some((c) => c.id === custom.id)) {
-      baseClubs.unshift(custom);
+      baseClubs.unshift({
+        ...custom,
+        initiatives: [],
+      });
     }
   }
 
-  // Merge any initiatives recorded in store
+  // Merge custom initiatives from store into clubs
   return baseClubs.map((club) => {
     const clubStoreInitiatives = store.initiatives.filter((i) => i.sisterClubId === club.id);
     const existingInitiatives = club.initiatives || [];
-    const combinedInitiatives = [...clubStoreInitiatives, ...existingInitiatives];
+
+    // Filter out duplicates if any
+    const uniqueStoreInitiatives = clubStoreInitiatives.filter(
+      (si) => !existingInitiatives.some((ei) => ei.id === si.id)
+    );
+
+    const combinedInitiatives = [...uniqueStoreInitiatives, ...existingInitiatives];
 
     return {
       ...club,
-      initiativesCount: Math.max(club.initiativesCount, club.initiativesCount + clubStoreInitiatives.length),
+      initiativesCount: combinedInitiatives.length,
       initiatives: combinedInitiatives,
     };
   });

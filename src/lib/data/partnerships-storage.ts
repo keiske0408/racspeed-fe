@@ -1,30 +1,12 @@
 import fs from "fs";
 import path from "path";
-export interface StoredSisterClub {
-  id: string;
-  partnerClubName: string;
-  district: string;
-  country: string;
-  partnershipType: "SISTER_CLUB_MOA" | "DISTRICT_TWIN_CLUB" | "PROJECT_PARTNER" | "SPONSOR_ROTARY_CLUB";
-  agreementSignedDate: string;
-  renewalDate: string;
-  liaisonOfficerName: string;
-  liaisonEmail: string;
-  liaisonPhone: string;
-  status: "ACTIVE" | "PENDING_MOA" | "INACTIVE";
-  notes: string;
-  initiativesCount: number;
-}
+import {
+  StoredSisterClub,
+  StoredInitiative,
+  InitiativeStatus,
+} from "./partnerships-types";
 
-export interface StoredInitiative {
-  id: string;
-  sisterClubId: string;
-  title: string;
-  description: string;
-  jointVolunteers: number;
-  rotaryYear: string;
-  createdAt: string;
-}
+export * from "./partnerships-types";
 
 interface PartnershipsStore {
   customClubs: StoredSisterClub[];
@@ -35,10 +17,9 @@ const STORAGE_FILE = path.join(process.cwd(), "src", "lib", "data", "partnership
 
 function ensureDirectoryExistence(filePath: string) {
   const dirname = path.dirname(filePath);
-  if (fs.existsSync(dirname)) {
-    return true;
+  if (!fs.existsSync(dirname)) {
+    fs.mkdirSync(dirname, { recursive: true });
   }
-  fs.mkdirSync(dirname, { recursive: true });
 }
 
 export function readPartnershipsStore(): PartnershipsStore {
@@ -47,7 +28,18 @@ export function readPartnershipsStore(): PartnershipsStore {
       return { customClubs: [], initiatives: [] };
     }
     const data = fs.readFileSync(STORAGE_FILE, "utf-8");
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+
+    // Normalize initiatives to ensure each has a status
+    const initiatives = (parsed.initiatives || []).map((init: any) => ({
+      ...init,
+      status: (init.status as InitiativeStatus) || "IN_PROGRESS",
+    }));
+
+    return {
+      customClubs: parsed.customClubs || [],
+      initiatives,
+    };
   } catch (err) {
     console.error("Failed to read partnerships store:", err);
     return { customClubs: [], initiatives: [] };
@@ -73,4 +65,34 @@ export function addCustomInitiative(initiative: StoredInitiative) {
   const store = readPartnershipsStore();
   store.initiatives.unshift(initiative);
   writePartnershipsStore(store);
+}
+
+export function updateCustomInitiative(
+  initiativeId: string,
+  updates: Partial<StoredInitiative>
+): StoredInitiative | null {
+  const store = readPartnershipsStore();
+  const index = store.initiatives.findIndex((i) => i.id === initiativeId);
+  if (index === -1) return null;
+
+  store.initiatives[index] = {
+    ...store.initiatives[index],
+    ...updates,
+    updatedAt: new Date().toISOString(),
+  };
+
+  writePartnershipsStore(store);
+  return store.initiatives[index];
+}
+
+export function deleteCustomInitiative(initiativeId: string): boolean {
+  const store = readPartnershipsStore();
+  const initialLength = store.initiatives.length;
+  store.initiatives = store.initiatives.filter((i) => i.id !== initiativeId);
+
+  if (store.initiatives.length !== initialLength) {
+    writePartnershipsStore(store);
+    return true;
+  }
+  return false;
 }
