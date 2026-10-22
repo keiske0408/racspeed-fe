@@ -17,20 +17,12 @@ export function Header({ userEmail, userFullName = "Member", onMobileMenuToggle 
   const [isDark, setIsDark] = useState(false);
 
   useEffect(() => {
-    // Check initial dark mode state
-    const isDarkMode =
-      localStorage.theme === "dark" ||
-      (!("theme" in localStorage) && window.matchMedia("(prefers-color-scheme: dark)").matches);
-    setIsDark(isDarkMode);
-    if (isDarkMode) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
+    setIsDark(document.documentElement.classList.contains("dark"));
   }, []);
 
   function toggleTheme() {
-    if (isDark) {
+    const isCurrentlyDark = document.documentElement.classList.contains("dark");
+    if (isCurrentlyDark) {
       document.documentElement.classList.remove("dark");
       localStorage.theme = "light";
       setIsDark(false);

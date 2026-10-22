@@ -161,3 +161,72 @@ export async function rejectMemberAction(profileId: string, clubId = "00000000-0
   revalidatePath("/dashboard");
   return { success: true, message: "Account request declined." };
 }
+
+export async function updateMemberRoleAction(formData: FormData) {
+  await requireUser();
+  const rawClubId = (formData.get("clubId") as string) || "00000000-0000-0000-0000-000000000001";
+  await assertPermission(rawClubId, "ROLE_ASSIGN");
+
+  const memberId = formData.get("memberId") as string;
+  const roleKey = formData.get("roleKey") as string;
+  const status = (formData.get("status") as string) || "ACTIVE";
+
+  if (!memberId || !roleKey) {
+    return { success: false, error: "Member ID and Role are required." };
+  }
+
+  const adminClient = createAdminClient();
+
+  // Find membership
+  let { data: membership } = await adminClient
+    .from("club_memberships")
+    .select("id")
+    .eq("club_id", rawClubId)
+    .eq("profile_id", memberId)
+    .maybeSingle();
+
+  if (!membership) {
+    const { data: mById } = await adminClient
+      .from("club_memberships")
+      .select("id")
+      .eq("id", memberId)
+      .maybeSingle();
+    membership = mById;
+  }
+
+  if (membership) {
+    await adminClient
+      .from("club_memberships")
+      .update({ membership_status: status as any })
+      .eq("id", membership.id);
+
+    const { data: roleRecord } = await adminClient
+      .from("roles")
+      .select("id")
+      .eq("key", roleKey)
+      .maybeSingle();
+
+    if (roleRecord) {
+      await adminClient
+        .from("membership_roles")
+        .delete()
+        .eq("membership_id", membership.id);
+
+      await adminClient
+        .from("membership_roles")
+        .insert({
+          membership_id: membership.id,
+          role_id: roleRecord.id,
+        });
+    }
+  }
+
+  await adminClient
+    .from("profiles")
+    .update({ status: status === "ACTIVE" ? "ACTIVE" : "INACTIVE" })
+    .eq("id", memberId);
+
+  revalidatePath("/members");
+  revalidatePath("/dashboard");
+  return { success: true, message: `Role updated to ${roleKey.replace(/_/g, " ")} (${status}) successfully.` };
+}
