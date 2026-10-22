@@ -163,21 +163,58 @@ export async function rejectMemberAction(profileId: string, clubId = "00000000-0
 }
 
 export async function updateMemberRoleAction(formData: FormData) {
-  await requireUser();
+  const user = await requireUser();
   const rawClubId = (formData.get("clubId") as string) || "00000000-0000-0000-0000-000000000001";
   await assertPermission(rawClubId, "ROLE_ASSIGN");
 
   const memberId = formData.get("memberId") as string;
   const roleKey = formData.get("roleKey") as string;
-  const status = (formData.get("status") as string) || "ACTIVE";
+  const rawStatus = (formData.get("status") as string) || "ACTIVE";
+  const fullName = formData.get("fullName") as string;
+  const classification = formData.get("classification") as string;
+  const rotaryId = formData.get("rotaryId") as string;
+  const isPlatformAdminParam = formData.get("isPlatformAdmin");
 
   if (!memberId || !roleKey) {
     return { success: false, error: "Member ID and Role are required." };
   }
 
+  // Map to DB constraints
+  // club_memberships allows: 'ACTIVE', 'SUSPENDED', 'RESIGNED', 'ALUMNI', 'HONORARY', 'PROSPECTIVE'
+  let membershipStatus = "ACTIVE";
+  if (rawStatus === "PENDING" || rawStatus === "PROSPECTIVE" || rawStatus === "PROBATIONARY") {
+    membershipStatus = "PROSPECTIVE";
+  } else if (rawStatus === "INACTIVE" || rawStatus === "SUSPENDED") {
+    membershipStatus = "SUSPENDED";
+  } else if (rawStatus === "ALUMNI") {
+    membershipStatus = "ALUMNI";
+  }
+
+  // profiles allows: 'PENDING', 'ACTIVE', 'SUSPENDED', 'REJECTED'
+  let profileStatus = "ACTIVE";
+  if (rawStatus === "PENDING") {
+    profileStatus = "PENDING";
+  } else if (rawStatus === "INACTIVE" || rawStatus === "SUSPENDED") {
+    profileStatus = "SUSPENDED";
+  }
+
   const adminClient = createAdminClient();
 
-  // Find membership
+  // 1. Update Profile
+  const profileUpdates: Record<string, any> = {
+    status: profileStatus,
+  };
+  if (fullName && fullName.trim()) {
+    profileUpdates.full_name = fullName.trim();
+  }
+  // Only super admins can grant/revoke platform admin rights
+  if (user.isPlatformAdmin && isPlatformAdminParam !== null) {
+    profileUpdates.is_platform_admin = isPlatformAdminParam === "true";
+  }
+
+  await adminClient.from("profiles").update(profileUpdates).eq("id", memberId);
+
+  // 2. Find or create membership
   let { data: membership } = await adminClient
     .from("club_memberships")
     .select("id")
@@ -186,20 +223,33 @@ export async function updateMemberRoleAction(formData: FormData) {
     .maybeSingle();
 
   if (!membership) {
-    const { data: mById } = await adminClient
+    const { data: newMem } = await adminClient
       .from("club_memberships")
+      .upsert({
+        club_id: rawClubId,
+        profile_id: memberId,
+        membership_status: membershipStatus as any,
+        classification: classification || "Rotaract General",
+        rotary_id: rotaryId || null,
+      }, { onConflict: "club_id,profile_id" })
       .select("id")
-      .eq("id", memberId)
-      .maybeSingle();
-    membership = mById;
-  }
+      .single();
+    membership = newMem;
+  } else {
+    const memUpdates: Record<string, any> = {
+      membership_status: membershipStatus,
+    };
+    if (classification) memUpdates.classification = classification;
+    if (rotaryId !== undefined) memUpdates.rotary_id = rotaryId || null;
 
-  if (membership) {
     await adminClient
       .from("club_memberships")
-      .update({ membership_status: status as any })
+      .update(memUpdates)
       .eq("id", membership.id);
+  }
 
+  // 3. Assign role
+  if (membership) {
     const { data: roleRecord } = await adminClient
       .from("roles")
       .select("id")
@@ -221,12 +271,10 @@ export async function updateMemberRoleAction(formData: FormData) {
     }
   }
 
-  await adminClient
-    .from("profiles")
-    .update({ status: status === "ACTIVE" ? "ACTIVE" : "INACTIVE" })
-    .eq("id", memberId);
-
   revalidatePath("/members");
   revalidatePath("/dashboard");
-  return { success: true, message: `Role updated to ${roleKey.replace(/_/g, " ")} (${status}) successfully.` };
+  return {
+    success: true,
+    message: `Member ${fullName || "record"} updated: Role set to ${roleKey.replace(/_/g, " ")} (${membershipStatus}).`,
+  };
 }
