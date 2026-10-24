@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Sidebar } from "./sidebar";
 import { Header } from "./header";
 import { X } from "lucide-react";
@@ -13,6 +13,30 @@ export interface AppShellProps {
 
 export function AppShell({ children, userEmail, userFullName }: AppShellProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("racspeed_sidebar_collapsed");
+      if (saved !== null) {
+        setIsSidebarCollapsed(saved === "true");
+      }
+    } catch {
+      // LocalStorage not available
+    }
+  }, []);
+
+  function toggleSidebarCollapse() {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("racspeed_sidebar_collapsed", String(next));
+      } catch {
+        // LocalStorage not available
+      }
+      return next;
+    });
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#F8F9FB] dark:bg-[#0A0D14]">
@@ -21,6 +45,8 @@ export function AppShell({ children, userEmail, userFullName }: AppShellProps) {
         className="hidden md:flex"
         userFullName={userFullName}
         userEmail={userEmail}
+        collapsed={isSidebarCollapsed}
+        onToggleCollapse={toggleSidebarCollapse}
       />
 
       {/* Mobile Drawer */}
@@ -33,8 +59,10 @@ export function AppShell({ children, userEmail, userFullName }: AppShellProps) {
           <div className="relative w-64 bg-white dark:bg-[#0E121B] h-full flex flex-col z-10 elevation-popover">
             <div className="absolute top-4 right-4 z-20">
               <button
+                type="button"
                 onClick={() => setMobileMenuOpen(false)}
-                className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                aria-label="Close mobile navigation"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -42,8 +70,10 @@ export function AppShell({ children, userEmail, userFullName }: AppShellProps) {
             <Sidebar
               className="w-full flex-1 border-r-0"
               onNavigate={() => setMobileMenuOpen(false)}
+              onToggleCollapse={() => setMobileMenuOpen(false)}
               userFullName={userFullName}
               userEmail={userEmail}
+              collapsed={false}
             />
           </div>
         </div>
@@ -55,6 +85,14 @@ export function AppShell({ children, userEmail, userFullName }: AppShellProps) {
           userEmail={userEmail}
           userFullName={userFullName}
           onMobileMenuToggle={() => setMobileMenuOpen(true)}
+          onToggleSidebar={() => {
+            if (typeof window !== "undefined" && window.innerWidth < 768) {
+              setMobileMenuOpen((prev) => !prev);
+            } else {
+              toggleSidebarCollapse();
+            }
+          }}
+          isSidebarCollapsed={isSidebarCollapsed}
         />
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8">
           <div className="max-w-7xl mx-auto">{children}</div>

@@ -23,9 +23,17 @@ export interface HeaderProps {
   userEmail?: string;
   userFullName?: string;
   onMobileMenuToggle?: () => void;
+  onToggleSidebar?: () => void;
+  isSidebarCollapsed?: boolean;
 }
 
-export function Header({ userEmail, userFullName = "Member", onMobileMenuToggle }: HeaderProps) {
+export function Header({
+  userEmail,
+  userFullName = "Member",
+  onMobileMenuToggle,
+  onToggleSidebar,
+  isSidebarCollapsed = false,
+}: HeaderProps) {
   const router = useRouter();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
@@ -67,9 +75,17 @@ export function Header({ userEmail, userFullName = "Member", onMobileMenuToggle 
     <header className="h-16 border-b border-[#EDEDF2] dark:border-slate-800/80 bg-white dark:bg-[#0E121B] px-4 md:px-8 flex items-center justify-between shrink-0 select-none">
       <div className="flex items-center gap-3">
         <button
-          onClick={onMobileMenuToggle}
-          className="md:hidden p-2 rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-          aria-label="Toggle mobile menu"
+          type="button"
+          onClick={() => {
+            if (onToggleSidebar) {
+              onToggleSidebar();
+            } else if (onMobileMenuToggle) {
+              onMobileMenuToggle();
+            }
+          }}
+          className="p-2 rounded-xl text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+          aria-label="Toggle navigation menu"
+          title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
           <Menu className="w-5 h-5" />
         </button>
