@@ -8,6 +8,7 @@ import {
   Users,
   UserPlus,
   Calendar,
+  CalendarDays,
   FolderKanban,
   Receipt,
   FileSpreadsheet,
@@ -52,10 +53,11 @@ const NAV_SECTIONS: NavSection[] = [
   {
     title: "Activities",
     items: [
+      { label: "Master Calendar", href: "/calendar", icon: CalendarDays },
       { label: "Events & Check-in", href: "/events", icon: Calendar },
+      { label: "Task Center", href: "/tasks", icon: CheckSquare },
       { label: "GC Broadcasts", href: "/broadcasts", icon: Megaphone, badge: "AI" },
       { label: "Projects & Reports", href: "/projects", icon: FolderKanban },
-      { label: "Task Center", href: "/tasks", icon: CheckSquare },
     ],
   },
   {
