@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import QRCode from "qrcode";
 import {
   Calendar,
@@ -13,6 +14,7 @@ import {
   X,
   ShieldCheck,
   AlertCircle,
+  Megaphone,
 } from "lucide-react";
 import { formatManilaDate } from "@/lib/utils/dates";
 import { createEventAction, startQrAttendanceSessionAction } from "@/features/events/actions";
@@ -176,13 +178,22 @@ export function EventsClient({ initialEvents }: EventsClientProps) {
             Dynamic rolling-code sessions & real-time attendance verification (District 3820)
           </p>
         </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="inline-flex items-center gap-2 py-2 px-3.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition shadow-xs cursor-pointer shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          Create New Event
-        </button>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/broadcasts"
+            className="inline-flex items-center gap-1.5 py-2 px-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 font-semibold text-xs transition shadow-2xs shrink-0"
+          >
+            <Megaphone className="w-3.5 h-3.5 text-rose-600" />
+            GC Broadcast Studio
+          </Link>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="inline-flex items-center gap-2 py-2 px-3.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition shadow-xs cursor-pointer shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            Create New Event
+          </button>
+        </div>
       </div>
 
       {notification && (
@@ -240,14 +251,21 @@ export function EventsClient({ initialEvents }: EventsClientProps) {
               </div>
             </div>
 
-            <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+            <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 gap-2">
               <button
                 onClick={() => handleOpenQr(event)}
-                className="w-full inline-flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 font-semibold text-xs transition cursor-pointer shadow-xs"
+                className="inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 font-semibold text-xs transition cursor-pointer shadow-xs"
               >
-                <QrCode className="w-4 h-4" />
-                Start QR Session
+                <QrCode className="w-3.5 h-3.5" />
+                QR Session
               </button>
+              <Link
+                href={`/broadcasts?eventId=${event.id}`}
+                className="inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 font-semibold text-xs transition shadow-2xs"
+              >
+                <Megaphone className="w-3.5 h-3.5" />
+                Share to GC
+              </Link>
             </div>
           </div>
         ))}
