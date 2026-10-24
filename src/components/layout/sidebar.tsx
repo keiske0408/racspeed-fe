@@ -20,6 +20,7 @@ import {
   HelpCircle,
   ChevronDown,
   Menu,
+  Bookmark,
 } from "lucide-react";
 
 interface NavItem {
@@ -68,6 +69,7 @@ const NAV_SECTIONS: NavSection[] = [
   {
     title: "Misc",
     items: [
+      { label: "Resources & Links", href: "/resources", icon: Bookmark },
       { label: "Certificates", href: "/certificates", icon: Award },
       { label: "Club Settings", href: "/settings", icon: Settings },
     ],

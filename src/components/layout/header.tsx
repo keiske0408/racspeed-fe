@@ -1,7 +1,21 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Bell, Menu, LogOut, Sun, Moon, Plus, Calendar, ChevronDown } from "lucide-react";
+import {
+  Bell,
+  Menu,
+  LogOut,
+  Sun,
+  Moon,
+  Plus,
+  Calendar,
+  ChevronDown,
+  FolderKanban,
+  UserPlus,
+  Bookmark,
+  Receipt,
+  CheckSquare,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 
@@ -14,6 +28,7 @@ export interface HeaderProps {
 export function Header({ userEmail, userFullName = "Member", onMobileMenuToggle }: HeaderProps) {
   const router = useRouter();
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const [isDark, setIsDark] = useState(false);
 
   useEffect(() => {
@@ -43,6 +58,11 @@ export function Header({ userEmail, userFullName = "Member", onMobileMenuToggle 
     router.push("/login");
   }
 
+  function handleNavigate(path: string) {
+    setCreateMenuOpen(false);
+    router.push(path);
+  }
+
   return (
     <header className="h-16 border-b border-[#EDEDF2] dark:border-slate-800/80 bg-white dark:bg-[#0E121B] px-4 md:px-8 flex items-center justify-between shrink-0 select-none">
       <div className="flex items-center gap-3">
@@ -64,7 +84,7 @@ export function Header({ userEmail, userFullName = "Member", onMobileMenuToggle 
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
-        {/* Date / Rotary Year Selector (Matching "Last 6 months ⌵" in reference) */}
+        {/* Date / Rotary Year Selector */}
         <button
           className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#EDEDF2] dark:border-slate-800 text-[12.5px] font-semibold text-[#111625] dark:text-white bg-white dark:bg-[#161B26] hover:bg-slate-50 dark:hover:bg-slate-800/60 transition shadow-xs cursor-pointer"
           aria-label="Filter period"
@@ -74,14 +94,71 @@ export function Header({ userEmail, userFullName = "Member", onMobileMenuToggle 
           <ChevronDown className="w-3.5 h-3.5 text-[#8E95A5]" />
         </button>
 
-        {/* Primary CTA (Matching "+ Create" button in reference) */}
-        <button
-          onClick={() => router.push("/tasks")}
-          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#0D3594] hover:bg-[#092569] text-white text-[12.5px] font-semibold shadow-xs transition cursor-pointer"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          <span>Create</span>
-        </button>
+        {/* Primary Functional CTA with Quick-Create Popover */}
+        <div className="relative">
+          <button
+            onClick={() => {
+              setCreateMenuOpen(!createMenuOpen);
+              setDropdownOpen(false);
+            }}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#0D3594] hover:bg-[#092569] text-white text-[12.5px] font-semibold shadow-xs transition cursor-pointer"
+            aria-expanded={createMenuOpen}
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Create</span>
+            <ChevronDown className="w-3 h-3 opacity-75" />
+          </button>
+
+          {createMenuOpen && (
+            <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-[#161B26] border border-[#EDEDF2] dark:border-slate-800 rounded-2xl elevation-popover py-1.5 z-50">
+              <p className="px-3.5 py-1 text-[10px] font-bold tracking-wider text-[#8E95A5] uppercase">
+                Quick Operations
+              </p>
+              <button
+                onClick={() => handleNavigate("/events?action=new")}
+                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-[#111625] dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition"
+              >
+                <Calendar className="w-4 h-4 text-[#0D3594] dark:text-blue-400" />
+                <span>New Event / QR Session</span>
+              </button>
+              <button
+                onClick={() => handleNavigate("/projects?action=new")}
+                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-[#111625] dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition"
+              >
+                <FolderKanban className="w-4 h-4 text-[#17A863]" />
+                <span>Register Service Project</span>
+              </button>
+              <button
+                onClick={() => handleNavigate("/recruitment?action=new")}
+                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-[#111625] dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition"
+              >
+                <UserPlus className="w-4 h-4 text-[#8244E8]" />
+                <span>Add Prospect Member</span>
+              </button>
+              <button
+                onClick={() => handleNavigate("/resources")}
+                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-[#111625] dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition"
+              >
+                <Bookmark className="w-4 h-4 text-[#D97706]" />
+                <span>Add Resource Link</span>
+              </button>
+              <button
+                onClick={() => handleNavigate("/treasury")}
+                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-[#111625] dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition"
+              >
+                <Receipt className="w-4 h-4 text-emerald-600" />
+                <span>Record Dues Payment</span>
+              </button>
+              <button
+                onClick={() => handleNavigate("/tasks")}
+                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-[#111625] dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition"
+              >
+                <CheckSquare className="w-4 h-4 text-sky-600" />
+                <span>Assign Club Task</span>
+              </button>
+            </div>
+          )}
+        </div>
 
         <div className="h-5 w-px bg-[#EDEDF2] dark:bg-slate-800 mx-1 hidden sm:block" />
 
