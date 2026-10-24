@@ -8,6 +8,7 @@ import {
   updateTaskStatus,
   toggleChecklistItem,
   addChecklistItem,
+  updateTask,
   deleteTask,
   TaskStatus,
   TaskPriority,
@@ -217,3 +218,86 @@ export async function deleteTaskAction(taskId: string) {
     };
   }
 }
+
+export async function updateGroupTaskAction(taskId: string, formData: FormData) {
+  await requireUser();
+
+  const title = (formData.get("title") as string)?.trim();
+  const description = (formData.get("description") as string)?.trim() || "";
+  const committee = formData.get("committee") as TaskCommittee;
+  const priority = formData.get("priority") as TaskPriority;
+  const status = formData.get("status") as TaskStatus;
+  const dueDate = formData.get("dueDate") as string;
+
+  const assignedMemberIds = formData.getAll("assignedMemberIds") as string[];
+  const assignedMemberNames = formData.getAll("assignedMemberNames") as string[];
+
+  if (!title || title.length < 3) {
+    return { success: false, error: "Task title must be at least 3 characters." };
+  }
+
+  try {
+    const updated = updateTask(taskId, {
+      title,
+      description,
+      committee,
+      priority,
+      status,
+      dueDate,
+      assignedMemberIds,
+      assignedMemberNames,
+    });
+
+    if (!updated) {
+      return { success: false, error: "Task not found." };
+    }
+
+    revalidatePath("/tasks");
+    revalidatePath("/dashboard");
+
+    return {
+      success: true,
+      task: updated,
+      message: `Task "${updated.title}" successfully updated!`,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message || "Failed to update task",
+    };
+  }
+}
+
+export async function assignMembersToTaskAction(
+  taskId: string,
+  assignedMemberIds: string[],
+  assignedMemberNames: string[]
+) {
+  await requireUser();
+
+  try {
+    const updated = updateTask(taskId, {
+      assignedMemberIds,
+      assignedMemberNames,
+    });
+
+    if (!updated) {
+      return { success: false, error: "Task not found." };
+    }
+
+    revalidatePath("/tasks");
+    revalidatePath("/dashboard");
+
+    return {
+      success: true,
+      task: updated,
+      message: "Assignees updated successfully.",
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message || "Failed to update assignees",
+    };
+  }
+}
+

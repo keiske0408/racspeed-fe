@@ -236,6 +236,24 @@ export function addChecklistItem(
   return task;
 }
 
+export function updateTask(
+  taskId: string,
+  updates: Partial<Omit<GroupTaskDTO, "id" | "clubId" | "createdAt">>
+): GroupTaskDTO | null {
+  const tasks = readTasksStore();
+  const index = tasks.findIndex((t) => t.id === taskId);
+  if (index === -1) return null;
+
+  tasks[index] = {
+    ...tasks[index],
+    ...updates,
+    updatedAt: new Date().toISOString(),
+  };
+
+  writeTasksStore(tasks);
+  return tasks[index];
+}
+
 export function deleteTask(taskId: string): boolean {
   const tasks = readTasksStore();
   const initialLength = tasks.length;

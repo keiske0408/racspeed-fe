@@ -18,6 +18,9 @@ import {
   Flame,
   ArrowRight,
   ListTodo,
+  Edit2,
+  UserPlus,
+  Check,
 } from "lucide-react";
 import {
   GroupTaskDTO,
@@ -30,6 +33,8 @@ import { TaskStatsDTO } from "@/features/tasks/queries";
 import { MemberDTO } from "@/features/members/queries";
 import {
   createGroupTaskAction,
+  updateGroupTaskAction,
+  assignMembersToTaskAction,
   updateTaskStatusAction,
   toggleChecklistItemAction,
   addChecklistItemAction,
@@ -86,6 +91,87 @@ export function TasksClient({ initialTasks, stats: initialStats, members }: Task
   ]);
   const [newChecklistInput, setNewChecklistInput] = useState("");
   const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
+
+  // Notion / Linear Style Edit & Assignee Management
+  const [editingTask, setEditingTask] = useState<GroupTaskDTO | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editCommittee, setEditCommittee] = useState<TaskCommittee>("COMMUNITY_SERVICE");
+  const [editPriority, setEditPriority] = useState<TaskPriority>("MEDIUM");
+  const [editStatus, setEditStatus] = useState<TaskStatus>("TODO");
+  const [editDueDate, setEditDueDate] = useState("");
+  const [editAssignees, setEditAssignees] = useState<string[]>([]);
+  const [quickAssignTaskId, setQuickAssignTaskId] = useState<string | null>(null);
+
+  function openEditTask(task: GroupTaskDTO) {
+    setEditingTask(task);
+    setEditTitle(task.title);
+    setEditDescription(task.description);
+    setEditCommittee(task.committee);
+    setEditPriority(task.priority);
+    setEditStatus(task.status);
+    setEditDueDate(task.dueDate);
+    setEditAssignees(task.assignedMemberIds || []);
+  }
+
+  async function handleSaveEditTask(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!editingTask) return;
+
+    const formData = new FormData();
+    formData.set("title", editTitle);
+    formData.set("description", editDescription);
+    formData.set("committee", editCommittee);
+    formData.set("priority", editPriority);
+    formData.set("status", editStatus);
+    formData.set("dueDate", editDueDate);
+
+    editAssignees.forEach((memId) => {
+      const mem = members.find((m) => m.id === memId);
+      formData.append("assignedMemberIds", memId);
+      if (mem) formData.append("assignedMemberNames", mem.name);
+    });
+
+    startTransition(async () => {
+      const res = await updateGroupTaskAction(editingTask.id, formData);
+      if (res.success && res.task) {
+        setTasks((prev) => prev.map((t) => (t.id === editingTask.id ? res.task! : t)));
+        setEditingTask(null);
+        setNotice(res.message || "Task updated successfully!");
+        setTimeout(() => setNotice(null), 4000);
+      } else {
+        alert(res.error || "Failed to update task.");
+      }
+    });
+  }
+
+  function handleQuickAssignToggle(taskId: string, memberId: string) {
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) return;
+
+    const currentIds = task.assignedMemberIds || [];
+    const isAssigned = currentIds.includes(memberId);
+    const nextIds = isAssigned ? currentIds.filter((id) => id !== memberId) : [...currentIds, memberId];
+    const nextNames = nextIds
+      .map((id) => members.find((m) => m.id === id)?.name)
+      .filter((n): n is string => !!n);
+
+    // Optimistic update
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === taskId
+          ? { ...t, assignedMemberIds: nextIds, assignedMemberNames: nextNames }
+          : t
+      )
+    );
+
+    startTransition(async () => {
+      const res = await assignMembersToTaskAction(taskId, nextIds, nextNames);
+      if (res.success && res.task) {
+        setTasks((prev) => prev.map((t) => (t.id === taskId ? res.task! : t)));
+      }
+    });
+  }
 
   // Filter tasks
   const filteredTasks = tasks.filter((task) => {
@@ -433,6 +519,13 @@ export function TasksClient({ initialTasks, stats: initialStats, members }: Task
                         {priorityMeta.label}
                       </span>
                       <button
+                        onClick={() => openEditTask(task)}
+                        className="p-1 rounded-md text-slate-400 hover:text-[#0D3594] hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                        title="Edit Task & Assignees"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
                         onClick={() => handleDeleteTask(task.id, task.title)}
                         className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
                         title="Delete Task"
@@ -459,32 +552,72 @@ export function TasksClient({ initialTasks, stats: initialStats, members }: Task
                       <span>Due: {task.dueDate}</span>
                     </div>
 
-                    {/* Member Avatars */}
-                    {task.assignedMemberNames.length > 0 && (
-                      <div className="flex items-center -space-x-1.5 overflow-hidden">
-                        {task.assignedMemberNames.slice(0, 3).map((name, i) => {
-                          const initials = name
-                            .split(" ")
-                            .map((p) => p[0])
-                            .slice(0, 2)
-                            .join("");
-                          return (
-                            <div
-                              key={i}
-                              title={name}
-                              className="w-6 h-6 rounded-full bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900 flex items-center justify-center text-[10px] font-bold border-2 border-white dark:border-slate-900"
-                            >
-                              {initials}
+                    {/* Member Avatars & Quick Assign */}
+                    <div className="flex items-center gap-1.5 relative">
+                      {task.assignedMemberNames.length > 0 && (
+                        <div className="flex items-center -space-x-1.5 overflow-hidden">
+                          {task.assignedMemberNames.slice(0, 3).map((name, i) => {
+                            const initials = name
+                              .split(" ")
+                              .map((p) => p[0])
+                              .slice(0, 2)
+                              .join("");
+                            return (
+                              <div
+                                key={i}
+                                title={name}
+                                className="w-6 h-6 rounded-full bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900 flex items-center justify-center text-[10px] font-bold border-2 border-white dark:border-slate-900"
+                              >
+                                {initials}
+                              </div>
+                            );
+                          })}
+                          {task.assignedMemberNames.length > 3 && (
+                            <div className="w-6 h-6 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 flex items-center justify-center text-[9px] font-bold border-2 border-white dark:border-slate-900">
+                              +{task.assignedMemberNames.length - 3}
                             </div>
-                          );
-                        })}
-                        {task.assignedMemberNames.length > 3 && (
-                          <div className="w-6 h-6 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 flex items-center justify-center text-[9px] font-bold border-2 border-white dark:border-slate-900">
-                            +{task.assignedMemberNames.length - 3}
+                          )}
+                        </div>
+                      )}
+
+                      {/* Quick Assign Button (Notion / Linear style) */}
+                      <div className="relative">
+                        <button
+                          onClick={() => setQuickAssignTaskId(quickAssignTaskId === task.id ? null : task.id)}
+                          className="w-6 h-6 rounded-full border border-dashed border-slate-300 dark:border-slate-600 hover:border-[#0D3594] text-slate-400 hover:text-[#0D3594] flex items-center justify-center text-xs transition cursor-pointer"
+                          title="Assign or unassign members"
+                        >
+                          <UserPlus className="w-3 h-3" />
+                        </button>
+
+                        {quickAssignTaskId === task.id && (
+                          <div className="absolute right-0 top-full mt-1.5 w-56 bg-white dark:bg-[#161B26] border border-[#EDEDF2] dark:border-slate-800 rounded-xl elevation-popover p-2 z-30 space-y-1">
+                            <p className="px-2 py-1 text-[10px] font-bold text-[#8E95A5] uppercase tracking-wider">
+                              Assign Members
+                            </p>
+                            <div className="max-h-40 overflow-y-auto space-y-0.5">
+                              {members.map((member) => {
+                                const isAssigned = (task.assignedMemberIds || []).includes(member.id);
+                                return (
+                                  <button
+                                    key={member.id}
+                                    onClick={() => handleQuickAssignToggle(task.id, member.id)}
+                                    className={`w-full flex items-center justify-between p-1.5 rounded-lg text-xs transition text-left cursor-pointer ${
+                                      isAssigned
+                                        ? "bg-blue-50 dark:bg-blue-950/40 text-[#0D3594] dark:text-blue-300 font-semibold"
+                                        : "hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"
+                                    }`}
+                                  >
+                                    <span className="truncate">{member.name}</span>
+                                    {isAssigned && <Check className="w-3 h-3 text-[#17A863] shrink-0" />}
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
                         )}
                       </div>
-                    )}
+                    </div>
                   </div>
 
                   {/* Checklist & To-Do Progress */}
@@ -782,6 +915,218 @@ export function TasksClient({ initialTasks, stats: initialStats, members }: Task
                   className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition shadow-sm"
                 >
                   Create Group Task
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Task & Assignees Modal (Notion / Linear Style) */}
+      {editingTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="relative w-full max-w-2xl bg-white dark:bg-[#111622] rounded-2xl border border-[#EDEDF2] dark:border-slate-800 elevation-popover max-h-[90vh] flex flex-col overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#EDEDF2] dark:border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <span className="p-1.5 rounded-lg bg-[#E2EBFF] text-[#2563EB]">
+                  <Edit2 className="w-4 h-4" />
+                </span>
+                <div>
+                  <h2 className="text-base font-bold text-[#111625] dark:text-white">
+                    Edit Task & Assignees
+                  </h2>
+                  <p className="text-[11px] text-[#8E95A5]">
+                    Update deliverables, due date, committee, and member assignments
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setEditingTask(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-lg font-bold p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <form onSubmit={handleSaveEditTask} className="flex-1 overflow-y-auto p-6 space-y-4 text-xs">
+              <div>
+                <label className="block font-semibold text-[#111625] dark:text-slate-300 mb-1">
+                  Task Title *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-[#EDEDF2] dark:border-slate-700 text-[#111625] dark:text-white focus:outline-hidden focus:ring-1 focus:ring-[#0D3594]"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="block font-semibold text-[#111625] dark:text-slate-300 mb-1">
+                    Committee *
+                  </label>
+                  <select
+                    value={editCommittee}
+                    onChange={(e) => setEditCommittee(e.target.value as TaskCommittee)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-[#EDEDF2] dark:border-slate-700 text-[#111625] dark:text-white focus:outline-hidden focus:ring-1 focus:ring-[#0D3594]"
+                  >
+                    <option value="COMMUNITY_SERVICE">Community Service</option>
+                    <option value="CLUB_SERVICE">Club Service</option>
+                    <option value="PUBLIC_IMAGE">Public Image</option>
+                    <option value="FINANCE">Finance & Ways</option>
+                    <option value="INTERNATIONAL">International Service</option>
+                    <option value="VOCATIONAL">Vocational Service</option>
+                    <option value="SECRETARIAT">Secretariat</option>
+                    <option value="BOARD">Board of Directors</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-[#111625] dark:text-slate-300 mb-1">
+                    Priority *
+                  </label>
+                  <select
+                    value={editPriority}
+                    onChange={(e) => setEditPriority(e.target.value as TaskPriority)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-[#EDEDF2] dark:border-slate-700 text-[#111625] dark:text-white focus:outline-hidden focus:ring-1 focus:ring-[#0D3594]"
+                  >
+                    <option value="LOW">Low</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="HIGH">High</option>
+                    <option value="URGENT">Urgent</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-[#111625] dark:text-slate-300 mb-1">
+                    Status *
+                  </label>
+                  <select
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value as TaskStatus)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-[#EDEDF2] dark:border-slate-700 text-[#111625] dark:text-white focus:outline-hidden focus:ring-1 focus:ring-[#0D3594]"
+                  >
+                    <option value="TODO">To Do</option>
+                    <option value="IN_PROGRESS">In Progress</option>
+                    <option value="IN_REVIEW">In Review</option>
+                    <option value="COMPLETED">Completed</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-[#111625] dark:text-slate-300 mb-1">
+                    Target Due Date *
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={editDueDate}
+                    onChange={(e) => setEditDueDate(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-[#EDEDF2] dark:border-slate-700 text-[#111625] dark:text-white focus:outline-hidden focus:ring-1 focus:ring-[#0D3594]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-[#111625] dark:text-slate-300 mb-1">
+                  Description & Deliverables
+                </label>
+                <textarea
+                  rows={3}
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-[#EDEDF2] dark:border-slate-700 text-[#111625] dark:text-white focus:outline-hidden focus:ring-1 focus:ring-[#0D3594] resize-none"
+                />
+              </div>
+
+              {/* Assign Members Section (Notion / Linear style) */}
+              <div>
+                <label className="block font-semibold text-[#111625] dark:text-slate-300 mb-1">
+                  Assigned Members ({editAssignees.length})
+                </label>
+
+                {/* Selected Member Chips */}
+                {editAssignees.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {editAssignees.map((id) => {
+                      const member = members.find((m) => m.id === id);
+                      if (!member) return null;
+                      return (
+                        <span
+                          key={id}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/40 text-[#0D3594] dark:text-blue-300 border border-blue-200/50 text-xs font-medium"
+                        >
+                          <span className="w-4 h-4 rounded-full bg-[#0D3594] text-white flex items-center justify-center text-[9px] font-bold">
+                            {member.name.charAt(0)}
+                          </span>
+                          <span>{member.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => setEditAssignees(editAssignees.filter((memId) => memId !== id))}
+                            className="hover:text-red-600 transition"
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Member Roster Checklist to Add/Remove */}
+                <div className="max-h-36 overflow-y-auto border border-[#EDEDF2] dark:border-slate-700 rounded-xl p-2 bg-slate-50 dark:bg-slate-800/50 space-y-1">
+                  {members.map((member) => {
+                    const isSelected = editAssignees.includes(member.id);
+                    return (
+                      <label
+                        key={member.id}
+                        className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-white dark:hover:bg-slate-800 cursor-pointer text-xs transition"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setEditAssignees([...editAssignees, member.id]);
+                            } else {
+                              setEditAssignees(editAssignees.filter((id) => id !== member.id));
+                            }
+                          }}
+                          className="w-3.5 h-3.5 text-[#0D3594] rounded border-slate-300 focus:ring-[#0D3594]"
+                        />
+                        <div className="flex-1 flex items-center justify-between">
+                          <span className="font-medium text-[#111625] dark:text-slate-200">
+                            {member.name}
+                          </span>
+                          <span className="text-[10px] text-[#8E95A5]">
+                            {member.role || "Member"}
+                          </span>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Modal Actions */}
+              <div className="flex items-center justify-end gap-2 pt-4 border-t border-[#EDEDF2] dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setEditingTask(null)}
+                  className="px-4 py-2 rounded-xl border border-[#EDEDF2] dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isPending}
+                  className="px-5 py-2 rounded-xl bg-[#0D3594] hover:bg-[#092569] text-white font-semibold text-xs transition shadow-xs cursor-pointer disabled:opacity-50"
+                >
+                  {isPending ? "Saving..." : "Save Changes"}
                 </button>
               </div>
             </form>

@@ -164,7 +164,7 @@ export function Sidebar({
       {/* Sidebar Footer Utilities & User Card */}
       <div className="p-3 border-t border-[#EDEDF2] dark:border-slate-800/80 space-y-1">
         <Link
-          href="/settings"
+          href="/help"
           onClick={() => onNavigate?.()}
           className="flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] text-[#6B7280] dark:text-slate-400 hover:text-[#111625] dark:hover:text-white hover:bg-slate-100/60 dark:hover:bg-slate-800/40 transition font-medium"
         >
