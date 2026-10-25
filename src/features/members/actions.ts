@@ -285,3 +285,83 @@ export async function updateMemberRoleAction(formData: FormData) {
     message: `Member ${fullName || "record"} updated: Role set to ${roleKey.replace(/_/g, " ")} (${membershipStatus}).`,
   };
 }
+
+export async function registerApplicantAction(formData: FormData) {
+  const email = (formData.get("email") as string)?.trim().toLowerCase();
+  const password = formData.get("password") as string;
+  const fullName = (formData.get("fullName") as string)?.trim();
+  const defaultClubId =
+    process.env.NEXT_PUBLIC_DEFAULT_CLUB_ID || "00000000-0000-0000-0000-000000000001";
+
+  if (!email || !password || !fullName) {
+    return { success: false, error: "Full name, email, and password are required." };
+  }
+
+  const adminClient = createAdminClient();
+
+  // 1. Check if user already exists in auth.users
+  const { data: existingUsers } = await adminClient.auth.admin.listUsers();
+  let userId: string | null = null;
+  const existingUser = existingUsers?.users?.find((u) => u.email?.toLowerCase() === email);
+
+  if (existingUser) {
+    userId = existingUser.id;
+  } else {
+    // Create in Supabase Auth via adminClient with auto-confirm so they can reach pending-approval screen
+    const { data: newUser, error: createErr } = await adminClient.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { full_name: fullName },
+    });
+
+    if (createErr || !newUser.user) {
+      return { success: false, error: createErr?.message || "Failed to create user account." };
+    }
+    userId = newUser.user.id;
+  }
+
+  // 2. Ensure profile exists with status PENDING
+  const { error: profileError } = await adminClient.from("profiles").upsert(
+    {
+      id: userId,
+      email,
+      full_name: fullName,
+      status: "PENDING",
+      is_platform_admin: false,
+    },
+    { onConflict: "id" }
+  );
+
+  if (profileError) {
+    return { success: false, error: `Failed to record applicant profile: ${profileError.message}` };
+  }
+
+  // 3. Link membership to default club with PENDING status
+  await adminClient.from("club_memberships").upsert(
+    {
+      club_id: defaultClubId,
+      profile_id: userId,
+      membership_status: "PENDING",
+      classification: "Rotaract General",
+      joined_date: new Date().toISOString().split("T")[0],
+    },
+    { onConflict: "club_id,profile_id" }
+  );
+
+  // 4. Record privacy consent
+  try {
+    await adminClient.from("member_consents").insert({
+      profile_id: userId,
+      consent_type: "DATA_PRIVACY_TERMS",
+      consented: true,
+    });
+  } catch {}
+
+  revalidatePath("/members");
+  revalidatePath("/dashboard");
+  return {
+    success: true,
+    message: "Registration submitted successfully! Your account is pending verification by a Club Officer.",
+  };
+}

@@ -20,17 +20,48 @@ export async function getClubMembersList(clubId = "00000000-0000-0000-0000-00000
     const adminClient = createAdminClient();
 
     // 1. Fetch all profiles
-    const { data: profiles, error: pErr } = await adminClient
+    let { data: profiles, error: pErr } = await adminClient
       .from("profiles")
       .select("id, email, full_name, status, is_platform_admin, avatar_url")
       .order("created_at", { ascending: false });
 
     if (pErr || !profiles) {
       console.warn("Could not fetch profiles from database:", pErr?.message);
-      return [];
+      profiles = [];
     }
 
-    // 2. Fetch all club memberships with associated roles
+    // 2. Auto-reconcile: check for any auth.users missing from public.profiles
+    try {
+      const { data: authUsersData } = await adminClient.auth.admin.listUsers();
+      if (authUsersData?.users) {
+        const existingProfileIds = new Set(profiles.map((p) => p.id));
+        for (const u of authUsersData.users) {
+          if (!existingProfileIds.has(u.id)) {
+            const rawFullName = (u.user_metadata as any)?.full_name || u.email?.split("@")[0] || "Applicant";
+            const { data: newProfile } = await adminClient
+              .from("profiles")
+              .upsert({
+                id: u.id,
+                email: u.email || "applicant@rotaract.local",
+                full_name: rawFullName,
+                status: "PENDING",
+                is_platform_admin: false,
+              })
+              .select("id, email, full_name, status, is_platform_admin, avatar_url")
+              .single();
+
+            if (newProfile) {
+              profiles.push(newProfile);
+              existingProfileIds.add(newProfile.id);
+            }
+          }
+        }
+      }
+    } catch (authSyncErr) {
+      console.warn("Could not auto-reconcile auth users to profiles:", authSyncErr);
+    }
+
+    // 3. Fetch all club memberships with associated roles
     const { data: memberships } = await adminClient
       .from("club_memberships")
       .select(`
@@ -52,7 +83,7 @@ export async function getClubMembersList(clubId = "00000000-0000-0000-0000-00000
 
     const membershipMap = new Map((memberships || []).map((m) => [m.profile_id, m]));
 
-    // 3. Fetch prospects to bridge CRM milestones
+    // 4. Fetch prospects to bridge CRM milestones
     const { data: prospects } = await adminClient
       .from("prospects")
       .select("email, stage")
@@ -64,9 +95,9 @@ export async function getClubMembersList(clubId = "00000000-0000-0000-0000-00000
         .map((pr) => [pr.email!.toLowerCase(), pr.stage])
     );
 
-    // Filter profiles belonging to this club or platform admin
+    // Filter profiles belonging to this club, pending applicants, or platform admin
     const clubProfiles = profiles.filter(
-      (p) => membershipMap.has(p.id) || Boolean(p.is_platform_admin)
+      (p) => membershipMap.has(p.id) || p.status === "PENDING" || Boolean(p.is_platform_admin)
     );
 
     return clubProfiles.map((p) => {
