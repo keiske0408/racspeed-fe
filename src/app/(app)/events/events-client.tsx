@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import QRCode from "qrcode";
 import {
   Calendar,
   QrCode,
@@ -63,7 +62,7 @@ export function EventsClient({ initialEvents }: EventsClientProps) {
         .on(
           "postgres_changes",
           { event: "INSERT", schema: "public", table: "attendance_records" },
-          (payload) => {
+          (payload: any) => {
             const newRec = payload.new as any;
             if (newRec?.event_id) {
               setEvents((prev) =>
@@ -81,7 +80,7 @@ export function EventsClient({ initialEvents }: EventsClientProps) {
             }
           }
         )
-        .subscribe((status) => {
+        .subscribe((status: string) => {
           if (status === "SUBSCRIBED") {
             setIsRealtimeActive(true);
           }
@@ -242,6 +241,7 @@ export function EventsClient({ initialEvents }: EventsClientProps) {
 
   async function generateFreshToken(event: EventDTO) {
     try {
+      const QRCode = (await import("qrcode")).default;
       const res = await startQrAttendanceSessionAction(event.id);
       if (res.success && res.sessionToken) {
         setSessionToken(res.sessionToken);
@@ -263,14 +263,17 @@ export function EventsClient({ initialEvents }: EventsClientProps) {
         setQrCodeDataUrl(dataUrl);
       }
     } catch {
-      const fallbackToken = `racspeed-${event.id}-${Date.now().toString(36)}`;
-      setSessionToken(fallbackToken);
-      const dataUrl = await QRCode.toDataURL(fallbackToken, {
-        width: 320,
-        margin: 2,
-        color: { dark: "#0f172a", light: "#ffffff" },
-      });
-      setQrCodeDataUrl(dataUrl);
+      try {
+        const QRCode = (await import("qrcode")).default;
+        const fallbackToken = `racspeed-${event.id}-${Date.now().toString(36)}`;
+        setSessionToken(fallbackToken);
+        const dataUrl = await QRCode.toDataURL(fallbackToken, {
+          width: 320,
+          margin: 2,
+          color: { dark: "#0f172a", light: "#ffffff" },
+        });
+        setQrCodeDataUrl(dataUrl);
+      } catch {}
     }
   }
 

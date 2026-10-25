@@ -66,7 +66,7 @@ export function TreasuryClient({ initialData }: TreasuryClientProps) {
         .on(
           "postgres_changes",
           { event: "*", schema: "public", table: "payment_submissions" },
-          (payload) => {
+          (payload: any) => {
             if (payload.eventType === "INSERT") {
               const newSub = payload.new as any;
               setSubmissions((prev) => [
@@ -93,7 +93,7 @@ export function TreasuryClient({ initialData }: TreasuryClientProps) {
             }
           }
         )
-        .subscribe((status) => {
+        .subscribe((status: string) => {
           if (status === "SUBSCRIBED") {
             setIsRealtimeActive(true);
           }

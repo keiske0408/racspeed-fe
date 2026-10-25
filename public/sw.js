@@ -48,8 +48,8 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(event.request.url);
 
-  // Skip Next.js internal development hot-reload requests and edge API routes
-  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/_next/webpack-hmr")) {
+  // Skip Next.js internal runtime, static chunks, and API routes
+  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/_next/")) {
     return;
   }
 

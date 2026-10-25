@@ -8,18 +8,18 @@ export function PwaRegister() {
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    // 1. Register Service Worker in production or local environments
+    // 1. Service Worker lifecycle: only active in production to prevent throttling local dev HMR
     if (typeof window !== "undefined" && "serviceWorker" in navigator) {
-      window.addEventListener("load", () => {
-        navigator.serviceWorker
-          .register("/sw.js")
-          .then((reg) => {
-            // Service worker successfully registered
-          })
-          .catch((err) => {
-            // Non-critical fallback
-          });
-      });
+      if (process.env.NODE_ENV === "production") {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("/sw.js").catch(() => {});
+        });
+      } else {
+        // In local development, unregister any existing service worker to prevent intercepting Turbopack chunks
+        navigator.serviceWorker.getRegistrations().then((registrations) => {
+          registrations.forEach((reg) => reg.unregister());
+        });
+      }
     }
 
     // 2. Network connectivity status listeners
