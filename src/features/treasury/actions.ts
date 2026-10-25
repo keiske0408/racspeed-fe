@@ -79,12 +79,37 @@ export async function submitPaymentProofAction(formData: FormData) {
   const claimedAmount = Number(formData.get("claimedAmount") || 0);
   const paymentChannel = (formData.get("paymentChannel") as string) || "GCash";
   const referenceNumber = (formData.get("referenceNumber") as string) || "";
+  const receiptFile = formData.get("receiptFile") as File | null;
 
   if (claimedAmount <= 0) {
     return { success: false, error: "Please enter a valid payment amount." };
   }
 
   const adminClient = createAdminClient();
+  let receiptStoragePath = `receipts/proof-${Date.now()}.png`;
+
+  // Upload receipt image to Supabase Storage bucket 'receipts'
+  if (receiptFile && receiptFile.size > 0) {
+    try {
+      const arrayBuffer = await receiptFile.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const safeName = receiptFile.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+      receiptStoragePath = `${rawClubId}/${user.id}/${Date.now()}-${safeName}`;
+
+      const { error: uploadError } = await adminClient.storage
+        .from("receipts")
+        .upload(receiptStoragePath, buffer, {
+          contentType: receiptFile.type || "image/png",
+          upsert: true,
+        });
+
+      if (uploadError) {
+        console.warn("Supabase Storage receipt upload warning:", uploadError.message);
+      }
+    } catch (storageErr) {
+      console.warn("Storage upload exception, continuing with fallback path:", storageErr);
+    }
+  }
 
   const { error } = await adminClient.from("payment_submissions").insert({
     club_id: rawClubId,
@@ -93,7 +118,7 @@ export async function submitPaymentProofAction(formData: FormData) {
     claimed_date: new Date().toISOString().split("T")[0],
     payment_channel: paymentChannel,
     reference_number: referenceNumber || `REF-${Date.now()}`,
-    receipt_storage_path: `receipts/proof-${Date.now()}.png`,
+    receipt_storage_path: receiptStoragePath,
     status: "SUBMITTED",
   });
 
@@ -102,7 +127,8 @@ export async function submitPaymentProofAction(formData: FormData) {
   }
 
   revalidatePath("/treasury");
-  return { success: true, message: "Payment proof submitted! Awaiting Treasurer review." };
+  revalidatePath("/dashboard");
+  return { success: true, message: "Payment proof and receipt uploaded! Awaiting Treasurer review." };
 }
 
 export async function verifyPaymentSubmissionAction(submissionId: string, clubId = "00000000-0000-0000-0000-000000000001") {

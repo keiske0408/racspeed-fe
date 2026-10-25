@@ -119,10 +119,16 @@ const SEED_TASKS: GroupTaskDTO[] = [
   },
 ];
 
+let inMemoryTasks: GroupTaskDTO[] = [...SEED_TASKS];
+
 function ensureDirectoryExistence(filePath: string) {
-  const dirname = path.dirname(filePath);
-  if (!fs.existsSync(dirname)) {
-    fs.mkdirSync(dirname, { recursive: true });
+  try {
+    const dirname = path.dirname(filePath);
+    if (!fs.existsSync(dirname)) {
+      fs.mkdirSync(dirname, { recursive: true });
+    }
+  } catch {
+    // Read-only filesystem in serverless environments
   }
 }
 
@@ -130,24 +136,31 @@ export function readTasksStore(): GroupTaskDTO[] {
   try {
     if (!fs.existsSync(STORAGE_FILE)) {
       ensureDirectoryExistence(STORAGE_FILE);
-      fs.writeFileSync(STORAGE_FILE, JSON.stringify(SEED_TASKS, null, 2), "utf-8");
-      return SEED_TASKS;
+      try {
+        fs.writeFileSync(STORAGE_FILE, JSON.stringify(SEED_TASKS, null, 2), "utf-8");
+      } catch {
+        // Ephemeral in-memory fallback
+      }
+      return inMemoryTasks;
     }
     const data = fs.readFileSync(STORAGE_FILE, "utf-8");
     const parsed = JSON.parse(data);
-    return Array.isArray(parsed) ? parsed : SEED_TASKS;
+    inMemoryTasks = Array.isArray(parsed) ? parsed : [...SEED_TASKS];
+    return inMemoryTasks;
   } catch (err) {
-    console.error("Failed to read tasks store:", err);
-    return SEED_TASKS;
+    console.warn("Failed to read tasks store from filesystem, using seed memory:", err);
+    return inMemoryTasks;
   }
 }
 
 export function writeTasksStore(tasks: GroupTaskDTO[]) {
+  inMemoryTasks = tasks;
   try {
     ensureDirectoryExistence(STORAGE_FILE);
     fs.writeFileSync(STORAGE_FILE, JSON.stringify(tasks, null, 2), "utf-8");
   } catch (err) {
-    console.error("Failed to write tasks store:", err);
+    // Log gracefully instead of crashing on read-only serverless filesystems
+    console.warn("Serverless filesystem write ignored, cached in-memory:", err);
   }
 }
 

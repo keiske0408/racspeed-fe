@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { createAdminClient } from "@/lib/supabase/admin";
 import {
   createResource,
   updateResource,
@@ -28,6 +29,7 @@ const resourceSchema = z.object({
     "OTHER",
   ]),
   isPinned: z.boolean().default(false),
+  clubId: z.string().default("00000000-0000-0000-0000-000000000001"),
 });
 
 function normalizeUrl(url: string): string {
@@ -47,6 +49,7 @@ export async function createResourceAction(formData: FormData) {
       url: rawUrl,
       category: formData.get("category") as ResourceCategory,
       isPinned: formData.get("isPinned") === "true" || formData.get("isPinned") === "on",
+      clubId: (formData.get("clubId") as string) || "00000000-0000-0000-0000-000000000001",
     });
 
     const created = createResource({
@@ -56,6 +59,23 @@ export async function createResourceAction(formData: FormData) {
       category: parsed.category,
       isPinned: parsed.isPinned,
     });
+
+    try {
+      const admin = createAdminClient();
+      await admin.from("resources").insert({
+        id: created.id,
+        club_id: parsed.clubId,
+        title: created.title,
+        description: created.description,
+        url: created.url,
+        category: created.category,
+        is_pinned: created.isPinned,
+        created_at: created.createdAt,
+        updated_at: created.updatedAt,
+      });
+    } catch (dbErr) {
+      console.warn("Could not sync resource to Supabase:", dbErr);
+    }
 
     revalidatePath("/resources");
     revalidatePath("/dashboard");
@@ -88,6 +108,20 @@ export async function updateResourceAction(id: string, formData: FormData) {
       return { success: false, error: "Resource not found" };
     }
 
+    try {
+      const admin = createAdminClient();
+      await admin.from("resources").update({
+        title: updated.title,
+        description: updated.description,
+        url: updated.url,
+        category: updated.category,
+        is_pinned: updated.isPinned,
+        updated_at: updated.updatedAt,
+      }).eq("id", id);
+    } catch (dbErr) {
+      console.warn("Could not sync resource update to Supabase:", dbErr);
+    }
+
     revalidatePath("/resources");
     revalidatePath("/dashboard");
     return { success: true, data: updated };
@@ -101,6 +135,13 @@ export async function deleteResourceAction(id: string) {
     const deleted = deleteResource(id);
     if (!deleted) {
       return { success: false, error: "Resource not found or already deleted" };
+    }
+
+    try {
+      const admin = createAdminClient();
+      await admin.from("resources").delete().eq("id", id);
+    } catch (dbErr) {
+      console.warn("Could not sync resource deletion to Supabase:", dbErr);
     }
 
     revalidatePath("/resources");

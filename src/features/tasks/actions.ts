@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requireUser } from "@/lib/auth/session";
 import {
   createTask,
@@ -94,6 +95,29 @@ export async function createGroupTaskAction(formData: FormData) {
       createdBy: user.fullName || user.email,
     });
 
+    // Sync to Supabase tasks table if available
+    try {
+      const admin = createAdminClient();
+      await admin.from("tasks").insert({
+        id: created.id,
+        club_id: created.clubId,
+        title: created.title,
+        description: created.description,
+        committee: created.committee,
+        status: created.status,
+        priority: created.priority,
+        due_date: created.dueDate,
+        assigned_member_ids: created.assignedMemberIds,
+        assigned_member_names: created.assignedMemberNames,
+        checklist: created.checklist,
+        created_by: created.createdBy,
+        created_at: created.createdAt,
+        updated_at: created.updatedAt,
+      });
+    } catch (dbErr) {
+      console.warn("Could not sync task insert to Supabase:", dbErr);
+    }
+
     revalidatePath("/tasks");
     revalidatePath("/dashboard");
     revalidatePath("/projects");
@@ -118,6 +142,13 @@ export async function updateTaskStatusAction(taskId: string, status: TaskStatus)
     const updated = updateTaskStatus(taskId, status);
     if (!updated) {
       return { success: false, error: "Task not found." };
+    }
+
+    try {
+      const admin = createAdminClient();
+      await admin.from("tasks").update({ status, updated_at: new Date().toISOString() }).eq("id", taskId);
+    } catch (dbErr) {
+      console.warn("Could not sync task status to Supabase:", dbErr);
     }
 
     revalidatePath("/tasks");
@@ -147,6 +178,17 @@ export async function toggleChecklistItemAction(
     const updated = toggleChecklistItem(taskId, itemId, forcedState);
     if (!updated) {
       return { success: false, error: "Task or checklist item not found." };
+    }
+
+    try {
+      const admin = createAdminClient();
+      await admin.from("tasks").update({
+        checklist: updated.checklist,
+        status: updated.status,
+        updated_at: updated.updatedAt,
+      }).eq("id", taskId);
+    } catch (dbErr) {
+      console.warn("Could not sync checklist toggle to Supabase:", dbErr);
     }
 
     revalidatePath("/tasks");
@@ -180,6 +222,17 @@ export async function addChecklistItemAction(
       return { success: false, error: "Task not found." };
     }
 
+    try {
+      const admin = createAdminClient();
+      await admin.from("tasks").update({
+        checklist: updated.checklist,
+        status: updated.status,
+        updated_at: updated.updatedAt,
+      }).eq("id", taskId);
+    } catch (dbErr) {
+      console.warn("Could not sync checklist item addition to Supabase:", dbErr);
+    }
+
     revalidatePath("/tasks");
 
     return {
@@ -202,6 +255,13 @@ export async function deleteTaskAction(taskId: string) {
     const ok = deleteTask(taskId);
     if (!ok) {
       return { success: false, error: "Task not found or could not be removed." };
+    }
+
+    try {
+      const admin = createAdminClient();
+      await admin.from("tasks").delete().eq("id", taskId);
+    } catch (dbErr) {
+      console.warn("Could not sync task deletion to Supabase:", dbErr);
     }
 
     revalidatePath("/tasks");
@@ -250,6 +310,23 @@ export async function updateGroupTaskAction(taskId: string, formData: FormData) 
 
     if (!updated) {
       return { success: false, error: "Task not found." };
+    }
+
+    try {
+      const admin = createAdminClient();
+      await admin.from("tasks").update({
+        title,
+        description,
+        committee,
+        priority,
+        status,
+        due_date: dueDate,
+        assigned_member_ids: assignedMemberIds,
+        assigned_member_names: assignedMemberNames,
+        updated_at: updated.updatedAt,
+      }).eq("id", taskId);
+    } catch (dbErr) {
+      console.warn("Could not sync task update to Supabase:", dbErr);
     }
 
     revalidatePath("/tasks");

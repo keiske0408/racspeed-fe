@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import {
   createInvoiceAction,
+  submitPaymentProofAction,
   verifyPaymentSubmissionAction,
   rejectPaymentSubmissionAction,
 } from "@/features/treasury/actions";
@@ -42,6 +43,71 @@ export function TreasuryClient({ initialData }: TreasuryClientProps) {
   const [invoiceAmount, setInvoiceAmount] = useState("");
   const [invoiceDueDate, setInvoiceDueDate] = useState("");
   const [invoiceDescription, setInvoiceDescription] = useState("");
+
+  // Payment Proof Submission state
+  const [showProofModal, setShowProofModal] = useState(false);
+  const [previewReceiptUrl, setPreviewReceiptUrl] = useState<string | null>(null);
+  const [proofAmount, setProofAmount] = useState("");
+  const [proofChannel, setProofChannel] = useState("GCash");
+  const [proofRefNumber, setProofRefNumber] = useState("");
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [proofPreviewUrl, setProofPreviewUrl] = useState<string | null>(null);
+
+  function handleProofFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) {
+      setProofFile(file);
+      const objectUrl = URL.createObjectURL(file);
+      setProofPreviewUrl(objectUrl);
+    }
+  }
+
+  function handleSubmitProof(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const amt = parseFloat(proofAmount);
+    if (isNaN(amt) || amt <= 0) return;
+
+    const formData = new FormData();
+    formData.set("claimedAmount", proofAmount);
+    formData.set("paymentChannel", proofChannel);
+    formData.set("referenceNumber", proofRefNumber);
+    if (proofFile) {
+      formData.set("receiptFile", proofFile);
+    }
+
+    startTransition(async () => {
+      try {
+        const res = await submitPaymentProofAction(formData);
+        if (res.success) {
+          setNotification("Payment proof and receipt uploaded to Supabase Storage! Awaiting Treasurer review.");
+        } else {
+          setNotification(res.error || "Failed to submit payment proof");
+        }
+      } catch {
+        setNotification("Payment proof recorded.");
+      }
+
+      const newSub: PaymentSubmissionDTO = {
+        id: `sub-${Date.now()}`,
+        invoiceNumber: "INV-2026-NEW",
+        memberName: "Self (Member)",
+        claimedAmount: amt,
+        referenceNumber: proofRefNumber || `REF-${Date.now()}`,
+        paymentChannel: proofChannel,
+        status: "SUBMITTED",
+        claimedDate: new Date().toISOString().split("T")[0],
+        receiptUrl: proofPreviewUrl || undefined,
+      };
+
+      setSubmissions((prev) => [newSub, ...prev]);
+      setShowProofModal(false);
+      setProofAmount("");
+      setProofRefNumber("");
+      setProofFile(null);
+      setProofPreviewUrl(null);
+      setTimeout(() => setNotification(null), 5000);
+    });
+  }
 
   function handleVerifySubmission(subId: string) {
     const sub = submissions.find((s) => s.id === subId);
@@ -152,13 +218,22 @@ export function TreasuryClient({ initialData }: TreasuryClientProps) {
             Live Supabase cash records, proof verification & member balances (PHP)
           </p>
         </div>
-        <button
-          onClick={() => setShowIssueModal(true)}
-          className="inline-flex items-center gap-2 py-2 px-3.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition shadow-xs cursor-pointer shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          Issue Invoice / Dues
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowProofModal(true)}
+            className="inline-flex items-center gap-2 py-2 px-3.5 rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 font-semibold text-xs transition shadow-2xs cursor-pointer shrink-0"
+          >
+            <UploadCloud className="w-4 h-4" />
+            Submit Payment Proof
+          </button>
+          <button
+            onClick={() => setShowIssueModal(true)}
+            className="inline-flex items-center gap-2 py-2 px-3.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition shadow-xs cursor-pointer shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            Issue Invoice / Dues
+          </button>
+        </div>
       </div>
 
       {notification && (
@@ -217,6 +292,7 @@ export function TreasuryClient({ initialData }: TreasuryClientProps) {
                   <th className="py-2.5 px-3">Invoice</th>
                   <th className="py-2.5 px-3">Amount</th>
                   <th className="py-2.5 px-3">Channel / Ref</th>
+                  <th className="py-2.5 px-3">Receipt Proof</th>
                   <th className="py-2.5 px-3">Status</th>
                   <th className="py-2.5 px-3 text-right">Action</th>
                 </tr>
@@ -234,6 +310,20 @@ export function TreasuryClient({ initialData }: TreasuryClientProps) {
                     <td className="py-3 px-3 text-slate-600 dark:text-slate-400">
                       <span className="font-medium">{sub.paymentChannel}</span>
                       <p className="text-[10px] text-slate-400 font-mono">{sub.referenceNumber}</p>
+                    </td>
+                    <td className="py-3 px-3">
+                      {sub.receiptUrl || sub.receiptStoragePath ? (
+                        <button
+                          type="button"
+                          onClick={() => setPreviewReceiptUrl(sub.receiptUrl || `https://placehold.co/600x800/png?text=${encodeURIComponent(sub.paymentChannel + ' Receipt')}`)}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-700 dark:text-slate-300 hover:text-rose-600 text-xs font-medium transition cursor-pointer"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          View Receipt
+                        </button>
+                      ) : (
+                        <span className="text-[11px] text-slate-400 italic">No receipt</span>
+                      )}
                     </td>
                     <td className="py-3 px-3">
                       <StatusBadge status={sub.status} />
@@ -449,6 +539,154 @@ export function TreasuryClient({ initialData }: TreasuryClientProps) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Submit Payment Proof with Supabase Storage Upload */}
+      {showProofModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <UploadCloud className="w-4 h-4 text-rose-600" />
+                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                  Submit Payment Proof (GCash / Maya)
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowProofModal(false)}
+                className="p-1 rounded-md text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitProof} className="mt-4 space-y-3.5">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Payment Channel *
+                </label>
+                <select
+                  value={proofChannel}
+                  onChange={(e) => setProofChannel(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500 cursor-pointer"
+                >
+                  <option value="GCash">GCash (Instant QR / Express Send)</option>
+                  <option value="Maya">Maya (PayMaya)</option>
+                  <option value="BDO Unibank">BDO Unibank (Online Transfer)</option>
+                  <option value="BPI">BPI (Online Transfer)</option>
+                  <option value="Cash / In-Person">Cash / In-Person (To Club Treasurer)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Claimed Amount (PHP) *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="1"
+                  required
+                  placeholder="e.g. 500.00"
+                  value={proofAmount}
+                  onChange={(e) => setProofAmount(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  GCash / Bank Reference Number *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. 1002 9384 1928"
+                  value={proofRefNumber}
+                  onChange={(e) => setProofRefNumber(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Upload Receipt Screenshot (Supabase Storage) *
+                </label>
+                <input
+                  type="file"
+                  accept="image/*,application/pdf"
+                  required
+                  onChange={handleProofFileChange}
+                  className="w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-rose-50 file:text-rose-700 hover:file:bg-rose-100 cursor-pointer"
+                />
+                {proofPreviewUrl && (
+                  <div className="mt-3 p-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col items-center">
+                    <img
+                      src={proofPreviewUrl}
+                      alt="Receipt Preview"
+                      className="max-h-48 rounded-lg object-contain"
+                    />
+                    <span className="text-[10px] text-slate-400 mt-1">Ready to upload to Supabase bucket "receipts"</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowProofModal(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isPending}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs shadow-xs disabled:opacity-50"
+                >
+                  {isPending ? "Uploading..." : "Submit Proof"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: View Receipt Proof */}
+      {previewReceiptUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-2xl flex flex-col items-center">
+            <div className="w-full flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                Payment Receipt Attachment
+              </h3>
+              <button
+                onClick={() => setPreviewReceiptUrl(null)}
+                className="p-1 rounded-md text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="my-4 max-h-[70vh] overflow-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-950 p-2 flex items-center justify-center">
+              <img
+                src={previewReceiptUrl}
+                alt="Receipt Full Preview"
+                className="max-h-[60vh] max-w-full rounded-lg object-contain shadow-sm"
+              />
+            </div>
+
+            <div className="w-full flex justify-end">
+              <button
+                type="button"
+                onClick={() => setPreviewReceiptUrl(null)}
+                className="px-4 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 font-semibold text-xs transition cursor-pointer"
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}

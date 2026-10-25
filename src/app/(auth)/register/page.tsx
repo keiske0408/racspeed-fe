@@ -57,6 +57,20 @@ export default function RegisterPage() {
           is_platform_admin: false,
         });
 
+        // Link membership to default club
+        const defaultClubId =
+          process.env.NEXT_PUBLIC_DEFAULT_CLUB_ID || "00000000-0000-0000-0000-000000000001";
+        await supabase.from("club_memberships").upsert(
+          {
+            club_id: defaultClubId,
+            profile_id: data.user.id,
+            membership_status: "ACTIVE",
+            classification: "Rotaract General",
+            joined_date: new Date().toISOString().split("T")[0],
+          },
+          { onConflict: "club_id,profile_id" }
+        );
+
         // Record privacy consent
         await supabase.from("member_consents").insert({
           profile_id: data.user.id,

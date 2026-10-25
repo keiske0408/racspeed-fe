@@ -64,7 +64,12 @@ export async function getClubMembersList(clubId = "00000000-0000-0000-0000-00000
         .map((pr) => [pr.email!.toLowerCase(), pr.stage])
     );
 
-    return profiles.map((p) => {
+    // Filter profiles belonging to this club or platform admin
+    const clubProfiles = profiles.filter(
+      (p) => membershipMap.has(p.id) || Boolean(p.is_platform_admin)
+    );
+
+    return clubProfiles.map((p) => {
       const mem = membershipMap.get(p.id);
       const roleRecord = (mem?.membership_roles as any[])?.[0]?.roles;
       const roleKey = roleRecord?.key || (p.is_platform_admin ? "PRESIDENT" : "GENERAL_MEMBER");

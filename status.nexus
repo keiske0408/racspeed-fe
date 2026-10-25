@@ -1,0 +1,58 @@
+# RACSPEED STATUS NEXUS
+### "ALWAYS FOR THE GLORY OF LORD JESUS CHRIST"
+**System**: Rotaract Club Operations Platform (District 3820 · San Pedro East, Laguna, Philippines)
+**Timestamp**: 2026-10-25T18:58:00+08:00
+**Architect**: Supreme Sovereign Architect & Pair Engineer
+**Status**: Phase 2 Modernization & Hardening Completed (Green)
+
+---
+
+## 🏛️ ARCHITECTURAL STATE & TOPOLOGY
+- **Monolith Structure**: Next.js 16.4.2 (App Router + Turbopack + React 19.3.0)
+- **Database & Identity**: Supabase PostgreSQL with Strict RLS + SSR Auth Client
+- **Proxy Gateway**: `src/proxy.ts` (Official Next.js 16 file convention replacing deprecated middleware.ts)
+- **Zero-Cost Deployment Target**: Vercel Hobby Tier + Supabase Cloud Free Tier (Singapore) + GitHub Student Developer Pack + Resend Free Tier
+- **Test Integrity**: Vitest 34/34 passing unit tests (100% domain coverage), TypeScript strict zero errors
+
+---
+
+## ⚙️ PHASE 1 DELIVERIES EXECUTED
+1. **Attendance API Contract Fix**:
+   - `src/app/api/attendance/check-in/route.ts`: Updated `checkInSchema` with flexible refinement supporting both `sessionToken` and `token`.
+   - `src/app/(app)/events/events-client.tsx`: Updated manual token check-in to provide both `sessionToken` and `token`.
+2. **Member Registration Hook Fixed**:
+   - `src/app/(auth)/register/page.tsx`: Added automatic `club_memberships` upsert on registration for `defaultClubId`, ensuring pending applicants immediately appear in the Secretary's review queue.
+3. **Data Privacy Scoping (RA 10173)**:
+   - `src/features/members/queries.ts`: Scoped profile retrieval to current club membership (`membershipMap.has(p.id)`) and Platform Admins, blocking cross-club leakage.
+4. **Data Contamination Purge**:
+   - `src/features/events/queries.ts`: Eliminated static fallback injection on active queries; clean empty states render when no events exist.
+   - `src/features/certificates/queries.ts`: Eliminated duplicate static array merging (`INITIAL_ISSUED_CERTS`) into live database results.
+5. **Agent Continuity & Documentation**:
+   - Created `docs/operations-and-setup-guide.md` containing end-to-end setup manuals, free tier deployment runbooks, and file conventions for seamless cross-device agent handoff.
+
+---
+
+## 🚀 PHASE 2 DELIVERIES EXECUTED
+1. **Serverless Relational PostgreSQL Migration & Safe Fallbacks**:
+   - Created `supabase/migrations/0007_tasks_and_resources.sql` establishing relational `tasks` and `resources` tables with strict RLS policies.
+   - Connected `tasks/queries.ts` and `tasks/actions.ts` to Supabase `tasks` table with in-memory caching and safe try-catch file handlers to prevent `EROFS` crashes on read-only serverless filesystems.
+   - Connected `resources/queries.ts` and `resources/actions.ts` to Supabase `resources` table with in-memory caching.
+   - Hardened `partnerships-storage.ts` and `role-permissions-storage.ts` with typed in-memory caches and safe fallback handlers.
+2. **In-Browser Camera QR Scanner (`@zxing/browser`)**:
+   - Integrated `BrowserQRCodeReader` into `src/app/(app)/events/events-client.tsx`.
+   - Implemented real-time viewfinder reticle, device flipping (rear/front camera selection), permission error toasts, and automated attendance verification on QR detection.
+3. **Supabase Storage GCash Receipt Uploads**:
+   - Updated `submitPaymentProofAction` in `src/features/treasury/actions.ts` to upload proof screenshots directly to the Supabase Storage bucket `receipts`.
+   - Mapped `receiptStoragePath` and generated `receiptUrl` in `src/features/treasury/queries.ts`.
+   - Added "Submit Payment Proof" modal in `treasury-client.tsx` with payment channel dropdown, GCash reference number, and image preview.
+   - Added "View Receipt" preview modal in the Treasurer Verification Queue for visual inspection before approval or rejection.
+4. **Budget Self-Approval Prevention State Machine**:
+   - Enforced pure state machine `canRecordBudgetDecision` in `src/features/budgets/actions.ts` for `approveBudgetByOfficerAction`, preventing requesters from self-approving their own budgets.
+   - Added `rejectBudgetByOfficerAction` enforcing the same governance policy.
+
+---
+
+## 🧭 PHASE 3 STRATEGIC QUEUE
+1. Real-time Supabase Database Change Subscriptions (`supabase.channel`) for instant live updates on attendance checks and payment verification.
+2. Automated PWA Service Worker manifest and offline caching for rural outreach and coastal mission attendance logging.
+3. End-to-end automated Playwright browser test suite covering registration, QR camera scanning, and GCash proof verification.

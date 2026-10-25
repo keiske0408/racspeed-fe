@@ -15,17 +15,23 @@ interface PartnershipsStore {
 
 const STORAGE_FILE = path.join(process.cwd(), "src", "lib", "data", "partnerships-store.json");
 
+let inMemoryPartnerships: PartnershipsStore = { customClubs: [], initiatives: [] };
+
 function ensureDirectoryExistence(filePath: string) {
-  const dirname = path.dirname(filePath);
-  if (!fs.existsSync(dirname)) {
-    fs.mkdirSync(dirname, { recursive: true });
+  try {
+    const dirname = path.dirname(filePath);
+    if (!fs.existsSync(dirname)) {
+      fs.mkdirSync(dirname, { recursive: true });
+    }
+  } catch {
+    // Read-only filesystem in serverless environments
   }
 }
 
 export function readPartnershipsStore(): PartnershipsStore {
   try {
     if (!fs.existsSync(STORAGE_FILE)) {
-      return { customClubs: [], initiatives: [] };
+      return inMemoryPartnerships;
     }
     const data = fs.readFileSync(STORAGE_FILE, "utf-8");
     const parsed = JSON.parse(data);
@@ -36,22 +42,24 @@ export function readPartnershipsStore(): PartnershipsStore {
       status: (init.status as InitiativeStatus) || "IN_PROGRESS",
     }));
 
-    return {
+    inMemoryPartnerships = {
       customClubs: parsed.customClubs || [],
       initiatives,
     };
+    return inMemoryPartnerships;
   } catch (err) {
-    console.error("Failed to read partnerships store:", err);
-    return { customClubs: [], initiatives: [] };
+    console.warn("Failed to read partnerships store from filesystem, using memory cache:", err);
+    return inMemoryPartnerships;
   }
 }
 
 export function writePartnershipsStore(store: PartnershipsStore) {
+  inMemoryPartnerships = store;
   try {
     ensureDirectoryExistence(STORAGE_FILE);
     fs.writeFileSync(STORAGE_FILE, JSON.stringify(store, null, 2), "utf-8");
   } catch (err) {
-    console.error("Failed to write partnerships store:", err);
+    console.warn("Serverless filesystem write ignored, cached in-memory:", err);
   }
 }
 

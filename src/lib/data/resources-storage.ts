@@ -62,10 +62,16 @@ const DEFAULT_RESOURCES: ClubResource[] = [
   },
 ];
 
+let inMemoryResources: ClubResource[] = [...DEFAULT_RESOURCES];
+
 function ensureDirectoryExistence(filePath: string) {
-  const dirname = path.dirname(filePath);
-  if (!fs.existsSync(dirname)) {
-    fs.mkdirSync(dirname, { recursive: true });
+  try {
+    const dirname = path.dirname(filePath);
+    if (!fs.existsSync(dirname)) {
+      fs.mkdirSync(dirname, { recursive: true });
+    }
+  } catch {
+    // Read-only filesystem in serverless environments
   }
 }
 
@@ -73,23 +79,25 @@ export function readResourcesStore(): ClubResource[] {
   try {
     if (!fs.existsSync(STORAGE_FILE)) {
       writeResourcesStore(DEFAULT_RESOURCES);
-      return DEFAULT_RESOURCES;
+      return inMemoryResources;
     }
     const data = fs.readFileSync(STORAGE_FILE, "utf-8");
     const parsed = JSON.parse(data);
-    return Array.isArray(parsed) ? parsed : DEFAULT_RESOURCES;
+    inMemoryResources = Array.isArray(parsed) ? parsed : [...DEFAULT_RESOURCES];
+    return inMemoryResources;
   } catch (err) {
-    console.error("Failed to read resources store:", err);
-    return DEFAULT_RESOURCES;
+    console.warn("Failed to read resources store from filesystem, using defaults:", err);
+    return inMemoryResources;
   }
 }
 
 export function writeResourcesStore(resources: ClubResource[]) {
+  inMemoryResources = resources;
   try {
     ensureDirectoryExistence(STORAGE_FILE);
     fs.writeFileSync(STORAGE_FILE, JSON.stringify(resources, null, 2), "utf-8");
   } catch (err) {
-    console.error("Failed to write resources store:", err);
+    console.warn("Serverless filesystem write ignored, cached in-memory:", err);
   }
 }
 

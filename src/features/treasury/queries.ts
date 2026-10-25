@@ -19,6 +19,8 @@ export interface PaymentSubmissionDTO {
   paymentChannel: string;
   status: "SUBMITTED" | "VERIFIED" | "REJECTED";
   claimedDate: string;
+  receiptStoragePath?: string;
+  receiptUrl?: string;
 }
 
 export interface TreasuryDataDTO {
@@ -61,6 +63,7 @@ export async function getTreasuryData(clubId = "00000000-0000-0000-0000-00000000
         reference_number,
         payment_channel,
         status,
+        receipt_storage_path,
         profiles!payment_submissions_submitted_by_fkey (
           full_name,
           email
@@ -87,6 +90,18 @@ export async function getTreasuryData(clubId = "00000000-0000-0000-0000-00000000
 
     const submissions: PaymentSubmissionDTO[] = (rawSubmissions || []).map((sub, idx) => {
       const p = sub.profiles as any;
+      const path = sub.receipt_storage_path;
+      let receiptUrl: string | undefined = undefined;
+
+      if (path) {
+        try {
+          const { data } = adminClient.storage.from("receipts").getPublicUrl(path);
+          receiptUrl = data.publicUrl;
+        } catch {
+          // Fallback
+        }
+      }
+
       return {
         id: sub.id,
         invoiceNumber: `INV-2026-00${idx + 1}`,
@@ -96,6 +111,8 @@ export async function getTreasuryData(clubId = "00000000-0000-0000-0000-00000000
         paymentChannel: sub.payment_channel || "GCash",
         status: (sub.status || "SUBMITTED") as PaymentSubmissionDTO["status"],
         claimedDate: sub.claimed_date || new Date().toISOString().split("T")[0],
+        receiptStoragePath: path,
+        receiptUrl,
       };
     });
 

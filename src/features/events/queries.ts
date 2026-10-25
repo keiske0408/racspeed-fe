@@ -111,7 +111,8 @@ export async function getEventsList(clubId = "00000000-0000-0000-0000-0000000000
       .eq("host_club_id", clubId)
       .order("start_time", { ascending: true });
 
-    if (error || !events || events.length === 0) {
+    if (error || !events) {
+      console.warn("Could not query events from Supabase, using defaults:", error?.message);
       return DEFAULT_EVENTS;
     }
 
