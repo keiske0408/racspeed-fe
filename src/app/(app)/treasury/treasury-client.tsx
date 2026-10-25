@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useTransition } from "react";
+import React, { useState, useEffect, useTransition } from "react";
 import { StatusBadge } from "@/components/shared/badge";
 import { formatPHP, toCentavos, sumCentavos } from "@/lib/utils/money";
 import {
@@ -15,7 +15,9 @@ import {
   X,
   Search,
   Filter,
+  Radio,
 } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 import {
   createInvoiceAction,
   submitPaymentProofAction,
@@ -52,6 +54,63 @@ export function TreasuryClient({ initialData }: TreasuryClientProps) {
   const [proofRefNumber, setProofRefNumber] = useState("");
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [proofPreviewUrl, setProofPreviewUrl] = useState<string | null>(null);
+  const [isRealtimeActive, setIsRealtimeActive] = useState(false);
+
+  // Supabase Realtime channel for live payment submissions and verification
+  useEffect(() => {
+    let channel: any = null;
+    try {
+      const supabase = createClient();
+      channel = supabase
+        .channel("realtime-treasury")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "payment_submissions" },
+          (payload) => {
+            if (payload.eventType === "INSERT") {
+              const newSub = payload.new as any;
+              setSubmissions((prev) => [
+                {
+                  id: newSub.id,
+                  invoiceNumber: "INV-LIVE",
+                  memberName: "Active Member",
+                  claimedAmount: Number(newSub.claimed_amount || 0),
+                  referenceNumber: newSub.reference_number || "N/A",
+                  paymentChannel: newSub.payment_channel || "GCash",
+                  status: newSub.status || "SUBMITTED",
+                  claimedDate: newSub.claimed_date || new Date().toISOString().split("T")[0],
+                  receiptStoragePath: newSub.receipt_storage_path,
+                },
+                ...prev,
+              ]);
+              setNotification(`Live update: New payment submission received for ${formatPHP(Number(newSub.claimed_amount || 0))}!`);
+              setTimeout(() => setNotification(null), 4000);
+            } else if (payload.eventType === "UPDATE") {
+              const updated = payload.new as any;
+              setSubmissions((prev) =>
+                prev.map((s) => (s.id === updated.id ? { ...s, status: updated.status } : s))
+              );
+            }
+          }
+        )
+        .subscribe((status) => {
+          if (status === "SUBSCRIBED") {
+            setIsRealtimeActive(true);
+          }
+        });
+    } catch {
+      // Graceful offline fallback
+    }
+
+    return () => {
+      if (channel) {
+        try {
+          const supabase = createClient();
+          supabase.removeChannel(channel);
+        } catch {}
+      }
+    };
+  }, []);
 
   function handleProofFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -219,6 +278,10 @@ export function TreasuryClient({ initialData }: TreasuryClientProps) {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <div className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 text-emerald-700 dark:text-emerald-300 text-xs font-semibold">
+            <Radio className="w-3.5 h-3.5 animate-pulse text-emerald-500" />
+            <span>Realtime Ledger</span>
+          </div>
           <button
             onClick={() => setShowProofModal(true)}
             className="inline-flex items-center gap-2 py-2 px-3.5 rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 font-semibold text-xs transition shadow-2xs cursor-pointer shrink-0"

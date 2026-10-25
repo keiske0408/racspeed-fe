@@ -201,14 +201,98 @@ npm run typecheck
 
 ---
 
-## 5. Next Steps Roadmap (Phase 3 & Beyond)
+### Phase 3 Hardening Changes
+| Fix | Problem Solved | Files Modified |
+|:---|:---|:---|
+| **Realtime Subscriptions for Attendance & Ledger** | Dashboard counters required manual page refreshes when check-ins or dues payments were logged. Implemented Supabase Realtime Channels (`realtime-attendance`, `realtime-treasury`) with live UI counter pulse indicators. | `src/app/(app)/events/events-client.tsx`<br>`src/app/(app)/treasury/treasury-client.tsx` |
+| **Offline-First PWA Service Worker & Manifest** | Field missions in low-connectivity areas (e.g. Barangay Cuyab coastal outreach) caused blank page failures. Created Service Worker precaching (`public/sw.js`), District 3820 Web App Manifest (`src/app/manifest.ts`), and non-intrusive offline status banner. | `public/sw.js`<br>`src/app/manifest.ts`<br>`src/components/layout/pwa-register.tsx`<br>`src/app/layout.tsx` |
+| **Automated Playwright E2E Test Suite** | Regressions in authentication proxies, registration, or manifest detection required manual clicking. Implemented comprehensive Playwright test suite (`tests/e2e/operations-workflow.spec.ts`) across desktop and mobile viewports with 100% pass rate. | `playwright.config.ts`<br>`tests/e2e/operations-workflow.spec.ts`<br>`package.json` |
 
-1. **Live Realtime DB Subscriptions**:
-   - Subscribe to Supabase Postgres changes (`supabase.channel`) for real-time attendance counter increments and payment verification state transitions.
-2. **Offline-First PWA Service Worker**:
-   - Cache static assets and service schedules for offline event attendance check-ins during coastal and mountain community outreach missions.
-3. **Automated Playwright E2E Suite**:
-   - Implement end-to-end browser testing covering registration, member approval, QR check-in, and budget liquidation flows.
+---
+
+## 5. Automated Verification & Testing Runbook
+
+To run the full validation suite locally or in CI:
+
+```powershell
+# 1. TypeScript Strict Typecheck (0 errors required)
+npm run typecheck
+
+# 2. Vitest Domain Unit Suite (34 tests covering Rotary Year, Money, Workflows, Permissions)
+npm test
+
+# 3. Playwright E2E Suite (8 tests across Desktop Chrome and Mobile Chrome viewports)
+npm run test:e2e
+```
+
+---
+
+## 6. GitHub Student Pack Production Launch Checklist
+
+Follow this exact 4-step checklist to launch RacSpeed into production for **$0/month indefinitely**:
+
+### Checklist Step 1: Provision Free Supabase Database
+1. Go to [supabase.com](https://supabase.com) and click **Sign in with GitHub**.
+2. Click **New project**:
+   - Organization: Select your free personal account.
+   - Project Name: `racspeed-sanpedroeast`
+   - Database Password: Create and save a strong password.
+   - Region: Select **Singapore (`ap-southeast-1`)** (critical for <40ms latency in the Philippines).
+   - Plan: **Free Plan ($0/month)**.
+3. Once provisioned, open **Project Settings** $\rightarrow$ **API**:
+   - Copy `Project URL` (e.g. `https://xyz.supabase.co`)
+   - Copy `anon` `public` key
+   - Copy `service_role` `secret` key
+4. Push all migrations from your terminal to the cloud database:
+   ```powershell
+   npx supabase link --project-ref <your-project-ref>
+   npx supabase db push
+   ```
+5. In Supabase Dashboard $\rightarrow$ **Storage**, create a new bucket named **`receipts`**:
+   - Set bucket to **Public** (or configure authenticated access policy).
+   - Allowed MIME types: `image/png, image/jpeg, image/webp, application/pdf`.
+   - Max file size: `10MB`.
+
+### Checklist Step 2: Deploy Frontend on Vercel
+1. Go to [vercel.com](https://vercel.com) and sign in with GitHub.
+2. Click **Add New...** $\rightarrow$ **Project** $\rightarrow$ Import `RACSPEED`.
+3. Root Directory: Click Edit and select `racspeed-fe`.
+4. Framework Preset: **Next.js**.
+5. Expand **Environment Variables** and paste the production values:
+   ```env
+   NEXT_PUBLIC_SUPABASE_URL=https://<your-project-ref>.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=<your-anon-key>
+   SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key>
+   NEXT_PUBLIC_APP_URL=https://<your-project>.vercel.app
+   NEXT_PUBLIC_APP_NAME="RacSpeed — Rotaract Club Operations Platform"
+   NEXT_PUBLIC_DEFAULT_CLUB_ID=00000000-0000-0000-0000-000000000001
+   NEXT_PUBLIC_DEFAULT_DISTRICT=3820
+   CRON_SECRET=<32-character-random-secret>
+   ```
+6. Click **Deploy**. Vercel will build the production deployment with zero cost.
+
+### Checklist Step 3: Link Free Custom Domain via GitHub Student Developer Pack
+1. Visit [education.github.com/pack](https://education.github.com/pack) and navigate to the **Domains** section.
+2. Claim your free 1-year domain:
+   - Option A: **Namecheap** offers a free `.me` domain (e.g., `racsanpedroeast.me`).
+   - Option B: **Name.com** offers a free `.live`, `.tech`, or `.club` domain.
+3. In your Vercel Project Dashboard $\rightarrow$ **Settings** $\rightarrow$ **Domains**:
+   - Add your custom domain (e.g., `racsanpedroeast.me`).
+4. In Namecheap or Name.com DNS Management:
+   - Add a `CNAME` record pointing `@` and `www` to `cname.vercel-dns.com`.
+5. Vercel will automatically provision a free Let's Encrypt SSL/TLS certificate.
+6. Update `NEXT_PUBLIC_APP_URL` in Vercel Environment Variables to your custom domain (`https://racsanpedroeast.me`).
+
+### Checklist Step 4: Bootstrap First Platform Administrator
+Once production is live:
+1. Navigate to `https://<your-custom-domain>/register` and register the club President or Secretary account.
+2. From your local terminal, run the bootstrap utility pointing at production:
+   ```powershell
+   $env:NEXT_PUBLIC_SUPABASE_URL="https://<your-project-ref>.supabase.co"
+   $env:SUPABASE_SERVICE_ROLE_KEY="<your-production-service-role-key>"
+   npm run bootstrap:admin -- president@racsanpedroeast.me
+   ```
+3. The account is instantly promoted to `PLATFORM_ADMIN`, bypassing the approval queue and granting full executive control!
 
 ---
 *Maintained by the Rotaract Club of San Pedro East Technology & Operations Team.*

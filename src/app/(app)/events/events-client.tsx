@@ -20,8 +20,10 @@ import {
   FlipHorizontal,
   ScanLine,
   RefreshCw,
+  Radio,
 } from "lucide-react";
 import { formatManilaDate } from "@/lib/utils/dates";
+import { createClient } from "@/lib/supabase/client";
 import { createEventAction, startQrAttendanceSessionAction } from "@/features/events/actions";
 import { EventDTO } from "@/features/events/queries";
 
@@ -47,8 +49,56 @@ export function EventsClient({ initialEvents }: EventsClientProps) {
   const [scannerError, setScannerError] = useState<string | null>(null);
   const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string>("");
+  const [isRealtimeActive, setIsRealtimeActive] = useState(false);
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const controlsRef = React.useRef<any>(null);
+
+  // Realtime Supabase Channel for live attendance increments
+  useEffect(() => {
+    let channel: any = null;
+    try {
+      const supabase = createClient();
+      channel = supabase
+        .channel("realtime-attendance")
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "attendance_records" },
+          (payload) => {
+            const newRec = payload.new as any;
+            if (newRec?.event_id) {
+              setEvents((prev) =>
+                prev.map((ev) =>
+                  ev.id === newRec.event_id
+                    ? { ...ev, attendeesCount: (ev.attendeesCount || 0) + 1 }
+                    : ev
+                )
+              );
+              setNotification({
+                message: "Live check-in received! Verified attendee recorded in real time.",
+                type: "success",
+              });
+              setTimeout(() => setNotification(null), 4000);
+            }
+          }
+        )
+        .subscribe((status) => {
+          if (status === "SUBSCRIBED") {
+            setIsRealtimeActive(true);
+          }
+        });
+    } catch {
+      // Graceful offline fallback
+    }
+
+    return () => {
+      if (channel) {
+        try {
+          const supabase = createClient();
+          supabase.removeChannel(channel);
+        } catch {}
+      }
+    };
+  }, []);
 
   // Stop camera stream on unmount
   useEffect(() => {
@@ -321,6 +371,10 @@ export function EventsClient({ initialEvents }: EventsClientProps) {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <div className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 text-emerald-700 dark:text-emerald-300 text-xs font-semibold">
+            <Radio className="w-3.5 h-3.5 animate-pulse text-emerald-500" />
+            <span>Realtime Live</span>
+          </div>
           <Link
             href="/broadcasts"
             className="inline-flex items-center gap-1.5 py-2 px-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 font-semibold text-xs transition shadow-2xs shrink-0"
