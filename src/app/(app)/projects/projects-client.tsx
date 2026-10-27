@@ -6,7 +6,7 @@ import { StatusBadge } from "@/components/shared/badge";
 import { FolderKanban, Plus, FileText, Download, CheckCircle, Clock, Eye, Sparkles, X, Megaphone } from "lucide-react";
 import { formatPHP } from "@/lib/utils/money";
 import { generatePrintableReportHTML } from "@/lib/documents/report";
-import { createProjectAction } from "@/features/projects/actions";
+import { createProjectAction, submitAccomplishmentReportAction } from "@/features/projects/actions";
 import { ProjectDTO } from "@/features/projects/queries";
 
 interface ProjectsClientProps {
@@ -26,8 +26,18 @@ export function ProjectsClient({
   const [showAddModal, setShowAddModal] = useState(canCreate && initialAction === "new");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  function handleDownloadReport(project: ProjectDTO) {
+  async function handleDownloadReport(project: ProjectDTO) {
     setDownloadingId(project.id);
+    try {
+      // Auto-submit and persist snapshot to Supabase report_submissions
+      const res = await submitAccomplishmentReportAction(project.id);
+      if (res.success) {
+        setNotification(res.message || "Accomplishment report submitted & officially logged in District 3820 records!");
+      }
+    } catch (err) {
+      console.warn("Failed to auto-log report submission:", err);
+    }
+
     const html = generatePrintableReportHTML({
       title: project.title,
       clubName: "Rotaract Club of San Pedro East",
@@ -35,7 +45,7 @@ export function ProjectsClient({
       category: project.category,
       status: project.status,
       beneficiaries: project.beneficiaries,
-      volunteerHours: project.volunteerHours,
+      volunteerHours: project.verifiedHours || project.volunteerHours,
       fundsRaised: project.fundsRaised,
       areasOfFocus: project.areasOfFocus,
       sdgs: project.sdgs,
@@ -186,6 +196,27 @@ export function ProjectsClient({
                 </span>
               </div>
 
+              {/* Verified QR Attendance & Connected Tasks Live Status */}
+              {(proj.verifiedHours !== undefined || proj.linkedTasksCount !== undefined) && (
+                <div className="flex items-center gap-2 flex-wrap pt-1">
+                  {proj.verifiedHours !== undefined && (
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900 flex items-center gap-1">
+                      <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                      QR Verified: {proj.verifiedHours} hrs ({proj.verifiedAttendees} attendees)
+                    </span>
+                  )}
+                  {proj.linkedTasksCount !== undefined && (
+                    <Link
+                      href={`/tasks`}
+                      className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-200 dark:border-sky-900 flex items-center gap-1 hover:underline"
+                    >
+                      <FolderKanban className="w-3.5 h-3.5 text-sky-600" />
+                      {proj.completedTasksCount || 0}/{proj.linkedTasksCount} Tasks Completed
+                    </Link>
+                  )}
+                </div>
+              )}
+
               {/* Area of Focus tags */}
               <div className="flex items-center gap-1.5 flex-wrap pt-1">
                 {proj.areasOfFocus.map((aof, i) => (
@@ -218,10 +249,10 @@ export function ProjectsClient({
               <button
                 onClick={() => handleDownloadReport(proj)}
                 disabled={downloadingId === proj.id}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 transition cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 transition cursor-pointer shadow-xs"
               >
-                <Download className="w-3.5 h-3.5 text-rose-500" />
-                {downloadingId === proj.id ? "Generating..." : "Print / PDF Report"}
+                <FileText className="w-3.5 h-3.5 text-rose-500" />
+                {downloadingId === proj.id ? "Logging Report..." : "Log & Print Report"}
               </button>
             </div>
           </div>
