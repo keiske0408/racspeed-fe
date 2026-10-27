@@ -5,12 +5,31 @@ import { z } from "zod";
 
 function extractToken(raw: string): string {
   if (!raw) return "";
-  const trimmed = raw.trim();
+  let trimmed = raw.trim();
 
-  // 1. If full URL, parse query param
+  // Strip wrapping quotes if any
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    trimmed = trimmed.slice(1, -1).trim();
+  }
+
+  // 1. If JSON payload string
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+    try {
+      const obj = JSON.parse(trimmed);
+      const val = obj.token || obj.sessionToken || obj.session_token || obj.checkInToken;
+      if (val) return String(val).trim();
+    } catch {}
+  }
+
+  // 2. If full URL or URL path with query params
   try {
-    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-      const parsed = new URL(trimmed);
+    if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.includes("?")) {
+      const parsed = trimmed.startsWith("http")
+        ? new URL(trimmed)
+        : new URL(trimmed, "http://localhost");
       const qToken =
         parsed.searchParams.get("token") ||
         parsed.searchParams.get("sessionToken") ||
@@ -19,13 +38,13 @@ function extractToken(raw: string): string {
     }
   } catch {}
 
-  // 2. Query param regex match
+  // 3. Query param regex match
   const match = trimmed.match(/[?&](?:token|sessionToken|checkInToken)=([^&#\s]+)/i);
   if (match) {
     return decodeURIComponent(match[1]).trim();
   }
 
-  // 3. Raw token
+  // 4. Raw token
   return trimmed;
 }
 
@@ -130,6 +149,10 @@ export async function POST(request: NextRequest) {
         {
           error: `You have already checked in for ${eventTitle}.`,
           alreadyCheckedIn: true,
+          eventId: session.event_id,
+          eventTitle,
+          volunteerHours: hours,
+          checkInTime: existingCheckIn.check_in_time,
         },
         { status: 409 }
       );
@@ -164,6 +187,7 @@ export async function POST(request: NextRequest) {
       recordId: record.id,
       volunteerHours: hours,
       eventTitle,
+      eventId: session.event_id,
     });
   } catch (err: any) {
     console.error("Unexpected error during check-in:", err);

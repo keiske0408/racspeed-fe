@@ -136,3 +136,77 @@ export async function getEventsList(clubId = "00000000-0000-0000-0000-0000000000
     return DEFAULT_EVENTS;
   }
 }
+
+export interface EventAttendeeDTO {
+  id: string;
+  profileId: string;
+  fullName: string;
+  email: string;
+  avatarUrl?: string | null;
+  checkInTime: string;
+  checkInMethod: string;
+  volunteerHours: number;
+  attended: boolean;
+}
+
+export async function getUserCheckedInEventIds(userId: string): Promise<string[]> {
+  if (!userId) return [];
+  try {
+    const adminClient = createAdminClient();
+    const { data, error } = await adminClient
+      .from("attendance_records")
+      .select("event_id")
+      .eq("profile_id", userId)
+      .eq("attended", true);
+
+    if (error || !data) {
+      return [];
+    }
+
+    return Array.from(new Set(data.map((r) => r.event_id)));
+  } catch (err) {
+    console.warn("Could not query user checked in event IDs:", err);
+    return [];
+  }
+}
+
+export async function getEventAttendees(eventId: string): Promise<EventAttendeeDTO[]> {
+  if (!eventId) return [];
+  try {
+    const adminClient = createAdminClient();
+    const { data, error } = await adminClient
+      .from("attendance_records")
+      .select(`
+        id,
+        event_id,
+        profile_id,
+        check_in_time,
+        check_in_method,
+        volunteer_hours,
+        attended,
+        profile:profile_id(id, full_name, email, avatar_url)
+      `)
+      .eq("event_id", eventId)
+      .order("check_in_time", { ascending: false });
+
+    if (error || !data) {
+      console.warn("Error fetching event attendees:", error?.message);
+      return [];
+    }
+
+    return data.map((rec: any) => ({
+      id: rec.id,
+      profileId: rec.profile_id,
+      fullName: rec.profile?.full_name || "Club Member",
+      email: rec.profile?.email || "",
+      avatarUrl: rec.profile?.avatar_url || null,
+      checkInTime: rec.check_in_time,
+      checkInMethod: rec.check_in_method || "QR",
+      volunteerHours: Number(rec.volunteer_hours || 0),
+      attended: Boolean(rec.attended),
+    }));
+  } catch (err) {
+    console.warn("Exception fetching event attendees:", err);
+    return [];
+  }
+}

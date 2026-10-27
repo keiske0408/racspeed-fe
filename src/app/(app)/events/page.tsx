@@ -1,6 +1,6 @@
 import React from "react";
 import { assertPageAccess } from "@/lib/auth/session";
-import { getEventsList } from "@/features/events/queries";
+import { getEventsList, getUserCheckedInEventIds } from "@/features/events/queries";
 import { EventsClient } from "./events-client";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +17,7 @@ interface EventsPageProps {
 export default async function EventsPage({ searchParams }: EventsPageProps) {
   const context = await assertPageAccess("events");
   const initialEvents = await getEventsList();
+  const initialCheckedInEventIds = await getUserCheckedInEventIds(context.user.id);
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const initialToken =
     resolvedSearchParams.token ||
@@ -31,6 +32,8 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
     <EventsClient
       initialEvents={initialEvents}
       initialToken={initialToken}
+      initialCheckedInEventIds={initialCheckedInEventIds}
+      currentUserId={context.user.id}
       canCreate={canCreate}
       canManageAttendance={canManageAttendance}
       initialAction={resolvedSearchParams.action}

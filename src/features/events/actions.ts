@@ -82,8 +82,16 @@ export async function createEventAction(formData: FormData) {
 
 export async function startQrAttendanceSessionAction(eventId: string) {
   const user = await requireUser();
-  await assertPermission("00000000-0000-0000-0000-000000000001", "ATTENDANCE_MANAGE");
   const adminClient = createAdminClient();
+
+  const { data: eventData } = await adminClient
+    .from("events")
+    .select("host_club_id")
+    .eq("id", eventId)
+    .maybeSingle();
+
+  const clubId = eventData?.host_club_id || "00000000-0000-0000-0000-000000000001";
+  await assertPermission(clubId, "ATTENDANCE_MANAGE");
 
   // Expire truly stale sessions whose time window has elapsed
   await adminClient
@@ -136,5 +144,12 @@ export async function startQrAttendanceSessionAction(eventId: string) {
 
   revalidatePath("/events");
   return { success: true, sessionToken: token, expiresAt };
+}
+
+export async function getEventAttendeesAction(eventId: string) {
+  await requireUser();
+  const { getEventAttendees } = await import("./queries");
+  const attendees = await getEventAttendees(eventId);
+  return { success: true, attendees };
 }
 
