@@ -35,4 +35,6 @@ export interface GroupTaskDTO {
   createdAt: string;
   updatedAt: string;
   createdBy: string;
+  projectId?: string;
+  projectTitle?: string;
 }

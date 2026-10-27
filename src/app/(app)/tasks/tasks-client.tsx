@@ -1,6 +1,5 @@
-"use client";
-
 import React, { useState, useTransition } from "react";
+import Link from "next/link";
 import {
   CheckSquare,
   Plus,
@@ -21,6 +20,8 @@ import {
   Edit2,
   UserPlus,
   Check,
+  FolderKanban,
+  ExternalLink,
 } from "lucide-react";
 import {
   GroupTaskDTO,
@@ -31,6 +32,8 @@ import {
 } from "@/lib/data/tasks-types";
 import { TaskStatsDTO } from "@/features/tasks/queries";
 import { MemberDTO } from "@/features/members/queries";
+import { ProjectDTO } from "@/features/projects/queries";
+import { CurrentUserContext } from "@/lib/auth/session";
 import {
   createGroupTaskAction,
   updateGroupTaskAction,
@@ -45,6 +48,42 @@ interface TasksClientProps {
   initialTasks: GroupTaskDTO[];
   stats: TaskStatsDTO;
   members: MemberDTO[];
+  projects?: ProjectDTO[];
+  currentUser?: CurrentUserContext;
+  isAdmin?: boolean;
+}
+
+export function isTaskAssignedToUser(
+  task: GroupTaskDTO,
+  user?: CurrentUserContext | null
+): boolean {
+  if (!user) return false;
+  const userFull = (user.fullName || "").trim().toLowerCase();
+  const userEmail = (user.email || "").trim().toLowerCase();
+  const userId = user.id || "";
+
+  if (userId && task.assignedMemberIds?.includes(userId)) return true;
+
+  if (
+    task.assignedMemberNames &&
+    task.assignedMemberNames.some((name) => {
+      const n = name.trim().toLowerCase();
+      return (
+        n === userFull ||
+        n === userEmail ||
+        (userFull && (n.includes(userFull) || userFull.includes(n)))
+      );
+    })
+  ) {
+    return true;
+  }
+
+  if (task.createdBy) {
+    const creator = task.createdBy.trim().toLowerCase();
+    if (creator === userFull || creator === userEmail) return true;
+  }
+
+  return false;
 }
 
 const COMMITTEE_LABELS: Record<TaskCommittee, { label: string; color: string }> = {
@@ -72,8 +111,16 @@ const STATUS_CONFIG: Record<TaskStatus, { label: string; color: string; step: nu
   COMPLETED: { label: "Completed", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400", step: 4 },
 };
 
-export function TasksClient({ initialTasks, stats: initialStats, members }: TasksClientProps) {
+export function TasksClient({
+  initialTasks,
+  stats: initialStats,
+  members,
+  projects = [],
+  currentUser,
+  isAdmin = false,
+}: TasksClientProps) {
   const [tasks, setTasks] = useState<GroupTaskDTO[]>(initialTasks);
+  const [viewScope, setViewScope] = useState<"ALL" | "MINE">("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCommittee, setSelectedCommittee] = useState<string>("ALL");
   const [selectedStatus, setSelectedStatus] = useState<string>("ALL");
@@ -85,6 +132,7 @@ export function TasksClient({ initialTasks, stats: initialStats, members }: Task
   const [notice, setNotice] = useState<string | null>(null);
 
   // New task form state
+  const [selectedProjectTitle, setSelectedProjectTitle] = useState("");
   const [formChecklist, setFormChecklist] = useState<string[]>([
     "Review task requirements and committee deliverables",
     "Coordinate with assigned committee members",
@@ -100,10 +148,12 @@ export function TasksClient({ initialTasks, stats: initialStats, members }: Task
   const [editPriority, setEditPriority] = useState<TaskPriority>("MEDIUM");
   const [editStatus, setEditStatus] = useState<TaskStatus>("TODO");
   const [editDueDate, setEditDueDate] = useState("");
+  const [editProjectTitle, setEditProjectTitle] = useState("");
   const [editAssignees, setEditAssignees] = useState<string[]>([]);
   const [quickAssignTaskId, setQuickAssignTaskId] = useState<string | null>(null);
 
   function openEditTask(task: GroupTaskDTO) {
+    if (!isAdmin) return;
     setEditingTask(task);
     setEditTitle(task.title);
     setEditDescription(task.description);
@@ -111,12 +161,13 @@ export function TasksClient({ initialTasks, stats: initialStats, members }: Task
     setEditPriority(task.priority);
     setEditStatus(task.status);
     setEditDueDate(task.dueDate);
+    setEditProjectTitle(task.projectTitle || "");
     setEditAssignees(task.assignedMemberIds || []);
   }
 
   async function handleSaveEditTask(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!editingTask) return;
+    if (!isAdmin || !editingTask) return;
 
     const formData = new FormData();
     formData.set("title", editTitle);
@@ -125,6 +176,9 @@ export function TasksClient({ initialTasks, stats: initialStats, members }: Task
     formData.set("priority", editPriority);
     formData.set("status", editStatus);
     formData.set("dueDate", editDueDate);
+    if (editProjectTitle) {
+      formData.set("projectTitle", editProjectTitle);
+    }
 
     editAssignees.forEach((memId) => {
       const mem = members.find((m) => m.id === memId);
@@ -146,6 +200,7 @@ export function TasksClient({ initialTasks, stats: initialStats, members }: Task
   }
 
   function handleQuickAssignToggle(taskId: string, memberId: string) {
+    if (!isAdmin) return;
     const task = tasks.find((t) => t.id === taskId);
     if (!task) return;
 
@@ -173,11 +228,20 @@ export function TasksClient({ initialTasks, stats: initialStats, members }: Task
     });
   }
 
+  // Determine active pool of tasks based on RBAC and assignment
+  const myAssignedTasks = tasks.filter((t) => isTaskAssignedToUser(t, currentUser));
+  const activeScopeTasks = !isAdmin
+    ? myAssignedTasks
+    : viewScope === "MINE"
+    ? myAssignedTasks
+    : tasks;
+
   // Filter tasks
-  const filteredTasks = tasks.filter((task) => {
+  const filteredTasks = activeScopeTasks.filter((task) => {
     const matchesSearch =
       task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       task.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (task.projectTitle && task.projectTitle.toLowerCase().includes(searchQuery.toLowerCase())) ||
       task.assignedMemberNames.some((n) => n.toLowerCase().includes(searchQuery.toLowerCase()));
 
     const matchesCommittee = selectedCommittee === "ALL" || task.committee === selectedCommittee;
@@ -187,14 +251,14 @@ export function TasksClient({ initialTasks, stats: initialStats, members }: Task
     return matchesSearch && matchesCommittee && matchesStatus && matchesPriority;
   });
 
-  // Calculate stats from current tasks
+  // Calculate stats from current visible scope tasks so it reflects the member's assigned workload
   const currentStats = {
-    total: tasks.length,
-    todo: tasks.filter((t) => t.status === "TODO").length,
-    inProgress: tasks.filter((t) => t.status === "IN_PROGRESS").length,
-    inReview: tasks.filter((t) => t.status === "IN_REVIEW").length,
-    completed: tasks.filter((t) => t.status === "COMPLETED").length,
-    urgent: tasks.filter((t) => t.priority === "URGENT" && t.status !== "COMPLETED").length,
+    total: activeScopeTasks.length,
+    todo: activeScopeTasks.filter((t) => t.status === "TODO").length,
+    inProgress: activeScopeTasks.filter((t) => t.status === "IN_PROGRESS").length,
+    inReview: activeScopeTasks.filter((t) => t.status === "IN_REVIEW").length,
+    completed: activeScopeTasks.filter((t) => t.status === "COMPLETED").length,
+    urgent: activeScopeTasks.filter((t) => t.priority === "URGENT" && t.status !== "COMPLETED").length,
   };
 
   // Toggle checklist item
@@ -254,8 +318,9 @@ export function TasksClient({ initialTasks, stats: initialStats, members }: Task
     });
   }
 
-  // Delete task
+  // Delete task (Admin only)
   function handleDeleteTask(taskId: string, title: string) {
+    if (!isAdmin) return;
     if (!confirm(`Are you sure you want to delete "${title}"?`)) return;
 
     setTasks((prev) => prev.filter((t) => t.id !== taskId));
@@ -280,11 +345,15 @@ export function TasksClient({ initialTasks, stats: initialStats, members }: Task
     setFormChecklist(formChecklist.filter((_, i) => i !== idx));
   }
 
-  // Handle Create Task submit
+  // Handle Create Task submit (Admin only)
   async function handleCreateTask(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!isAdmin) return;
     const form = e.currentTarget;
     const formData = new FormData(form);
+    if (selectedProjectTitle) {
+      formData.set("projectTitle", selectedProjectTitle);
+    }
 
     // Append assignees and checklist items
     selectedAssignees.forEach((memId) => {
@@ -331,13 +400,49 @@ export function TasksClient({ initialTasks, stats: initialStats, members }: Task
           </p>
         </div>
 
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition shadow-sm cursor-pointer shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          <span>New Group Task</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {isAdmin ? (
+            <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => setViewScope("ALL")}
+                className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                  viewScope === "ALL"
+                    ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-2xs font-bold"
+                    : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                }`}
+              >
+                All Club Tasks ({tasks.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewScope("MINE")}
+                className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                  viewScope === "MINE"
+                    ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-2xs font-bold"
+                    : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                }`}
+              >
+                My Tasks ({myAssignedTasks.length})
+              </button>
+            </div>
+          ) : (
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200/60 dark:border-blue-900 text-[#0D3594] dark:text-blue-300 text-xs font-semibold">
+              <Users className="w-3.5 h-3.5" />
+              <span>Assigned to {currentUser?.fullName || "You"}</span>
+            </div>
+          )}
+
+          {isAdmin && (
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition shadow-sm cursor-pointer shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              <span>New Group Task</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Notice Banner */}
@@ -404,6 +509,69 @@ export function TasksClient({ initialTasks, stats: initialStats, members }: Task
           </div>
         </div>
       </div>
+
+      {/* Connected Service Projects & Accomplishment Reports Section */}
+      {projects && projects.length > 0 && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-2xs space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400">
+                  <FolderKanban className="w-4 h-4" />
+                </span>
+                <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                  Connected Service Projects
+                </h2>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Strategic Rotary & Rotaract initiatives supporting these operational committee tasks
+              </p>
+            </div>
+            <Link
+              href="/projects"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 font-semibold text-xs transition shadow-2xs shrink-0"
+            >
+              <span>View All Projects</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
+            {projects.slice(0, 3).map((proj) => (
+              <div
+                key={proj.id}
+                className="p-3.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-1 mb-2">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300">
+                      {proj.category}
+                    </span>
+                    <span className="text-[10px] font-medium text-slate-400">
+                      {proj.status}
+                    </span>
+                  </div>
+                  <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 line-clamp-1">
+                    {proj.title}
+                  </h4>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    {proj.beneficiaries.toLocaleString()} Beneficiaries · {proj.volunteerHours}h logged
+                  </p>
+                </div>
+                <div className="mt-3 pt-2.5 border-t border-slate-200/60 dark:border-slate-800 flex justify-end">
+                  <Link
+                    href="/projects"
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0D3594] dark:text-blue-400 hover:underline"
+                  >
+                    <span>View Project Dossier</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Filter and Search Bar */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-3 shadow-2xs">
@@ -518,20 +686,24 @@ export function TasksClient({ initialTasks, stats: initialStats, members }: Task
                         {priorityMeta.icon}
                         {priorityMeta.label}
                       </span>
-                      <button
-                        onClick={() => openEditTask(task)}
-                        className="p-1 rounded-md text-slate-400 hover:text-[#0D3594] hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-                        title="Edit Task & Assignees"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteTask(task.id, task.title)}
-                        className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
-                        title="Delete Task"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {isAdmin && (
+                        <>
+                          <button
+                            onClick={() => openEditTask(task)}
+                            className="p-1 rounded-md text-slate-400 hover:text-[#0D3594] hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                            title="Edit Task & Assignees (Admin)"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteTask(task.id, task.title)}
+                            className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
+                            title="Delete Task (Admin)"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -544,6 +716,28 @@ export function TasksClient({ initialTasks, stats: initialStats, members }: Task
                       {task.description}
                     </p>
                   )}
+
+                  {/* View Project Section on Task Card */}
+                  <div className="mt-2.5 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <FolderKanban className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                      <div className="min-w-0">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                          Project Dossier
+                        </span>
+                        <span className="font-semibold text-slate-800 dark:text-slate-200 truncate block text-[11.5px]">
+                          {task.projectTitle || "Community Service Initiative"}
+                        </span>
+                      </div>
+                    </div>
+                    <Link
+                      href="/projects"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px] font-semibold text-slate-700 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 hover:border-rose-200 transition shrink-0 shadow-2xs"
+                    >
+                      <span>View Project</span>
+                      <ExternalLink className="w-3 h-3 text-slate-400" />
+                    </Link>
+                  </div>
 
                   {/* Due Date & Assignees */}
                   <div className="flex items-center justify-between gap-2 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
@@ -580,43 +774,45 @@ export function TasksClient({ initialTasks, stats: initialStats, members }: Task
                         </div>
                       )}
 
-                      {/* Quick Assign Button (Notion / Linear style) */}
-                      <div className="relative">
-                        <button
-                          onClick={() => setQuickAssignTaskId(quickAssignTaskId === task.id ? null : task.id)}
-                          className="w-6 h-6 rounded-full border border-dashed border-slate-300 dark:border-slate-600 hover:border-[#0D3594] text-slate-400 hover:text-[#0D3594] flex items-center justify-center text-xs transition cursor-pointer"
-                          title="Assign or unassign members"
-                        >
-                          <UserPlus className="w-3 h-3" />
-                        </button>
+                      {/* Quick Assign Button (Admin only) */}
+                      {isAdmin && (
+                        <div className="relative">
+                          <button
+                            onClick={() => setQuickAssignTaskId(quickAssignTaskId === task.id ? null : task.id)}
+                            className="w-6 h-6 rounded-full border border-dashed border-slate-300 dark:border-slate-600 hover:border-[#0D3594] text-slate-400 hover:text-[#0D3594] flex items-center justify-center text-xs transition cursor-pointer"
+                            title="Assign or unassign members (Admin)"
+                          >
+                            <UserPlus className="w-3 h-3" />
+                          </button>
 
-                        {quickAssignTaskId === task.id && (
-                          <div className="absolute right-0 top-full mt-1.5 w-56 bg-white dark:bg-[#161B26] border border-[#EDEDF2] dark:border-slate-800 rounded-xl elevation-popover p-2 z-30 space-y-1">
-                            <p className="px-2 py-1 text-[10px] font-bold text-[#8E95A5] uppercase tracking-wider">
-                              Assign Members
-                            </p>
-                            <div className="max-h-40 overflow-y-auto space-y-0.5">
-                              {members.map((member) => {
-                                const isAssigned = (task.assignedMemberIds || []).includes(member.id);
-                                return (
-                                  <button
-                                    key={member.id}
-                                    onClick={() => handleQuickAssignToggle(task.id, member.id)}
-                                    className={`w-full flex items-center justify-between p-1.5 rounded-lg text-xs transition text-left cursor-pointer ${
-                                      isAssigned
-                                        ? "bg-blue-50 dark:bg-blue-950/40 text-[#0D3594] dark:text-blue-300 font-semibold"
-                                        : "hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"
-                                    }`}
-                                  >
-                                    <span className="truncate">{member.name}</span>
-                                    {isAssigned && <Check className="w-3 h-3 text-[#17A863] shrink-0" />}
-                                  </button>
-                                );
-                              })}
+                          {quickAssignTaskId === task.id && (
+                            <div className="absolute right-0 top-full mt-1.5 w-56 bg-white dark:bg-[#161B26] border border-[#EDEDF2] dark:border-slate-800 rounded-xl elevation-popover p-2 z-30 space-y-1">
+                              <p className="px-2 py-1 text-[10px] font-bold text-[#8E95A5] uppercase tracking-wider">
+                                Assign Members
+                              </p>
+                              <div className="max-h-40 overflow-y-auto space-y-0.5">
+                                {members.map((member) => {
+                                  const isAssigned = (task.assignedMemberIds || []).includes(member.id);
+                                  return (
+                                    <button
+                                      key={member.id}
+                                      onClick={() => handleQuickAssignToggle(task.id, member.id)}
+                                      className={`w-full flex items-center justify-between p-1.5 rounded-lg text-xs transition text-left cursor-pointer ${
+                                        isAssigned
+                                          ? "bg-blue-50 dark:bg-blue-950/40 text-[#0D3594] dark:text-blue-300 font-semibold"
+                                          : "hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"
+                                      }`}
+                                    >
+                                      <span className="truncate">{member.name}</span>
+                                      {isAssigned && <Check className="w-3 h-3 text-[#17A863] shrink-0" />}
+                                    </button>
+                                  );
+                                })}
+                              </div>
                             </div>
-                          </div>
-                        )}
-                      </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -715,8 +911,8 @@ export function TasksClient({ initialTasks, stats: initialStats, members }: Task
         </div>
       )}
 
-      {/* Modal: Create Group Task */}
-      {isModalOpen && (
+      {/* Modal: Create Group Task (Admin Only) */}
+      {isAdmin && isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="relative w-full max-w-xl max-h-[90vh] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden">
             {/* Modal Header */}
@@ -813,6 +1009,25 @@ export function TasksClient({ initialTasks, stats: initialStats, members }: Task
                   placeholder="Outline key objectives, expectations, and deliverables..."
                   className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500 resize-none"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Connected Service Project
+                </label>
+                <select
+                  name="projectTitle"
+                  value={selectedProjectTitle}
+                  onChange={(e) => setSelectedProjectTitle(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500 font-medium"
+                >
+                  <option value="">-- No Linked Project --</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.title}>
+                      {p.title} ({p.category})
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {/* Assign Members Multi-select */}
@@ -922,8 +1137,8 @@ export function TasksClient({ initialTasks, stats: initialStats, members }: Task
         </div>
       )}
 
-      {/* Edit Task & Assignees Modal (Notion / Linear Style) */}
-      {editingTask && (
+      {/* Edit Task & Assignees Modal (Admin Only) */}
+      {isAdmin && editingTask && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="relative w-full max-w-2xl bg-white dark:bg-[#111622] rounded-2xl border border-[#EDEDF2] dark:border-slate-800 elevation-popover max-h-[90vh] flex flex-col overflow-hidden">
             {/* Modal Header */}
@@ -1041,6 +1256,24 @@ export function TasksClient({ initialTasks, stats: initialStats, members }: Task
                   onChange={(e) => setEditDescription(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-[#EDEDF2] dark:border-slate-700 text-[#111625] dark:text-white focus:outline-hidden focus:ring-1 focus:ring-[#0D3594] resize-none"
                 />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-[#111625] dark:text-slate-300 mb-1">
+                  Connected Service Project
+                </label>
+                <select
+                  value={editProjectTitle}
+                  onChange={(e) => setEditProjectTitle(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-[#EDEDF2] dark:border-slate-700 text-[#111625] dark:text-white focus:outline-hidden focus:ring-1 focus:ring-[#0D3594]"
+                >
+                  <option value="">-- No Linked Project --</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.title}>
+                      {p.title} ({p.category})
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {/* Assign Members Section (Notion / Linear style) */}

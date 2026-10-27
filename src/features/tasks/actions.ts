@@ -3,7 +3,20 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireUser } from "@/lib/auth/session";
+import { requireUser, getUserAccessContext } from "@/lib/auth/session";
+
+async function assertTaskAdmin() {
+  const user = await requireUser();
+  const context = await getUserAccessContext();
+  if (
+    !context.isPlatformAdmin &&
+    !context.permissions.has("ROLE_ASSIGN") &&
+    !context.permissions.has("SETTINGS_MANAGE")
+  ) {
+    throw new Error("Unauthorized: Only administrators and designated officers have authority to perform task management operations.");
+  }
+  return { user, context };
+}
 import {
   createTask,
   updateTaskStatus,
@@ -39,7 +52,13 @@ const createTaskSchema = z.object({
 });
 
 export async function createGroupTaskAction(formData: FormData) {
-  const user = await requireUser();
+  let user;
+  try {
+    const res = await assertTaskAdmin();
+    user = res.user;
+  } catch (err: any) {
+    return { success: false, error: err.message || "Unauthorized" };
+  }
 
   const title = (formData.get("title") as string)?.trim();
   const description = (formData.get("description") as string)?.trim() || "";
@@ -47,6 +66,8 @@ export async function createGroupTaskAction(formData: FormData) {
   const priority = (formData.get("priority") as TaskPriority) || "MEDIUM";
   const dueDate = formData.get("dueDate") as string;
   const clubId = (formData.get("clubId") as string) || "00000000-0000-0000-0000-000000000001";
+  const projectId = (formData.get("projectId") as string)?.trim() || undefined;
+  const projectTitle = (formData.get("projectTitle") as string)?.trim() || undefined;
 
   // Parse multi-assignees and checklist items
   const assignedMemberIds = formData.getAll("assignedMemberIds") as string[];
@@ -93,6 +114,8 @@ export async function createGroupTaskAction(formData: FormData) {
       assignedMemberNames,
       checklist,
       createdBy: user.fullName || user.email,
+      projectId,
+      projectTitle,
     });
 
     // Sync to Supabase tasks table if available
@@ -249,7 +272,11 @@ export async function addChecklistItemAction(
 }
 
 export async function deleteTaskAction(taskId: string) {
-  await requireUser();
+  try {
+    await assertTaskAdmin();
+  } catch (err: any) {
+    return { success: false, error: err.message || "Unauthorized" };
+  }
 
   try {
     const ok = deleteTask(taskId);
@@ -280,7 +307,11 @@ export async function deleteTaskAction(taskId: string) {
 }
 
 export async function updateGroupTaskAction(taskId: string, formData: FormData) {
-  await requireUser();
+  try {
+    await assertTaskAdmin();
+  } catch (err: any) {
+    return { success: false, error: err.message || "Unauthorized" };
+  }
 
   const title = (formData.get("title") as string)?.trim();
   const description = (formData.get("description") as string)?.trim() || "";
@@ -288,6 +319,8 @@ export async function updateGroupTaskAction(taskId: string, formData: FormData) 
   const priority = formData.get("priority") as TaskPriority;
   const status = formData.get("status") as TaskStatus;
   const dueDate = formData.get("dueDate") as string;
+  const projectId = (formData.get("projectId") as string)?.trim() || undefined;
+  const projectTitle = (formData.get("projectTitle") as string)?.trim() || undefined;
 
   const assignedMemberIds = formData.getAll("assignedMemberIds") as string[];
   const assignedMemberNames = formData.getAll("assignedMemberNames") as string[];
@@ -306,6 +339,8 @@ export async function updateGroupTaskAction(taskId: string, formData: FormData) 
       dueDate,
       assignedMemberIds,
       assignedMemberNames,
+      projectId,
+      projectTitle,
     });
 
     if (!updated) {
@@ -350,7 +385,11 @@ export async function assignMembersToTaskAction(
   assignedMemberIds: string[],
   assignedMemberNames: string[]
 ) {
-  await requireUser();
+  try {
+    await assertTaskAdmin();
+  } catch (err: any) {
+    return { success: false, error: err.message || "Unauthorized" };
+  }
 
   try {
     const updated = updateTask(taskId, {

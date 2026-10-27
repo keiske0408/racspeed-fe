@@ -23,7 +23,8 @@ const SEED_TASKS: GroupTaskDTO[] = [
     priority: "HIGH",
     dueDate: "2026-11-05",
     assignedMemberIds: ["mem-001", "mem-002"],
-    assignedMemberNames: ["Gabriel Leyba", "Maria Santos"],
+    assignedMemberNames: ["Gabriel Leyba", "Kirsten Lim"],
+    projectTitle: "Laguna Bay Coastal Reforestation Drive",
     checklist: [
       { id: "chk-101", title: "Secure Barangay Council Permit Letter", completed: true, completedAt: "2026-10-21" },
       { id: "chk-102", title: "Order 100 heavy-duty biodegradable trash bags & gloves", completed: true, completedAt: "2026-10-22" },
@@ -44,7 +45,8 @@ const SEED_TASKS: GroupTaskDTO[] = [
     priority: "URGENT",
     dueDate: "2026-11-12",
     assignedMemberIds: ["mem-003", "mem-004"],
-    assignedMemberNames: ["Sofia Reyes", "Juan Luna"],
+    assignedMemberNames: ["Sofia Reyes", "Kirsten Lim"],
+    projectTitle: "Project EduKariton: Literacy & Values Education",
     checklist: [
       { id: "chk-201", title: "Collect verified inductee headshots and classifications", completed: true, completedAt: "2026-10-20" },
       { id: "chk-202", title: "Receive Governor & Sponsor Club President messages", completed: true, completedAt: "2026-10-22" },
@@ -67,6 +69,7 @@ const SEED_TASKS: GroupTaskDTO[] = [
     dueDate: "2026-11-20",
     assignedMemberIds: ["mem-005"],
     assignedMemberNames: ["Camille Torres"],
+    projectTitle: "Tubig Para sa Barangay: Clean Water Filtration",
     checklist: [
       { id: "chk-301", title: "Export payment verification log from Treasury ledger", completed: false },
       { id: "chk-302", title: "Cross-reference bank statements with issued receipt numbers", completed: false },
@@ -88,6 +91,7 @@ const SEED_TASKS: GroupTaskDTO[] = [
     dueDate: "2026-10-25",
     assignedMemberIds: ["mem-001", "mem-006"],
     assignedMemberNames: ["Gabriel Leyba", "Carlos Mendoza"],
+    projectTitle: "Project EduKariton: Literacy & Values Education",
     checklist: [
       { id: "chk-401", title: "Post delegation interest form in club Discord/Messenger", completed: true, completedAt: "2026-10-15" },
       { id: "chk-402", title: "Collect individual registration fee shares", completed: true, completedAt: "2026-10-18" },
@@ -108,6 +112,7 @@ const SEED_TASKS: GroupTaskDTO[] = [
     dueDate: "2026-11-28",
     assignedMemberIds: ["mem-002", "mem-007"],
     assignedMemberNames: ["Maria Santos", "Kenji Takahashi"],
+    projectTitle: "Laguna Bay Coastal Reforestation Drive",
     checklist: [
       { id: "chk-501", title: "Align meeting agenda & dual-timezone schedules via Zoom", completed: true, completedAt: "2026-10-16" },
       { id: "chk-502", title: "Translate introductory presentation slides to English/Japanese", completed: true, completedAt: "2026-10-21" },
