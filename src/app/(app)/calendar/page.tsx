@@ -13,7 +13,7 @@ export const metadata = {
 };
 
 export default async function CalendarPage() {
-  await assertPageAccess("events");
+  await assertPageAccess("calendar");
 
   const [events, tasks] = await Promise.all([
     getEventsList(),

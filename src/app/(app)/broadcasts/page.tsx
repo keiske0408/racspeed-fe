@@ -1,4 +1,5 @@
 import React from "react";
+import { assertPageAccess } from "@/lib/auth/session";
 import { getBroadcastSourceItems } from "@/features/broadcasts/queries";
 import { BroadcastsClient } from "./broadcasts-client";
 
@@ -9,6 +10,7 @@ interface BroadcastsPageProps {
 }
 
 export default async function BroadcastsPage({ searchParams }: BroadcastsPageProps) {
+  await assertPageAccess("broadcasts");
   const resolvedSearchParams = await searchParams;
   const sources = await getBroadcastSourceItems();
 

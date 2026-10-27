@@ -23,6 +23,9 @@ import {
   CheckSquare,
   LayoutDashboard,
   UserPlus,
+  CalendarDays,
+  Megaphone,
+  Bookmark,
 } from "lucide-react";
 import { RoleKey, ROLE_LABELS, Permission } from "@/lib/permissions/keys";
 import {
@@ -48,14 +51,17 @@ const MODULE_ICONS: Record<string, React.ComponentType<{ className?: string }>> 
   dashboard: LayoutDashboard,
   members: Users,
   recruitment: UserPlus,
+  retention: ShieldAlert,
+  calendar: CalendarDays,
   events: Calendar,
-  projects: FolderKanban,
   tasks: CheckSquare,
+  broadcasts: Megaphone,
+  projects: FolderKanban,
   treasury: Receipt,
   budgets: FileSpreadsheet,
   partnerships: Globe,
+  resources: Bookmark,
   certificates: Award,
-  retention: ShieldAlert,
   settings: Settings,
 };
 
@@ -200,9 +206,10 @@ export function PermissionMatrixEditor({
   }
 
   // Group permissions by category
-  const categories: Array<"MEMBERSHIP" | "SERVICE" | "FINANCE" | "GOVERNANCE"> = [
+  const categories: Array<"MEMBERSHIP" | "SERVICE" | "COMMUNICATION" | "FINANCE" | "GOVERNANCE"> = [
     "MEMBERSHIP",
     "SERVICE",
+    "COMMUNICATION",
     "FINANCE",
     "GOVERNANCE",
   ];

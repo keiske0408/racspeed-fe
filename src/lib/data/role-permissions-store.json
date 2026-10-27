@@ -7,29 +7,21 @@
       "dashboard",
       "members",
       "recruitment",
+      "retention",
+      "calendar",
       "events",
-      "projects",
       "tasks",
+      "broadcasts",
+      "projects",
       "treasury",
       "budgets",
       "partnerships",
+      "resources",
       "certificates",
-      "retention",
       "settings"
     ],
     "allowedPermissions": [
-      "EVENT_VIEW",
-      "PAYMENT_SUBMIT",
       "MEMBER_VIEW",
-      "RETENTION_ALERT_VIEW",
-      "PROJECT_CREATE",
-      "PROJECT_UPDATE",
-      "PROJECT_SUBMIT_REPORT",
-      "BUDGET_REQUEST",
-      "LIQUIDATION_SUBMIT",
-      "EVENT_CREATE",
-      "EVENT_UPDATE",
-      "ATTENDANCE_MANAGE",
       "MEMBER_CREATE",
       "MEMBER_UPDATE",
       "MEMBER_APPROVE",
@@ -37,13 +29,28 @@
       "MEMBER_SENSITIVE_VIEW",
       "ROLE_ASSIGN",
       "RECRUITMENT_MANAGE",
+      "EVENT_VIEW",
+      "EVENT_CREATE",
+      "EVENT_UPDATE",
+      "ATTENDANCE_MANAGE",
+      "RETENTION_ALERT_VIEW",
+      "PROJECT_CREATE",
+      "PROJECT_UPDATE",
+      "PROJECT_SUBMIT_REPORT",
       "REPORT_APPROVE",
       "REPORT_TEMPLATE_MANAGE",
+      "NOTIFICATION_SEND",
       "CERTIFICATE_GENERATE",
       "TREASURY_VIEW",
+      "INVOICE_CREATE",
+      "PAYMENT_SUBMIT",
+      "PAYMENT_VERIFY",
+      "LEDGER_ADJUST",
+      "BUDGET_REQUEST",
       "BUDGET_APPROVE_PRESIDENT",
+      "DISBURSEMENT_RECORD",
+      "LIQUIDATION_SUBMIT",
       "LIQUIDATION_VERIFY",
-      "NOTIFICATION_SEND",
       "AUDIT_LOG_VIEW",
       "SETTINGS_MANAGE",
       "DATA_EXPORT"
@@ -57,12 +64,15 @@
       "dashboard",
       "members",
       "recruitment",
+      "retention",
+      "calendar",
       "events",
-      "projects",
       "tasks",
+      "broadcasts",
+      "projects",
       "partnerships",
-      "certificates",
-      "retention"
+      "resources",
+      "certificates"
     ],
     "allowedPermissions": [
       "EVENT_VIEW",
@@ -92,15 +102,17 @@
     "allowedPages": [
       "dashboard",
       "recruitment",
+      "retention",
+      "calendar",
       "events",
-      "projects",
       "tasks",
+      "broadcasts",
+      "projects",
       "partnerships",
-      "certificates",
-      "retention"
+      "resources",
+      "certificates"
     ],
     "allowedPermissions": [
-      "RECRUITMENT_MANAGE",
       "EVENT_VIEW",
       "EVENT_CREATE",
       "EVENT_UPDATE",
@@ -111,11 +123,12 @@
       "PROJECT_SUBMIT_REPORT",
       "REPORT_APPROVE",
       "REPORT_TEMPLATE_MANAGE",
+      "NOTIFICATION_SEND",
       "CERTIFICATE_GENERATE",
       "PAYMENT_SUBMIT",
       "BUDGET_REQUEST",
       "LIQUIDATION_SUBMIT",
-      "NOTIFICATION_SEND",
+      "RECRUITMENT_MANAGE",
       "DATA_EXPORT"
     ]
   },
@@ -126,12 +139,14 @@
     "allowedPages": [
       "dashboard",
       "members",
+      "calendar",
       "events",
-      "projects",
       "tasks",
+      "projects",
       "treasury",
       "budgets",
-      "partnerships"
+      "partnerships",
+      "resources"
     ],
     "allowedPermissions": [
       "EVENT_VIEW",
@@ -164,10 +179,13 @@
     "allowedPages": [
       "dashboard",
       "members",
+      "calendar",
       "events",
-      "projects",
       "tasks",
+      "broadcasts",
+      "projects",
       "budgets",
+      "resources",
       "certificates"
     ],
     "allowedPermissions": [
@@ -192,9 +210,12 @@
       "dashboard",
       "members",
       "recruitment",
+      "retention",
+      "calendar",
       "events",
       "tasks",
-      "retention"
+      "broadcasts",
+      "resources"
     ],
     "allowedPermissions": [
       "EVENT_VIEW",
@@ -213,11 +234,14 @@
     "allowedPages": [
       "dashboard",
       "members",
+      "calendar",
       "events",
-      "projects",
       "tasks",
+      "broadcasts",
+      "projects",
       "budgets",
       "partnerships",
+      "resources",
       "retention"
     ],
     "allowedPermissions": [
@@ -241,10 +265,11 @@
     "description": "Default authority and page accessibility for General Member under District 3820 guidelines.",
     "allowedPages": [
       "dashboard",
+      "calendar",
       "events",
-      "projects",
       "tasks",
-      "treasury",
+      "projects",
+      "resources",
       "certificates"
     ],
     "allowedPermissions": [
@@ -259,8 +284,10 @@
     "allowedPages": [
       "dashboard",
       "members",
+      "calendar",
       "treasury",
       "budgets",
+      "resources",
       "retention"
     ],
     "allowedPermissions": [
