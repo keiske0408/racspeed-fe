@@ -17,6 +17,8 @@ export default async function AppLayout({
       userFullName={context.user.fullName || "Member"}
       roleLabel={context.roleLabel}
       allowedPages={context.allowedPages}
+      permissions={Array.from(context.permissions)}
+      isPlatformAdmin={context.isPlatformAdmin}
     >
       {children}
     </AppShell>

@@ -58,13 +58,22 @@ export function extractSessionToken(raw: string): string {
 interface EventsClientProps {
   initialEvents: EventDTO[];
   initialToken?: string;
+  canCreate?: boolean;
+  canManageAttendance?: boolean;
+  initialAction?: string;
 }
 
-export function EventsClient({ initialEvents, initialToken }: EventsClientProps) {
+export function EventsClient({
+  initialEvents,
+  initialToken,
+  canCreate = false,
+  canManageAttendance = false,
+  initialAction,
+}: EventsClientProps) {
   const [events, setEvents] = useState<EventDTO[]>(initialEvents);
   const [selectedEvent, setSelectedEvent] = useState<EventDTO | null>(null);
   const [qrModalOpen, setQrModalOpen] = useState(false);
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(canCreate && initialAction === "new");
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
   const [sessionToken, setSessionToken] = useState<string>("");
   const [secondsRemaining, setSecondsRemaining] = useState<number>(60);
@@ -329,6 +338,10 @@ export function EventsClient({ initialEvents, initialToken }: EventsClientProps)
   }
 
   function handleOpenQr(event: EventDTO) {
+    if (!canManageAttendance) {
+      setNotification({ message: "You lack permission to launch QR attendance sessions.", type: "error" });
+      return;
+    }
     setSelectedEvent(event);
     setQrModalOpen(true);
     setSecondsRemaining(60);
@@ -345,6 +358,10 @@ export function EventsClient({ initialEvents, initialToken }: EventsClientProps)
 
   async function handleCreateEvent(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!canCreate) {
+      setNotification({ message: "You do not have permission to create club events.", type: "error" });
+      return;
+    }
     setIsSubmitting(true);
     const formData = new FormData(e.currentTarget);
 
@@ -399,13 +416,15 @@ export function EventsClient({ initialEvents, initialToken }: EventsClientProps)
             <Megaphone className="w-3.5 h-3.5 text-rose-600" />
             GC Broadcast Studio
           </Link>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="inline-flex items-center gap-2 py-2 px-3.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition shadow-xs cursor-pointer shrink-0"
-          >
-            <Plus className="w-4 h-4" />
-            Create New Event
-          </button>
+          {canCreate && (
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="inline-flex items-center gap-2 py-2 px-3.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition shadow-xs cursor-pointer shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              Create New Event
+            </button>
+          )}
         </div>
       </div>
 
@@ -464,17 +483,19 @@ export function EventsClient({ initialEvents, initialToken }: EventsClientProps)
               </div>
             </div>
 
-            <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 gap-2">
-              <button
-                onClick={() => handleOpenQr(event)}
-                className="inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 font-semibold text-xs transition cursor-pointer shadow-xs"
-              >
-                <QrCode className="w-3.5 h-3.5" />
-                QR Session
-              </button>
+            <div className={`mt-5 pt-4 border-t border-slate-100 dark:border-slate-800 ${canManageAttendance ? "grid grid-cols-2 gap-2" : "flex"}`}>
+              {canManageAttendance && (
+                <button
+                  onClick={() => handleOpenQr(event)}
+                  className="inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 font-semibold text-xs transition cursor-pointer shadow-xs"
+                >
+                  <QrCode className="w-3.5 h-3.5" />
+                  QR Session
+                </button>
+              )}
               <Link
                 href={`/broadcasts?eventId=${event.id}`}
-                className="inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 font-semibold text-xs transition shadow-2xs"
+                className={`inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 font-semibold text-xs transition shadow-2xs ${!canManageAttendance ? "w-full" : ""}`}
               >
                 <Megaphone className="w-3.5 h-3.5" />
                 Share to GC
@@ -613,7 +634,7 @@ export function EventsClient({ initialEvents, initialToken }: EventsClientProps)
       )}
 
       {/* Modal: Create Event */}
-      {showAddModal && (
+      {canCreate && showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-2xl">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">

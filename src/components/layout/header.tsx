@@ -25,6 +25,9 @@ export interface HeaderProps {
   onMobileMenuToggle?: () => void;
   onToggleSidebar?: () => void;
   isSidebarCollapsed?: boolean;
+  allowedPages?: string[];
+  permissions?: string[];
+  isPlatformAdmin?: boolean;
 }
 
 export function Header({
@@ -33,6 +36,9 @@ export function Header({
   onMobileMenuToggle,
   onToggleSidebar,
   isSidebarCollapsed = false,
+  allowedPages = [],
+  permissions = [],
+  isPlatformAdmin = false,
 }: HeaderProps) {
   const router = useRouter();
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -42,6 +48,25 @@ export function Header({
   useEffect(() => {
     setIsDark(document.documentElement.classList.contains("dark"));
   }, []);
+
+  const permSet = new Set(permissions);
+  const hasPage = (page: string) => isPlatformAdmin || allowedPages.includes(page);
+  const hasPerm = (perm: string) => isPlatformAdmin || permSet.has(perm);
+
+  const canCreateEvent = hasPage("events") && hasPerm("EVENT_CREATE");
+  const canCreateProject = hasPage("projects") && hasPerm("PROJECT_CREATE");
+  const canAddProspect = hasPage("recruitment") && (hasPerm("RECRUITMENT_MANAGE") || hasPerm("MEMBER_CREATE"));
+  const canAddResource = hasPage("resources") && hasPerm("SETTINGS_MANAGE");
+  const canRecordPayment = hasPage("treasury") && (hasPerm("PAYMENT_SUBMIT") || hasPerm("TREASURY_VIEW") || hasPerm("LEDGER_ADJUST"));
+  const canAssignTask = hasPage("tasks") && hasPerm("ROLE_ASSIGN");
+
+  const hasAnyCreateAction =
+    canCreateEvent ||
+    canCreateProject ||
+    canAddProspect ||
+    canAddResource ||
+    canRecordPayment ||
+    canAssignTask;
 
   function toggleTheme() {
     const isCurrentlyDark = document.documentElement.classList.contains("dark");
@@ -111,70 +136,84 @@ export function Header({
         </button>
 
         {/* Primary Functional CTA with Quick-Create Popover */}
-        <div className="relative">
-          <button
-            onClick={() => {
-              setCreateMenuOpen(!createMenuOpen);
-              setDropdownOpen(false);
-            }}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#0D3594] hover:bg-[#092569] text-white text-[12.5px] font-semibold shadow-xs transition cursor-pointer"
-            aria-expanded={createMenuOpen}
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Create</span>
-            <ChevronDown className="w-3 h-3 opacity-75" />
-          </button>
+        {hasAnyCreateAction && (
+          <div className="relative">
+            <button
+              onClick={() => {
+                setCreateMenuOpen(!createMenuOpen);
+                setDropdownOpen(false);
+              }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#0D3594] hover:bg-[#092569] text-white text-[12.5px] font-semibold shadow-xs transition cursor-pointer"
+              aria-expanded={createMenuOpen}
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Create</span>
+              <ChevronDown className="w-3 h-3 opacity-75" />
+            </button>
 
-          {createMenuOpen && (
-            <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-[#161B26] border border-[#EDEDF2] dark:border-slate-800 rounded-2xl elevation-popover py-1.5 z-50">
-              <p className="px-3.5 py-1 text-[10px] font-bold tracking-wider text-[#8E95A5] uppercase">
-                Quick Operations
-              </p>
-              <button
-                onClick={() => handleNavigate("/events?action=new")}
-                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-[#111625] dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition"
-              >
-                <Calendar className="w-4 h-4 text-[#0D3594] dark:text-blue-400" />
-                <span>New Event / QR Session</span>
-              </button>
-              <button
-                onClick={() => handleNavigate("/projects?action=new")}
-                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-[#111625] dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition"
-              >
-                <FolderKanban className="w-4 h-4 text-[#17A863]" />
-                <span>Register Service Project</span>
-              </button>
-              <button
-                onClick={() => handleNavigate("/recruitment?action=new")}
-                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-[#111625] dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition"
-              >
-                <UserPlus className="w-4 h-4 text-[#8244E8]" />
-                <span>Add Prospect Member</span>
-              </button>
-              <button
-                onClick={() => handleNavigate("/resources")}
-                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-[#111625] dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition"
-              >
-                <Bookmark className="w-4 h-4 text-[#D97706]" />
-                <span>Add Resource Link</span>
-              </button>
-              <button
-                onClick={() => handleNavigate("/treasury")}
-                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-[#111625] dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition"
-              >
-                <Receipt className="w-4 h-4 text-emerald-600" />
-                <span>Record Dues Payment</span>
-              </button>
-              <button
-                onClick={() => handleNavigate("/tasks")}
-                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-[#111625] dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition"
-              >
-                <CheckSquare className="w-4 h-4 text-sky-600" />
-                <span>Assign Club Task</span>
-              </button>
-            </div>
-          )}
-        </div>
+            {createMenuOpen && (
+              <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-[#161B26] border border-[#EDEDF2] dark:border-slate-800 rounded-2xl elevation-popover py-1.5 z-50">
+                <p className="px-3.5 py-1 text-[10px] font-bold tracking-wider text-[#8E95A5] uppercase">
+                  Quick Operations
+                </p>
+                {canCreateEvent && (
+                  <button
+                    onClick={() => handleNavigate("/events?action=new")}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-[#111625] dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition"
+                  >
+                    <Calendar className="w-4 h-4 text-[#0D3594] dark:text-blue-400" />
+                    <span>New Event / QR Session</span>
+                  </button>
+                )}
+                {canCreateProject && (
+                  <button
+                    onClick={() => handleNavigate("/projects?action=new")}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-[#111625] dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition"
+                  >
+                    <FolderKanban className="w-4 h-4 text-[#17A863]" />
+                    <span>Register Service Project</span>
+                  </button>
+                )}
+                {canAddProspect && (
+                  <button
+                    onClick={() => handleNavigate("/recruitment?action=new")}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-[#111625] dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition"
+                  >
+                    <UserPlus className="w-4 h-4 text-[#8244E8]" />
+                    <span>Add Prospect Member</span>
+                  </button>
+                )}
+                {canAddResource && (
+                  <button
+                    onClick={() => handleNavigate("/resources")}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-[#111625] dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition"
+                  >
+                    <Bookmark className="w-4 h-4 text-[#D97706]" />
+                    <span>Add Resource Link</span>
+                  </button>
+                )}
+                {canRecordPayment && (
+                  <button
+                    onClick={() => handleNavigate("/treasury")}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-[#111625] dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition"
+                  >
+                    <Receipt className="w-4 h-4 text-emerald-600" />
+                    <span>Record Dues Payment</span>
+                  </button>
+                )}
+                {canAssignTask && (
+                  <button
+                    onClick={() => handleNavigate("/tasks")}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-[#111625] dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition"
+                  >
+                    <CheckSquare className="w-4 h-4 text-sky-600" />
+                    <span>Assign Club Task</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="h-5 w-px bg-[#EDEDF2] dark:bg-slate-800 mx-1 hidden sm:block" />
 

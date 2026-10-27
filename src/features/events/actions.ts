@@ -82,6 +82,7 @@ export async function createEventAction(formData: FormData) {
 
 export async function startQrAttendanceSessionAction(eventId: string) {
   const user = await requireUser();
+  await assertPermission("00000000-0000-0000-0000-000000000001", "ATTENDANCE_MANAGE");
   const adminClient = createAdminClient();
 
   // Expire truly stale sessions whose time window has elapsed

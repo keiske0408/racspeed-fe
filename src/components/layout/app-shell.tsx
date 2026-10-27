@@ -11,6 +11,8 @@ export interface AppShellProps {
   userFullName?: string;
   roleLabel?: string;
   allowedPages?: string[];
+  permissions?: string[];
+  isPlatformAdmin?: boolean;
 }
 
 export function AppShell({
@@ -19,6 +21,8 @@ export function AppShell({
   userFullName,
   roleLabel,
   allowedPages,
+  permissions = [],
+  isPlatformAdmin = false,
 }: AppShellProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -96,6 +100,9 @@ export function AppShell({
         <Header
           userEmail={userEmail}
           userFullName={userFullName}
+          allowedPages={allowedPages}
+          permissions={permissions}
+          isPlatformAdmin={isPlatformAdmin}
           onMobileMenuToggle={() => setMobileMenuOpen(true)}
           onToggleSidebar={() => {
             if (typeof window !== "undefined" && window.innerWidth < 768) {

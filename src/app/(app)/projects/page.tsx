@@ -5,9 +5,21 @@ import { ProjectsClient } from "./projects-client";
 
 export const dynamic = "force-dynamic";
 
-export default async function ProjectsPage() {
-  await assertPageAccess("projects");
-  const projects = await getProjectsList();
+interface ProjectsPageProps {
+  searchParams?: Promise<{ action?: string }>;
+}
 
-  return <ProjectsClient initialProjects={projects} />;
+export default async function ProjectsPage({ searchParams }: ProjectsPageProps) {
+  const context = await assertPageAccess("projects");
+  const projects = await getProjectsList();
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+  const canCreate = context.isPlatformAdmin || context.permissions.has("PROJECT_CREATE");
+
+  return (
+    <ProjectsClient
+      initialProjects={projects}
+      canCreate={canCreate}
+      initialAction={resolvedSearchParams.action}
+    />
+  );
 }

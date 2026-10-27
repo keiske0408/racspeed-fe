@@ -9,9 +9,10 @@ import { ProspectDTO } from "@/features/recruitment/queries";
 
 interface RecruitmentClientProps {
   initialProspects: ProspectDTO[];
+  canManage?: boolean;
 }
 
-export function RecruitmentClient({ initialProspects }: RecruitmentClientProps) {
+export function RecruitmentClient({ initialProspects, canManage = false }: RecruitmentClientProps) {
   const [prospects, setProspects] = useState<ProspectDTO[]>(initialProspects);
   const [showAddModal, setShowAddModal] = useState(false);
   const [notification, setNotification] = useState<string | null>(null);
@@ -110,13 +111,15 @@ export function RecruitmentClient({ initialProspects }: RecruitmentClientProps) 
             Live Supabase prospect-to-member pipeline · Rotaract San Pedro East
           </p>
         </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="inline-flex items-center gap-2 py-2 px-3.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition shadow-xs cursor-pointer shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          Add Prospect
-        </button>
+        {canManage && (
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="inline-flex items-center gap-2 py-2 px-3.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition shadow-xs cursor-pointer shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            Add Prospect
+          </button>
+        )}
       </div>
 
       {notification && (
@@ -217,7 +220,7 @@ export function RecruitmentClient({ initialProspects }: RecruitmentClientProps) 
       </div>
 
       {/* Modal: Add Prospect */}
-      {showAddModal && (
+      {canManage && showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-2xl">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">

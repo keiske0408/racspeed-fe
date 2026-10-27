@@ -11,13 +11,19 @@ import { ProjectDTO } from "@/features/projects/queries";
 
 interface ProjectsClientProps {
   initialProjects: ProjectDTO[];
+  canCreate?: boolean;
+  initialAction?: string;
 }
 
-export function ProjectsClient({ initialProjects }: ProjectsClientProps) {
+export function ProjectsClient({
+  initialProjects,
+  canCreate = false,
+  initialAction,
+}: ProjectsClientProps) {
   const [projects, setProjects] = useState<ProjectDTO[]>(initialProjects);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(canCreate && initialAction === "new");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   function handleDownloadReport(project: ProjectDTO) {
@@ -47,6 +53,10 @@ export function ProjectsClient({ initialProjects }: ProjectsClientProps) {
 
   async function handleCreateProject(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!canCreate) {
+      setNotification("You do not have permission to register service projects.");
+      return;
+    }
     setIsSubmitting(true);
     const formData = new FormData(e.currentTarget);
 
@@ -102,13 +112,15 @@ export function ProjectsClient({ initialProjects }: ProjectsClientProps) {
             <Megaphone className="w-3.5 h-3.5 text-rose-600" />
             GC Broadcast Studio
           </Link>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="inline-flex items-center gap-2 py-2 px-3.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition shadow-xs cursor-pointer shrink-0"
-          >
-            <Plus className="w-4 h-4" />
-            Register Service Project
-          </button>
+          {canCreate && (
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="inline-flex items-center gap-2 py-2 px-3.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition shadow-xs cursor-pointer shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              Register Service Project
+            </button>
+          )}
         </div>
       </div>
 
@@ -223,7 +235,7 @@ export function ProjectsClient({ initialProjects }: ProjectsClientProps) {
       </div>
 
       {/* Modal: Create Project */}
-      {showAddModal && (
+      {canCreate && showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-2xl">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
