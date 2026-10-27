@@ -5,7 +5,7 @@
     "title": "Coastal Clean-up Logistics & Barangay LGU Permitting",
     "description": "Coordinate with Barangay San Antonio LGU for site permits, waste collection truck, and safety marshal deployment for Saturday clean-up drive.",
     "committee": "COMMUNITY_SERVICE",
-    "status": "IN_PROGRESS",
+    "status": "IN_REVIEW",
     "priority": "HIGH",
     "dueDate": "2026-11-05",
     "assignedMemberIds": [
@@ -42,7 +42,7 @@
       }
     ],
     "createdAt": "2026-10-20T08:00:00Z",
-    "updatedAt": "2026-10-22T09:30:00Z",
+    "updatedAt": "2026-10-27T10:50:22.146Z",
     "createdBy": "Gabriel Leyba"
   },
   {
