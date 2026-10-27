@@ -1,5 +1,5 @@
 import React from "react";
-import { requireUser } from "@/lib/auth/session";
+import { assertPageAccess } from "@/lib/auth/session";
 import { getEventsList } from "@/features/events/queries";
 import { getGroupTasksList } from "@/features/tasks/queries";
 import { CalendarClient } from "./calendar-client";
@@ -13,7 +13,7 @@ export const metadata = {
 };
 
 export default async function CalendarPage() {
-  await requireUser();
+  await assertPageAccess("events");
 
   const [events, tasks] = await Promise.all([
     getEventsList(),

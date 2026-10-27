@@ -3,7 +3,19 @@ import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { redirect } from "next/navigation";
-import { Permission, hasPermission, PermissionMap } from "@/lib/permissions/keys";
+import {
+  Permission,
+  hasPermission,
+  PermissionMap,
+  RoleKey,
+  ROLE_LABELS,
+  PERMISSIONS,
+} from "@/lib/permissions/keys";
+import {
+  readRolePermissionsStore,
+  DEFAULT_ROLE_PAGES,
+  APP_MODULES,
+} from "@/lib/data/role-permissions-storage";
 
 export interface CurrentUserContext {
   id: string;
@@ -12,6 +24,15 @@ export interface CurrentUserContext {
   status: "PENDING" | "ACTIVE" | "SUSPENDED" | "REJECTED";
   isPlatformAdmin: boolean;
   avatarUrl?: string | null;
+}
+
+export interface UserAccessContext {
+  user: CurrentUserContext;
+  roleKey: RoleKey | "PLATFORM_ADMIN";
+  roleLabel: string;
+  allowedPages: string[];
+  permissions: Set<Permission>;
+  isPlatformAdmin: boolean;
 }
 
 export const getCurrentUser = cache(async function getCurrentUser(): Promise<CurrentUserContext | null> {
@@ -56,22 +77,25 @@ export async function requireUser(): Promise<CurrentUserContext> {
   return user;
 }
 
-export async function getClubPermissions(clubId: string): Promise<Set<Permission>> {
-  const user = await getCurrentUser();
-  if (!user) return new Set();
+export const getUserAccessContext = cache(async function getUserAccessContext(
+  clubId = process.env.NEXT_PUBLIC_DEFAULT_CLUB_ID || "00000000-0000-0000-0000-000000000001"
+): Promise<UserAccessContext> {
+  const user = await requireUser();
+
   if (user.isPlatformAdmin) {
-    // Platform admin has all permissions
-    return new Set<Permission>([
-      "MEMBER_VIEW", "MEMBER_CREATE", "MEMBER_UPDATE", "MEMBER_APPROVE", "MEMBER_SUSPEND",
-      "MEMBER_SENSITIVE_VIEW", "ROLE_ASSIGN", "RECRUITMENT_MANAGE", "EVENT_VIEW", "EVENT_CREATE",
-      "EVENT_UPDATE", "ATTENDANCE_MANAGE", "RETENTION_ALERT_VIEW", "PROJECT_CREATE",
-      "PROJECT_UPDATE", "PROJECT_SUBMIT_REPORT", "REPORT_APPROVE", "REPORT_TEMPLATE_MANAGE",
-      "CERTIFICATE_GENERATE", "TREASURY_VIEW", "INVOICE_CREATE", "PAYMENT_SUBMIT",
-      "PAYMENT_VERIFY", "LEDGER_ADJUST", "BUDGET_REQUEST", "BUDGET_APPROVE_PRESIDENT",
-      "BUDGET_APPROVE_TREASURER", "DISBURSEMENT_RECORD", "LIQUIDATION_SUBMIT", "LIQUIDATION_VERIFY",
-      "NOTIFICATION_SEND", "AUDIT_LOG_VIEW", "SETTINGS_MANAGE", "DATA_EXPORT"
-    ]);
+    return {
+      user,
+      roleKey: "PLATFORM_ADMIN",
+      roleLabel: "Platform Administrator",
+      allowedPages: APP_MODULES.map((m) => m.key),
+      permissions: new Set<Permission>(PERMISSIONS),
+      isPlatformAdmin: true,
+    };
   }
+
+  const perms = new Set<Permission>();
+  let roleKey: RoleKey = "GENERAL_MEMBER";
+  let roleLabel = "General Member";
 
   try {
     const admin = createAdminClient();
@@ -81,6 +105,8 @@ export async function getClubPermissions(clubId: string): Promise<Set<Permission
         id,
         membership_roles (
           roles (
+            key,
+            name,
             role_permissions (
               permissions ( key )
             )
@@ -92,26 +118,41 @@ export async function getClubPermissions(clubId: string): Promise<Set<Permission
       .eq("membership_status", "ACTIVE")
       .maybeSingle();
 
-    const perms = new Set<Permission>();
-    if (!membership) return perms;
+    const memRoles = (membership as any)?.membership_roles || [];
+    if (memRoles.length > 0 && memRoles[0].roles) {
+      roleKey = (memRoles[0].roles.key as RoleKey) || "GENERAL_MEMBER";
+      roleLabel = memRoles[0].roles.name || ROLE_LABELS[roleKey] || "Member";
+    }
 
-    const roles = (membership as any).membership_roles || [];
-    for (const mr of roles) {
-      const role = mr.roles;
-      if (!role) continue;
-      const rps = role.role_permissions || [];
+    for (const mr of memRoles) {
+      const rps = mr.roles?.role_permissions || [];
       for (const rp of rps) {
         if (rp.permissions?.key) {
           perms.add(rp.permissions.key as Permission);
         }
       }
     }
-
-    return perms;
   } catch (err) {
-    console.warn("Could not query club permissions with admin client:", err);
-    return new Set<Permission>();
+    console.warn("Could not query membership roles:", err);
   }
+
+  const store = readRolePermissionsStore();
+  const roleConfig = store[roleKey];
+  const allowedPages = roleConfig?.allowedPages || DEFAULT_ROLE_PAGES[roleKey] || ["dashboard", "events"];
+
+  return {
+    user,
+    roleKey,
+    roleLabel,
+    allowedPages,
+    permissions: perms,
+    isPlatformAdmin: false,
+  };
+});
+
+export async function getClubPermissions(clubId: string): Promise<Set<Permission>> {
+  const context = await getUserAccessContext(clubId);
+  return context.permissions;
 }
 
 export async function assertPermission(clubId: string, permission: Permission): Promise<void> {
@@ -120,4 +161,18 @@ export async function assertPermission(clubId: string, permission: Permission): 
   if (!user || (!user.isPlatformAdmin && !perms.has(permission))) {
     throw new Error(`Unauthorized: User lacks required permission '${permission}' for this club.`);
   }
+}
+
+export async function assertPageAccess(
+  moduleKey: string,
+  clubId = process.env.NEXT_PUBLIC_DEFAULT_CLUB_ID || "00000000-0000-0000-0000-000000000001"
+): Promise<UserAccessContext> {
+  const context = await getUserAccessContext(clubId);
+  if (context.isPlatformAdmin) {
+    return context;
+  }
+  if (!context.allowedPages.includes(moduleKey)) {
+    redirect("/access-denied");
+  }
+  return context;
 }

@@ -78,11 +78,31 @@ const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
+const NAV_ITEM_MODULE_MAP: Record<string, string> = {
+  "/dashboard": "dashboard",
+  "/members": "members",
+  "/recruitment": "recruitment",
+  "/retention-alerts": "retention",
+  "/calendar": "events",
+  "/events": "events",
+  "/tasks": "tasks",
+  "/broadcasts": "dashboard",
+  "/projects": "projects",
+  "/treasury": "treasury",
+  "/budgets": "budgets",
+  "/partnerships": "partnerships",
+  "/resources": "dashboard",
+  "/certificates": "certificates",
+  "/settings": "settings",
+};
+
 export interface SidebarProps {
   className?: string;
   onNavigate?: () => void;
   userFullName?: string;
   userEmail?: string;
+  roleLabel?: string;
+  allowedPages?: string[];
   collapsed?: boolean;
   onToggleCollapse?: () => void;
 }
@@ -92,10 +112,22 @@ export function Sidebar({
   onNavigate,
   userFullName = "Sara",
   userEmail,
+  roleLabel,
+  allowedPages,
   collapsed = false,
   onToggleCollapse,
 }: SidebarProps) {
   const pathname = usePathname();
+
+  const visibleSections = NAV_SECTIONS.map((section) => {
+    const items = section.items.filter((item) => {
+      if (!allowedPages) return true;
+      const mod = NAV_ITEM_MODULE_MAP[item.href];
+      if (!mod) return true;
+      return allowedPages.includes(mod);
+    });
+    return { ...section, items };
+  }).filter((section) => section.items.length > 0);
 
   return (
     <aside
@@ -137,7 +169,7 @@ export function Sidebar({
 
       {/* Navigation Sections */}
       <nav className="flex-1 px-3 py-4 space-y-5 overflow-y-auto">
-        {NAV_SECTIONS.map((section, idx) => (
+        {visibleSections.map((section, idx) => (
           <div key={idx} className="space-y-1">
             {section.title && (
               !collapsed ? (
@@ -207,17 +239,19 @@ export function Sidebar({
           <HelpCircle className="w-4 h-4 text-[#8E95A5] shrink-0" />
           {!collapsed && <span>Help</span>}
         </Link>
-        <Link
-          href="/settings"
-          onClick={() => onNavigate?.()}
-          title="Club Settings"
-          className={`flex items-center ${
-            collapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2"
-          } rounded-xl text-[13px] text-[#6B7280] dark:text-slate-400 hover:text-[#111625] dark:hover:text-white hover:bg-slate-100/60 dark:hover:bg-slate-800/40 transition font-medium`}
-        >
-          <Settings className="w-4 h-4 text-[#8E95A5] shrink-0" />
-          {!collapsed && <span>Settings</span>}
-        </Link>
+        {(!allowedPages || allowedPages.includes("settings")) && (
+          <Link
+            href="/settings"
+            onClick={() => onNavigate?.()}
+            title="Club Settings"
+            className={`flex items-center ${
+              collapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2"
+            } rounded-xl text-[13px] text-[#6B7280] dark:text-slate-400 hover:text-[#111625] dark:hover:text-white hover:bg-slate-100/60 dark:hover:bg-slate-800/40 transition font-medium`}
+          >
+            <Settings className="w-4 h-4 text-[#8E95A5] shrink-0" />
+            {!collapsed && <span>Settings</span>}
+          </Link>
+        )}
 
         {/* User Profile Component */}
         <div className="pt-2">
@@ -236,9 +270,9 @@ export function Sidebar({
                   <p className="text-[13px] font-semibold text-[#111625] dark:text-white truncate">
                     {userFullName}
                   </p>
-                  {userEmail && (
-                    <p className="text-[11px] text-[#8E95A5] truncate">{userEmail}</p>
-                  )}
+                  <p className="text-[11px] text-[#8E95A5] truncate">
+                    {roleLabel || userEmail}
+                  </p>
                 </div>
               )}
             </div>

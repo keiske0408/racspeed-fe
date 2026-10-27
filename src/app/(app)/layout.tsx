@@ -1,6 +1,6 @@
 import React from "react";
 import { AppShell } from "@/components/layout/app-shell";
-import { getCurrentUser } from "@/lib/auth/session";
+import { getUserAccessContext } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
@@ -9,12 +9,14 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const user = await getCurrentUser();
+  const context = await getUserAccessContext();
 
   return (
     <AppShell
-      userEmail={user?.email}
-      userFullName={user?.fullName || "Member"}
+      userEmail={context.user.email}
+      userFullName={context.user.fullName || "Member"}
+      roleLabel={context.roleLabel}
+      allowedPages={context.allowedPages}
     >
       {children}
     </AppShell>

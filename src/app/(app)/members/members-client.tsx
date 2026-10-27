@@ -127,12 +127,22 @@ export const ROLE_AUTHORITY_INFO: Record<string, { label: string; permissions: s
   },
 };
 
+export interface MemberPermissions {
+  canApprove?: boolean;
+  canCreate?: boolean;
+  canUpdate?: boolean;
+  canAssignRole?: boolean;
+  canSuspend?: boolean;
+  canManageSettings?: boolean;
+}
+
 interface MembersClientProps {
   initialMembers: MemberDTO[];
   currentUser: CurrentUserContext | null;
+  permissions?: MemberPermissions;
 }
 
-export function MembersClient({ initialMembers, currentUser }: MembersClientProps) {
+export function MembersClient({ initialMembers, currentUser, permissions }: MembersClientProps) {
   const [members, setMembers] = useState<MemberDTO[]>(initialMembers);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"ALL" | "ACTIVE" | "PENDING">("ALL");
@@ -154,6 +164,11 @@ export function MembersClient({ initialMembers, currentUser }: MembersClientProp
   const pageSize = 10;
 
   const isSuperAdmin = currentUser?.isPlatformAdmin ?? false;
+  const canApprove = isSuperAdmin || (permissions?.canApprove ?? false);
+  const canCreate = isSuperAdmin || (permissions?.canCreate ?? false);
+  const canUpdate = isSuperAdmin || (permissions?.canUpdate ?? false);
+  const canAssignRole = isSuperAdmin || (permissions?.canAssignRole ?? false);
+  const canManageSettings = isSuperAdmin || (permissions?.canManageSettings ?? false);
 
   async function handleApprove(id: string) {
     try {
@@ -310,20 +325,24 @@ export function MembersClient({ initialMembers, currentUser }: MembersClientProp
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowMatrixModal(true)}
-            className="inline-flex items-center gap-1.5 py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs transition cursor-pointer"
-          >
-            <Shield className="w-3.5 h-3.5 text-rose-500" />
-            Authority Matrix
-          </button>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="inline-flex items-center gap-2 py-2 px-3.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition shadow-xs cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            Register Member / User
-          </button>
+          {canManageSettings && (
+            <button
+              onClick={() => setShowMatrixModal(true)}
+              className="inline-flex items-center gap-1.5 py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs transition cursor-pointer"
+            >
+              <Shield className="w-3.5 h-3.5 text-rose-500" />
+              Authority Matrix
+            </button>
+          )}
+          {canCreate && (
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="inline-flex items-center gap-2 py-2 px-3.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition shadow-xs cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              Register Member / User
+            </button>
+          )}
         </div>
       </div>
 
@@ -391,24 +410,30 @@ export function MembersClient({ initialMembers, currentUser }: MembersClientProp
                   <p className="text-[11px] text-slate-400 mt-0.5">Classification: {pending.classification}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => openEditModal(pending)}
-                    className="px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition cursor-pointer"
-                  >
-                    Edit & Assign
-                  </button>
-                  <button
-                    onClick={() => handleApprove(pending.id)}
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-xs cursor-pointer"
-                  >
-                    Approve
-                  </button>
-                  <button
-                    onClick={() => handleReject(pending.id)}
-                    className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition cursor-pointer"
-                  >
-                    Decline
-                  </button>
+                  {canAssignRole && (
+                    <button
+                      onClick={() => openEditModal(pending)}
+                      className="px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition cursor-pointer"
+                    >
+                      Edit & Assign
+                    </button>
+                  )}
+                  {canApprove && (
+                    <button
+                      onClick={() => handleApprove(pending.id)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-xs cursor-pointer"
+                    >
+                      Approve
+                    </button>
+                  )}
+                  {canApprove && (
+                    <button
+                      onClick={() => handleReject(pending.id)}
+                      className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition cursor-pointer"
+                    >
+                      Decline
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -507,13 +532,17 @@ export function MembersClient({ initialMembers, currentUser }: MembersClientProp
                     {member.joinedDate}
                   </td>
                   <td className="py-3.5 px-4 text-right">
-                    <button
-                      onClick={() => openEditModal(member)}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 transition cursor-pointer"
-                    >
-                      <Edit3 className="w-3 h-3 text-rose-500" />
-                      Edit / Authority
-                    </button>
+                    {(canUpdate || canAssignRole) ? (
+                      <button
+                        onClick={() => openEditModal(member)}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 transition cursor-pointer"
+                      >
+                        <Edit3 className="w-3 h-3 text-rose-500" />
+                        Edit / Authority
+                      </button>
+                    ) : (
+                      <span className="text-slate-400 text-xs">—</span>
+                    )}
                   </td>
                 </tr>
               ))}

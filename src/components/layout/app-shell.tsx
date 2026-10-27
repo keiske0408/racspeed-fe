@@ -9,9 +9,17 @@ export interface AppShellProps {
   children: React.ReactNode;
   userEmail?: string;
   userFullName?: string;
+  roleLabel?: string;
+  allowedPages?: string[];
 }
 
-export function AppShell({ children, userEmail, userFullName }: AppShellProps) {
+export function AppShell({
+  children,
+  userEmail,
+  userFullName,
+  roleLabel,
+  allowedPages,
+}: AppShellProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
@@ -45,6 +53,8 @@ export function AppShell({ children, userEmail, userFullName }: AppShellProps) {
         className="hidden md:flex"
         userFullName={userFullName}
         userEmail={userEmail}
+        roleLabel={roleLabel}
+        allowedPages={allowedPages}
         collapsed={isSidebarCollapsed}
         onToggleCollapse={toggleSidebarCollapse}
       />
@@ -73,6 +83,8 @@ export function AppShell({ children, userEmail, userFullName }: AppShellProps) {
               onToggleCollapse={() => setMobileMenuOpen(false)}
               userFullName={userFullName}
               userEmail={userEmail}
+              roleLabel={roleLabel}
+              allowedPages={allowedPages}
               collapsed={false}
             />
           </div>
