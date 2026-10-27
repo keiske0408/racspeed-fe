@@ -2,10 +2,16 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { z } from "zod";
 
-const checkInSchema = z.object({
-  sessionToken: z.string().min(1, "Session token is required"),
-  eventId: z.string().uuid("Invalid event ID").optional(),
-});
+const checkInSchema = z
+  .object({
+    sessionToken: z.string().optional(),
+    token: z.string().optional(),
+    eventId: z.string().uuid("Invalid event ID").optional(),
+  })
+  .refine((data) => Boolean(data.sessionToken || data.token), {
+    message: "Session token is required",
+    path: ["sessionToken"],
+  });
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,7 +28,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid request payload", details: parsed.error.issues }, { status: 400 });
     }
 
-    const { sessionToken } = parsed.data;
+    const sessionToken = (parsed.data.sessionToken || parsed.data.token)!.trim();
 
     // Verify attendance session exists and is ACTIVE
     const { data: session, error: sessionError } = await supabase

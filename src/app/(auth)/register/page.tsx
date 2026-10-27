@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { registerApplicantAction } from "@/features/members/actions";
 import { Lock, Mail, User, ShieldCheck, ArrowRight, AlertCircle, CheckCircle2 } from "lucide-react";
 
 export default function RegisterPage() {
@@ -29,46 +29,20 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      const supabase = createClient();
-      // Register with Supabase Auth
-      const { data, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: fullName,
-          },
-        },
-      });
+      const formData = new FormData();
+      formData.append("fullName", fullName);
+      formData.append("email", email);
+      formData.append("password", password);
 
-      if (authError) {
-        setError(authError.message);
-        setLoading(false);
-        return;
+      const res = await registerApplicantAction(formData);
+      if (res.success) {
+        setSuccess(true);
+      } else {
+        setError(res.error || "Failed to submit registration. Please try again.");
       }
-
-      // Record profile with PENDING status
-      if (data.user) {
-        await supabase.from("profiles").upsert({
-          id: data.user.id,
-          email,
-          full_name: fullName,
-          status: "PENDING",
-          is_platform_admin: false,
-        });
-
-        // Record privacy consent
-        await supabase.from("member_consents").insert({
-          profile_id: data.user.id,
-          consent_type: "DATA_PRIVACY_TERMS",
-          consented: true,
-        });
-      }
-
-      setSuccess(true);
-      setLoading(false);
     } catch (err: any) {
       setError(err?.message || "Failed to register. Please try again.");
+    } finally {
       setLoading(false);
     }
   }

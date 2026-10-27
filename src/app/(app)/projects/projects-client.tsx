@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { StatusBadge } from "@/components/shared/badge";
-import { FolderKanban, Plus, FileText, Download, CheckCircle, Clock, Eye, Sparkles, X } from "lucide-react";
+import { FolderKanban, Plus, FileText, Download, CheckCircle, Clock, Eye, Sparkles, X, Megaphone } from "lucide-react";
 import { formatPHP } from "@/lib/utils/money";
 import { generatePrintableReportHTML } from "@/lib/documents/report";
 import { createProjectAction } from "@/features/projects/actions";
@@ -93,13 +94,22 @@ export function ProjectsClient({ initialProjects }: ProjectsClientProps) {
             Live Supabase impact tracking, Areas of Focus mapping & Rotary Foundation reports
           </p>
         </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="inline-flex items-center gap-2 py-2 px-3.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition shadow-xs cursor-pointer shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          Register Service Project
-        </button>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/broadcasts"
+            className="inline-flex items-center gap-1.5 py-2 px-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 font-semibold text-xs transition shadow-2xs shrink-0"
+          >
+            <Megaphone className="w-3.5 h-3.5 text-rose-600" />
+            GC Broadcast Studio
+          </Link>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="inline-flex items-center gap-2 py-2 px-3.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition shadow-xs cursor-pointer shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            Register Service Project
+          </button>
+        </div>
       </div>
 
       {notification && (
@@ -186,6 +196,13 @@ export function ProjectsClient({ initialProjects }: ProjectsClientProps) {
             </div>
 
             <div className="shrink-0 flex items-center gap-2">
+              <Link
+                href={`/broadcasts?eventId=${proj.id}`}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border border-rose-200 dark:border-rose-900 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 transition"
+              >
+                <Megaphone className="w-3.5 h-3.5 text-rose-600" />
+                Share to GC
+              </Link>
               <button
                 onClick={() => handleDownloadReport(proj)}
                 disabled={downloadingId === proj.id}

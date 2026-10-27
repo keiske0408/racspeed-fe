@@ -1,3 +1,4 @@
+import { createAdminClient } from "@/lib/supabase/admin";
 import {
   readTasksStore,
   GroupTaskDTO,
@@ -17,6 +18,36 @@ export interface TaskStatsDTO {
 export async function getGroupTasksList(
   clubId = "00000000-0000-0000-0000-000000000001"
 ): Promise<GroupTaskDTO[]> {
+  try {
+    const admin = createAdminClient();
+    const { data: rows, error } = await admin
+      .from("tasks")
+      .select("*")
+      .eq("club_id", clubId)
+      .order("created_at", { ascending: false });
+
+    if (!error && rows && rows.length > 0) {
+      return rows.map((r: any) => ({
+        id: r.id,
+        clubId: r.club_id,
+        title: r.title,
+        description: r.description || "",
+        committee: r.committee,
+        status: r.status,
+        priority: r.priority,
+        dueDate: r.due_date,
+        assignedMemberIds: Array.isArray(r.assigned_member_ids) ? r.assigned_member_ids : [],
+        assignedMemberNames: Array.isArray(r.assigned_member_names) ? r.assigned_member_names : [],
+        checklist: Array.isArray(r.checklist) ? r.checklist : [],
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+        createdBy: r.created_by,
+      }));
+    }
+  } catch {
+    // If Supabase table is not yet migrated, fall back seamlessly
+  }
+
   const allTasks = readTasksStore();
   return allTasks.filter((t) => !clubId || t.clubId === clubId);
 }

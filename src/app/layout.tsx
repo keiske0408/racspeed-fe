@@ -1,6 +1,7 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { PwaRegister } from "@/components/layout/pwa-register";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -12,9 +13,20 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+export const viewport: Viewport = {
+  themeColor: "#E11D48",
+  width: "device-width",
+  initialScale: 1,
+};
+
 export const metadata: Metadata = {
   title: "RacSpeed — Rotaract Club Operations Platform",
   description: "Rotaract Club of San Pedro East · Rotary International District 3820 operations platform for membership, attendance, treasury, and district reporting.",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "RacSpeed",
+  },
 };
 
 export default function RootLayout({
@@ -43,8 +55,9 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="min-h-full flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200">
+      <body className="min-h-full flex flex-col bg-[#F8F9FB] dark:bg-[#0A0D14] text-[#111625] dark:text-[#F8FAFC] transition-colors duration-200">
         {children}
+        <PwaRegister />
       </body>
     </html>
   );

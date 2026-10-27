@@ -1,0 +1,57 @@
+[
+  {
+    "id": "res-001",
+    "clubId": "00000000-0000-0000-0000-000000000001",
+    "title": "Rotaract Club of San Pedro East — Official Facebook Page",
+    "description": "Primary public Facebook page for general announcements, project highlights, recruitment drives, and community outreach photos.",
+    "url": "https://facebook.com/rotaractsanpedroeast",
+    "category": "SOCIAL_MEDIA",
+    "isPinned": true,
+    "createdAt": "2026-10-24T14:48:38.263Z",
+    "updatedAt": "2026-10-24T14:48:38.265Z"
+  },
+  {
+    "id": "res-002",
+    "clubId": "00000000-0000-0000-0000-000000000001",
+    "title": "Rotary International District 3820 Official Portal",
+    "description": "District guidelines, District Governor monthly letters, event calendars, and district assembly directives.",
+    "url": "https://rotary3820.org",
+    "category": "DISTRICT_PORTAL",
+    "isPinned": true,
+    "createdAt": "2026-10-24T14:48:38.265Z",
+    "updatedAt": "2026-10-24T14:48:38.265Z"
+  },
+  {
+    "id": "res-003",
+    "clubId": "00000000-0000-0000-0000-000000000001",
+    "title": "MyRotary & Club Central Portal",
+    "description": "Rotary International global database for club citation goals, officer appointments, and Rotary Foundation contributions.",
+    "url": "https://my.rotary.org",
+    "category": "DISTRICT_PORTAL",
+    "isPinned": false,
+    "createdAt": "2026-10-24T14:48:38.265Z",
+    "updatedAt": "2026-10-24T14:48:38.265Z"
+  },
+  {
+    "id": "res-004",
+    "clubId": "00000000-0000-0000-0000-000000000001",
+    "title": "Rotary Brand Center & Visual Guidelines",
+    "description": "Official Rotaract logos, lockups, color palettes, and flyer design templates adhering to RI visual standards.",
+    "url": "https://brandcenter.rotary.org",
+    "category": "DESIGN_BRAND",
+    "isPinned": false,
+    "createdAt": "2026-10-24T14:48:38.265Z",
+    "updatedAt": "2026-10-24T14:48:38.265Z"
+  },
+  {
+    "id": "res-005",
+    "clubId": "00000000-0000-0000-0000-000000000001",
+    "title": "District 3820 Monthly Reporting Google Drive",
+    "description": "Central cloud repository for project completion reports, attendance sheets, and liquidation vouchers.",
+    "url": "https://drive.google.com",
+    "category": "DRIVE_DOCUMENTS",
+    "isPinned": false,
+    "createdAt": "2026-10-24T14:48:38.265Z",
+    "updatedAt": "2026-10-24T14:48:38.265Z"
+  }
+]

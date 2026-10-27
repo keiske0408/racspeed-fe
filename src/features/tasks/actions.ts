@@ -2,12 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requireUser } from "@/lib/auth/session";
 import {
   createTask,
   updateTaskStatus,
   toggleChecklistItem,
   addChecklistItem,
+  updateTask,
   deleteTask,
   TaskStatus,
   TaskPriority,
@@ -93,6 +95,29 @@ export async function createGroupTaskAction(formData: FormData) {
       createdBy: user.fullName || user.email,
     });
 
+    // Sync to Supabase tasks table if available
+    try {
+      const admin = createAdminClient();
+      await admin.from("tasks").insert({
+        id: created.id,
+        club_id: created.clubId,
+        title: created.title,
+        description: created.description,
+        committee: created.committee,
+        status: created.status,
+        priority: created.priority,
+        due_date: created.dueDate,
+        assigned_member_ids: created.assignedMemberIds,
+        assigned_member_names: created.assignedMemberNames,
+        checklist: created.checklist,
+        created_by: created.createdBy,
+        created_at: created.createdAt,
+        updated_at: created.updatedAt,
+      });
+    } catch (dbErr) {
+      console.warn("Could not sync task insert to Supabase:", dbErr);
+    }
+
     revalidatePath("/tasks");
     revalidatePath("/dashboard");
     revalidatePath("/projects");
@@ -117,6 +142,13 @@ export async function updateTaskStatusAction(taskId: string, status: TaskStatus)
     const updated = updateTaskStatus(taskId, status);
     if (!updated) {
       return { success: false, error: "Task not found." };
+    }
+
+    try {
+      const admin = createAdminClient();
+      await admin.from("tasks").update({ status, updated_at: new Date().toISOString() }).eq("id", taskId);
+    } catch (dbErr) {
+      console.warn("Could not sync task status to Supabase:", dbErr);
     }
 
     revalidatePath("/tasks");
@@ -146,6 +178,17 @@ export async function toggleChecklistItemAction(
     const updated = toggleChecklistItem(taskId, itemId, forcedState);
     if (!updated) {
       return { success: false, error: "Task or checklist item not found." };
+    }
+
+    try {
+      const admin = createAdminClient();
+      await admin.from("tasks").update({
+        checklist: updated.checklist,
+        status: updated.status,
+        updated_at: updated.updatedAt,
+      }).eq("id", taskId);
+    } catch (dbErr) {
+      console.warn("Could not sync checklist toggle to Supabase:", dbErr);
     }
 
     revalidatePath("/tasks");
@@ -179,6 +222,17 @@ export async function addChecklistItemAction(
       return { success: false, error: "Task not found." };
     }
 
+    try {
+      const admin = createAdminClient();
+      await admin.from("tasks").update({
+        checklist: updated.checklist,
+        status: updated.status,
+        updated_at: updated.updatedAt,
+      }).eq("id", taskId);
+    } catch (dbErr) {
+      console.warn("Could not sync checklist item addition to Supabase:", dbErr);
+    }
+
     revalidatePath("/tasks");
 
     return {
@@ -203,6 +257,13 @@ export async function deleteTaskAction(taskId: string) {
       return { success: false, error: "Task not found or could not be removed." };
     }
 
+    try {
+      const admin = createAdminClient();
+      await admin.from("tasks").delete().eq("id", taskId);
+    } catch (dbErr) {
+      console.warn("Could not sync task deletion to Supabase:", dbErr);
+    }
+
     revalidatePath("/tasks");
     revalidatePath("/dashboard");
 
@@ -217,3 +278,103 @@ export async function deleteTaskAction(taskId: string) {
     };
   }
 }
+
+export async function updateGroupTaskAction(taskId: string, formData: FormData) {
+  await requireUser();
+
+  const title = (formData.get("title") as string)?.trim();
+  const description = (formData.get("description") as string)?.trim() || "";
+  const committee = formData.get("committee") as TaskCommittee;
+  const priority = formData.get("priority") as TaskPriority;
+  const status = formData.get("status") as TaskStatus;
+  const dueDate = formData.get("dueDate") as string;
+
+  const assignedMemberIds = formData.getAll("assignedMemberIds") as string[];
+  const assignedMemberNames = formData.getAll("assignedMemberNames") as string[];
+
+  if (!title || title.length < 3) {
+    return { success: false, error: "Task title must be at least 3 characters." };
+  }
+
+  try {
+    const updated = updateTask(taskId, {
+      title,
+      description,
+      committee,
+      priority,
+      status,
+      dueDate,
+      assignedMemberIds,
+      assignedMemberNames,
+    });
+
+    if (!updated) {
+      return { success: false, error: "Task not found." };
+    }
+
+    try {
+      const admin = createAdminClient();
+      await admin.from("tasks").update({
+        title,
+        description,
+        committee,
+        priority,
+        status,
+        due_date: dueDate,
+        assigned_member_ids: assignedMemberIds,
+        assigned_member_names: assignedMemberNames,
+        updated_at: updated.updatedAt,
+      }).eq("id", taskId);
+    } catch (dbErr) {
+      console.warn("Could not sync task update to Supabase:", dbErr);
+    }
+
+    revalidatePath("/tasks");
+    revalidatePath("/dashboard");
+
+    return {
+      success: true,
+      task: updated,
+      message: `Task "${updated.title}" successfully updated!`,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message || "Failed to update task",
+    };
+  }
+}
+
+export async function assignMembersToTaskAction(
+  taskId: string,
+  assignedMemberIds: string[],
+  assignedMemberNames: string[]
+) {
+  await requireUser();
+
+  try {
+    const updated = updateTask(taskId, {
+      assignedMemberIds,
+      assignedMemberNames,
+    });
+
+    if (!updated) {
+      return { success: false, error: "Task not found." };
+    }
+
+    revalidatePath("/tasks");
+    revalidatePath("/dashboard");
+
+    return {
+      success: true,
+      task: updated,
+      message: "Assignees updated successfully.",
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message || "Failed to update assignees",
+    };
+  }
+}
+

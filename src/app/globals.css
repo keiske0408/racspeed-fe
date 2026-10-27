@@ -4,60 +4,117 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  /* Canvas & Surfaces */
+  --background: #f8f9fb;
+  --foreground: #111625;
   --card: #ffffff;
-  --card-foreground: #0f172a;
+  --card-foreground: #111625;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #111625;
   --popover: #ffffff;
-  --popover-foreground: #0f172a;
-  --primary: #e11d48; /* Rotaract Cranberry */
+  --popover-foreground: #111625;
+
+  /* Brand Primary & Accents (Gridle Deep Royal Indigo & Electric Blue) */
+  --primary: #0d3594;
+  --primary-hover: #092569;
   --primary-foreground: #ffffff;
-  --secondary: #0f172a; /* Deep Navy */
-  --secondary-foreground: #ffffff;
-  --muted: #f1f5f9;
-  --muted-foreground: #64748b;
-  --accent: #f59e0b; /* Rotary Gold */
-  --accent-foreground: #ffffff;
-  --destructive: #dc2626;
+  --accent-blue: #4f75ff;
+  --accent-blue-light: #e7edff;
+
+  /* Secondary & Neutral Muted */
+  --secondary: #f3f4f8;
+  --secondary-foreground: #111625;
+  --muted: #f3f4f8;
+  --muted-foreground: #6b7280;
+
+  /* Semantics: Success / Danger / Warning / Info */
+  --success: #17a863;
+  --success-bg: #e7f8f0;
+  --destructive: #e54335;
+  --destructive-bg: #feeceb;
   --destructive-foreground: #ffffff;
-  --border: #e2e8f0;
-  --input: #e2e8f0;
-  --ring: #e11d48;
-  --radius: 0.5rem;
+  --warning: #d97706;
+  --warning-bg: #fff3e4;
+
+  /* Borders & Inputs */
+  --border: #ededf2;
+  --input: #ededf2;
+  --ring: #0d3594;
+  --radius: 1rem; /* 16px */
 }
 
 .dark {
-  --background: #090d16;
+  --background: #0a0d14;
   --foreground: #f8fafc;
-  --card: #0f172a;
+  --card: #111622;
   --card-foreground: #f8fafc;
-  --popover: #0f172a;
+  --sidebar: #0e121b;
+  --sidebar-foreground: #f8fafc;
+  --popover: #111622;
   --popover-foreground: #f8fafc;
-  --primary: #f43f5e;
+
+  --primary: #3b6ef6;
+  --primary-hover: #2b5be0;
   --primary-foreground: #ffffff;
-  --secondary: #1e293b;
+  --accent-blue: #6088ff;
+  --accent-blue-light: #1e284a;
+
+  --secondary: #171d2b;
   --secondary-foreground: #f8fafc;
-  --muted: #1e293b;
-  --muted-foreground: #94a3b8;
-  --accent: #fbbf24;
-  --accent-foreground: #0f172a;
+  --muted: #171d2b;
+  --muted-foreground: #8e95a5;
+
+  --success: #22c55e;
+  --success-bg: rgba(34, 197, 94, 0.12);
   --destructive: #ef4444;
+  --destructive-bg: rgba(239, 68, 68, 0.12);
   --destructive-foreground: #ffffff;
-  --border: #1e293b;
-  --input: #1e293b;
-  --ring: #f43f5e;
+  --warning: #f59e0b;
+  --warning-bg: rgba(245, 158, 11, 0.12);
+
+  --border: #1b2130;
+  --input: #1b2130;
+  --ring: #3b6ef6;
 }
 
 body {
   background-color: var(--background);
   color: var(--foreground);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
   min-height: 100vh;
 }
 
-/* Glassmorphism and sleek borders */
-.glass-panel {
-  background: rgba(15, 23, 42, 0.75);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+/* Reference Card Surface (Flat 1px boundary, no muddy shadows) */
+.card-surface {
+  background-color: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--border);
+  border-radius: 1rem; /* 16px */
+  transition: all 0.15s ease-in-out;
 }
+
+/* Subtle elevation exclusively for interactive floating elements */
+.elevation-popover {
+  box-shadow: 0 12px 32px -4px rgba(17, 22, 37, 0.08), 0 4px 12px -2px rgba(17, 22, 37, 0.03);
+}
+
+.elevation-pill {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+/* Modern clean scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 9999px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #374151;
+}
+

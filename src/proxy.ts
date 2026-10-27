@@ -3,6 +3,29 @@ import { createServerClient } from "@supabase/ssr";
 import { env } from "@/lib/env";
 
 export async function proxy(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+  const isAuthRoute = pathname.startsWith("/login") || pathname.startsWith("/register");
+  const isApiRoute = pathname.startsWith("/api");
+  const isPublicRoute = isAuthRoute || pathname === "/" || pathname === "/pending-approval" || pathname === "/access-denied";
+
+  // Check if any Supabase session cookies exist
+  const allCookies = request.cookies.getAll();
+  const hasAuthCookie = allCookies.some((c) => c.name.includes("auth-token") || c.name.startsWith("sb-"));
+
+  // Fast-path: If user has no auth cookies at all, skip remote Supabase network call
+  if (!hasAuthCookie) {
+    if (!isPublicRoute && !isApiRoute) {
+      const loginUrl = new URL("/login", request.url);
+      loginUrl.searchParams.set("redirectTo", pathname);
+      return NextResponse.redirect(loginUrl);
+    }
+    return NextResponse.next({
+      request: {
+        headers: request.headers,
+      },
+    });
+  }
+
   let response = NextResponse.next({
     request: {
       headers: request.headers,
@@ -36,11 +59,6 @@ export async function proxy(request: NextRequest) {
 
   // Refresh auth session
   const { data: { user } } = await supabase.auth.getUser();
-
-  const pathname = request.nextUrl.pathname;
-  const isAuthRoute = pathname.startsWith("/login") || pathname.startsWith("/register");
-  const isApiRoute = pathname.startsWith("/api");
-  const isPublicRoute = isAuthRoute || pathname === "/" || pathname === "/pending-approval" || pathname === "/access-denied";
 
   // Redirect unauthenticated user trying to access protected app routes
   if (!user && !isPublicRoute && !isApiRoute) {

@@ -116,21 +116,21 @@ export async function getCertificatesData(clubId = "00000000-0000-0000-0000-0000
       .eq("club_id", clubId)
       .order("created_at", { ascending: false });
 
-    if (!tmplErr && dbTemplates && dbTemplates.length > 0) {
-      const mapped = dbTemplates.map((t) => ({
-        id: t.id,
-        name: t.name,
-        category: t.category,
-        titleText: t.title_text || "Certificate of Recognition",
-        bodyTemplate: t.body_template,
-        signatory1Name: t.signatory_1_name || "Club President",
-        signatory1Title: t.signatory_1_title || "Club President",
-        signatory2Name: t.signatory_2_name || "Club Secretary",
-        signatory2Title: t.signatory_2_title || "Club Secretary",
-        createdAt: t.created_at,
-      }));
-      // Merge unique
-      templates = [...mapped, ...DEFAULT_TEMPLATES.filter((d) => !mapped.some((m) => m.name === d.name))];
+    if (!tmplErr && dbTemplates) {
+      if (dbTemplates.length > 0) {
+        templates = dbTemplates.map((t) => ({
+          id: t.id,
+          name: t.name,
+          category: t.category,
+          titleText: t.title_text || "Certificate of Recognition",
+          bodyTemplate: t.body_template,
+          signatory1Name: t.signatory_1_name || "Club President",
+          signatory1Title: t.signatory_1_title || "Club President",
+          signatory2Name: t.signatory_2_name || "Club Secretary",
+          signatory2Title: t.signatory_2_title || "Club Secretary",
+          createdAt: t.created_at,
+        }));
+      }
     }
 
     // Query issued certificates
@@ -152,8 +152,8 @@ export async function getCertificatesData(clubId = "00000000-0000-0000-0000-0000
       `)
       .order("created_at", { ascending: false });
 
-    if (!recErr && dbRecipients && dbRecipients.length > 0) {
-      const mappedRecipients = dbRecipients.map((r: any) => {
+    if (!recErr && dbRecipients) {
+      issuedCerts = dbRecipients.map((r: any) => {
         const issuance = r.certificate_issuances as any;
         const tmpl = issuance?.certificate_templates as any;
         const eventTitle = issuance?.events?.title || issuance?.projects?.title || "Club Activity";
@@ -170,7 +170,6 @@ export async function getCertificatesData(clubId = "00000000-0000-0000-0000-0000
           issueDate: issuance?.issue_date || r.created_at?.split("T")[0] || "2026-10-22",
         };
       });
-      issuedCerts = [...mappedRecipients, ...INITIAL_ISSUED_CERTS.filter((d) => !mappedRecipients.some((m) => m.certificateNumber === d.certificateNumber))];
     }
   } catch (err) {
     console.warn("Could not query certificates from Supabase:", err);

@@ -174,10 +174,16 @@ export const SEED_INITIATIVES: StoredInitiative[] = [
   },
 ];
 
+let inMemoryPartnerships: PartnershipsStore = { customClubs: [], initiatives: [] };
+
 function ensureDirectoryExistence(filePath: string) {
-  const dirname = path.dirname(filePath);
-  if (!fs.existsSync(dirname)) {
-    fs.mkdirSync(dirname, { recursive: true });
+  try {
+    const dirname = path.dirname(filePath);
+    if (!fs.existsSync(dirname)) {
+      fs.mkdirSync(dirname, { recursive: true });
+    }
+  } catch {
+    // Read-only filesystem in serverless environments
   }
 }
 
@@ -190,6 +196,7 @@ export function readPartnershipsStore(): PartnershipsStore {
       };
       ensureDirectoryExistence(STORAGE_FILE);
       fs.writeFileSync(STORAGE_FILE, JSON.stringify(initialStore, null, 2), "utf-8");
+      inMemoryPartnerships = initialStore;
       return initialStore;
     }
 
@@ -214,22 +221,21 @@ export function readPartnershipsStore(): PartnershipsStore {
       }));
     }
 
-    return { customClubs, initiatives };
+    inMemoryPartnerships = { customClubs, initiatives };
+    return inMemoryPartnerships;
   } catch (err) {
-    console.error("Failed to read partnerships store:", err);
-    return {
-      customClubs: SEED_SISTER_CLUBS,
-      initiatives: SEED_INITIATIVES,
-    };
+    console.warn("Failed to read partnerships store from filesystem, using memory cache:", err);
+    return inMemoryPartnerships;
   }
 }
 
 export function writePartnershipsStore(store: PartnershipsStore) {
+  inMemoryPartnerships = store;
   try {
     ensureDirectoryExistence(STORAGE_FILE);
     fs.writeFileSync(STORAGE_FILE, JSON.stringify(store, null, 2), "utf-8");
   } catch (err) {
-    console.error("Failed to write partnerships store:", err);
+    console.warn("Serverless filesystem write ignored, cached in-memory:", err);
   }
 }
 
