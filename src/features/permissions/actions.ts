@@ -15,14 +15,14 @@ export async function saveRolePermissionsAction(
   allowedPermissions: Permission[],
   clubId = "00000000-0000-0000-0000-000000000001"
 ) {
-  const user = await requireUser();
-  await assertPermission(clubId, "SETTINGS_MANAGE");
-
   try {
+    const user = await requireUser();
+    await assertPermission(clubId, "SETTINGS_MANAGE");
+
     // 1. Update persistent local configuration
     const updated = updateRoleConfig(roleKey, allowedPages, allowedPermissions);
 
-    // 2. Sync to Supabase role_permissions table if available
+    // 2. Sync to Supabase role_permissions table
     try {
       const admin = createAdminClient();
 
@@ -33,27 +33,32 @@ export async function saveRolePermissionsAction(
         .eq("key", roleKey)
         .single();
 
-      if (roleData?.id && allowedPermissions.length > 0) {
-        // Find permission IDs
-        const { data: permsData } = await admin
-          .from("permissions")
-          .select("id, key")
-          .in("key", allowedPermissions);
+      if (roleData?.id) {
+        // ALWAYS delete existing role_permissions bindings for this role first
+        await admin
+          .from("role_permissions")
+          .delete()
+          .eq("role_id", roleData.id);
 
-        if (permsData && permsData.length > 0) {
-          // Delete existing bindings
-          await admin
-            .from("role_permissions")
-            .delete()
-            .eq("role_id", roleData.id);
+        if (allowedPermissions.length > 0) {
+          // Find permission IDs
+          const { data: permsData } = await admin
+            .from("permissions")
+            .select("id, key")
+            .in("key", allowedPermissions);
 
-          // Insert new bindings
-          const rowsToInsert = permsData.map((p) => ({
-            role_id: roleData.id,
-            permission_id: p.id,
-          }));
+          if (permsData && permsData.length > 0) {
+            // Insert new bindings
+            const rowsToInsert = permsData.map((p) => ({
+              role_id: roleData.id,
+              permission_id: p.id,
+            }));
 
-          await admin.from("role_permissions").insert(rowsToInsert);
+            const { error: insertErr } = await admin.from("role_permissions").insert(rowsToInsert);
+            if (insertErr) {
+              console.warn("Could not insert updated role_permissions in Supabase:", insertErr);
+            }
+          }
         }
       }
     } catch (dbErr) {
@@ -78,14 +83,54 @@ export async function saveRolePermissionsAction(
   }
 }
 
-export async function resetRolePermissionsAction(roleKey: RoleKey) {
-  const user = await requireUser();
-
+export async function resetRolePermissionsAction(
+  roleKey: RoleKey,
+  clubId = "00000000-0000-0000-0000-000000000001"
+) {
   try {
+    const user = await requireUser();
+    await assertPermission(clubId, "SETTINGS_MANAGE");
+
     const reset = resetRoleToDefaults(roleKey);
+
+    // Sync reset to Supabase
+    try {
+      const admin = createAdminClient();
+      const { data: roleData } = await admin
+        .from("roles")
+        .select("id")
+        .eq("key", roleKey)
+        .single();
+
+      if (roleData?.id) {
+        await admin
+          .from("role_permissions")
+          .delete()
+          .eq("role_id", roleData.id);
+
+        if (reset.allowedPermissions.length > 0) {
+          const { data: permsData } = await admin
+            .from("permissions")
+            .select("id, key")
+            .in("key", reset.allowedPermissions);
+
+          if (permsData && permsData.length > 0) {
+            const rowsToInsert = permsData.map((p) => ({
+              role_id: roleData.id,
+              permission_id: p.id,
+            }));
+            await admin.from("role_permissions").insert(rowsToInsert);
+          }
+        }
+      }
+    } catch (dbErr) {
+      console.warn("Could not sync reset to Supabase DB:", dbErr);
+    }
 
     revalidatePath("/settings");
     revalidatePath("/settings/permissions");
+    revalidatePath("/members");
+    revalidatePath("/dashboard");
 
     return {
       success: true,

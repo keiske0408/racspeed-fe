@@ -115,6 +115,7 @@ export function SettingsClient({ initialSettings, initialPermissions }: Settings
 
       {activeTab === "PERMISSIONS" ? (
         <PermissionMatrixEditor
+          clubId={initialSettings?.clubId}
           initialRoles={initialPermissions?.roles || ({} as any)}
           modules={initialPermissions?.modules}
           permissions={initialPermissions?.permissions}

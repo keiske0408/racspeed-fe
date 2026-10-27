@@ -1,6 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { redirect } from "next/navigation";
 import { Permission, hasPermission, PermissionMap } from "@/lib/permissions/keys";
 
@@ -56,7 +57,6 @@ export async function requireUser(): Promise<CurrentUserContext> {
 }
 
 export async function getClubPermissions(clubId: string): Promise<Set<Permission>> {
-  const supabase = await createClient();
   const user = await getCurrentUser();
   if (!user) return new Set();
   if (user.isPlatformAdmin) {
@@ -73,39 +73,45 @@ export async function getClubPermissions(clubId: string): Promise<Set<Permission
     ]);
   }
 
-  const { data: membership } = await supabase
-    .from("club_memberships")
-    .select(`
-      id,
-      membership_roles (
-        roles (
-          role_permissions (
-            permissions ( key )
+  try {
+    const admin = createAdminClient();
+    const { data: membership } = await admin
+      .from("club_memberships")
+      .select(`
+        id,
+        membership_roles (
+          roles (
+            role_permissions (
+              permissions ( key )
+            )
           )
         )
-      )
-    `)
-    .eq("club_id", clubId)
-    .eq("profile_id", user.id)
-    .eq("membership_status", "ACTIVE")
-    .single();
+      `)
+      .eq("club_id", clubId)
+      .eq("profile_id", user.id)
+      .eq("membership_status", "ACTIVE")
+      .maybeSingle();
 
-  const perms = new Set<Permission>();
-  if (!membership) return perms;
+    const perms = new Set<Permission>();
+    if (!membership) return perms;
 
-  const roles = (membership as any).membership_roles || [];
-  for (const mr of roles) {
-    const role = mr.roles;
-    if (!role) continue;
-    const rps = role.role_permissions || [];
-    for (const rp of rps) {
-      if (rp.permissions?.key) {
-        perms.add(rp.permissions.key as Permission);
+    const roles = (membership as any).membership_roles || [];
+    for (const mr of roles) {
+      const role = mr.roles;
+      if (!role) continue;
+      const rps = role.role_permissions || [];
+      for (const rp of rps) {
+        if (rp.permissions?.key) {
+          perms.add(rp.permissions.key as Permission);
+        }
       }
     }
-  }
 
-  return perms;
+    return perms;
+  } catch (err) {
+    console.warn("Could not query club permissions with admin client:", err);
+    return new Set<Permission>();
+  }
 }
 
 export async function assertPermission(clubId: string, permission: Permission): Promise<void> {

@@ -41,6 +41,7 @@ interface PermissionMatrixEditorProps {
   initialRoles: Record<RoleKey, RoleConfigDTO>;
   modules?: PageModuleDef[];
   permissions?: PermissionDefinition[];
+  clubId?: string;
 }
 
 const MODULE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -62,6 +63,7 @@ export function PermissionMatrixEditor({
   initialRoles,
   modules = APP_MODULES,
   permissions = PERMISSION_DEFINITIONS,
+  clubId = "00000000-0000-0000-0000-000000000001",
 }: PermissionMatrixEditorProps) {
   const [roleConfigs, setRoleConfigs] = useState<Record<RoleKey, RoleConfigDTO>>(initialRoles);
   const [selectedRole, setSelectedRole] = useState<RoleKey>("PRESIDENT");
@@ -137,22 +139,28 @@ export function PermissionMatrixEditor({
       setToastMessage(null);
       setErrorMessage(null);
 
-      const res = await saveRolePermissionsAction(
-        selectedRole,
-        currentConfig.allowedPages,
-        currentConfig.allowedPermissions
-      );
+      try {
+        const res = await saveRolePermissionsAction(
+          selectedRole,
+          currentConfig.allowedPages,
+          currentConfig.allowedPermissions,
+          clubId
+        );
 
-      if (res.success && res.config) {
-        setRoleConfigs((prev) => ({
-          ...prev,
-          [selectedRole]: res.config!,
-        }));
-        setToastMessage(res.message);
-        setTimeout(() => setToastMessage(null), 4000);
-      } else {
-        setErrorMessage(res.error || "Failed to save permissions.");
-        setTimeout(() => setErrorMessage(null), 4000);
+        if (res.success && res.config) {
+          setRoleConfigs((prev) => ({
+            ...prev,
+            [selectedRole]: res.config!,
+          }));
+          setToastMessage(res.message);
+          setTimeout(() => setToastMessage(null), 5000);
+        } else {
+          setErrorMessage(res.error || "Failed to save permissions.");
+          setTimeout(() => setErrorMessage(null), 6000);
+        }
+      } catch (err: any) {
+        setErrorMessage(err?.message || "An unexpected error occurred while saving role permissions.");
+        setTimeout(() => setErrorMessage(null), 6000);
       }
     });
   }
@@ -168,14 +176,25 @@ export function PermissionMatrixEditor({
     }
 
     startTransition(async () => {
-      const res = await resetRolePermissionsAction(selectedRole);
-      if (res.success && res.config) {
-        setRoleConfigs((prev) => ({
-          ...prev,
-          [selectedRole]: res.config!,
-        }));
-        setToastMessage(res.message);
-        setTimeout(() => setToastMessage(null), 4000);
+      setToastMessage(null);
+      setErrorMessage(null);
+
+      try {
+        const res = await resetRolePermissionsAction(selectedRole, clubId);
+        if (res.success && res.config) {
+          setRoleConfigs((prev) => ({
+            ...prev,
+            [selectedRole]: res.config!,
+          }));
+          setToastMessage(res.message);
+          setTimeout(() => setToastMessage(null), 5000);
+        } else {
+          setErrorMessage(res.error || "Failed to reset permissions.");
+          setTimeout(() => setErrorMessage(null), 6000);
+        }
+      } catch (err: any) {
+        setErrorMessage(err?.message || "An unexpected error occurred while resetting role permissions.");
+        setTimeout(() => setErrorMessage(null), 6000);
       }
     });
   }
