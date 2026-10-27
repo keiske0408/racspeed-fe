@@ -59,6 +59,8 @@ export interface UnifiedCalendarItem {
 interface CalendarClientProps {
   initialEvents: EventDTO[];
   initialTasks: GroupTaskDTO[];
+  canCreateEvent?: boolean;
+  canCreateTask?: boolean;
 }
 
 const MONTH_NAMES = [
@@ -78,7 +80,12 @@ const MONTH_NAMES = [
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-export function CalendarClient({ initialEvents, initialTasks }: CalendarClientProps) {
+export function CalendarClient({
+  initialEvents,
+  initialTasks,
+  canCreateEvent = false,
+  canCreateTask = false,
+}: CalendarClientProps) {
   // Navigation & View state
   const [viewMode, setViewMode] = useState<CalendarViewMode>("MONTH");
   const [typeFilter, setTypeFilter] = useState<CalendarTypeFilter>("ALL");
@@ -335,20 +342,24 @@ export function CalendarClient({ initialEvents, initialTasks }: CalendarClientPr
 
         {/* Quick Action Buttons */}
         <div className="flex items-center gap-2.5">
-          <Link
-            href="/events"
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white dark:bg-[#111622] border border-[#EDEDF2] dark:border-slate-800 text-xs font-semibold text-[#111625] dark:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition shadow-xs cursor-pointer"
-          >
-            <CalendarIcon className="w-3.5 h-3.5 text-[#17A863]" />
-            <span>New Event</span>
-          </Link>
-          <Link
-            href="/tasks"
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#0D3594] hover:bg-[#092569] text-white text-xs font-semibold transition shadow-xs cursor-pointer"
-          >
-            <CheckSquare className="w-3.5 h-3.5" />
-            <span>New Task</span>
-          </Link>
+          {canCreateEvent && (
+            <Link
+              href="/events"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white dark:bg-[#111622] border border-[#EDEDF2] dark:border-slate-800 text-xs font-semibold text-[#111625] dark:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition shadow-xs cursor-pointer"
+            >
+              <CalendarIcon className="w-3.5 h-3.5 text-[#17A863]" />
+              <span>New Event</span>
+            </Link>
+          )}
+          {canCreateTask && (
+            <Link
+              href="/tasks"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#0D3594] hover:bg-[#092569] text-white text-xs font-semibold transition shadow-xs cursor-pointer"
+            >
+              <CheckSquare className="w-3.5 h-3.5" />
+              <span>New Task</span>
+            </Link>
+          )}
         </div>
       </div>
 

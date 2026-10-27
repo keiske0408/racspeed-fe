@@ -13,12 +13,26 @@ export const metadata = {
 };
 
 export default async function CalendarPage() {
-  await assertPageAccess("calendar");
+  const context = await assertPageAccess("calendar");
 
   const [events, tasks] = await Promise.all([
     getEventsList(),
     getGroupTasksList(),
   ]);
 
-  return <CalendarClient initialEvents={events} initialTasks={tasks} />;
+  const canCreateEvent =
+    context.isPlatformAdmin || context.permissions.has("EVENT_CREATE");
+  const canCreateTask =
+    context.isPlatformAdmin ||
+    context.permissions.has("ROLE_ASSIGN") ||
+    context.permissions.has("SETTINGS_MANAGE");
+
+  return (
+    <CalendarClient
+      initialEvents={events}
+      initialTasks={tasks}
+      canCreateEvent={canCreateEvent}
+      canCreateTask={canCreateTask}
+    />
+  );
 }
