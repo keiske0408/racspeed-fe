@@ -33,7 +33,6 @@ import {
   Sparkles,
   Star,
   Eye,
-  CheckCircle,
   FileText,
   UserCheck,
 } from "lucide-react";
@@ -113,56 +112,56 @@ const COMMITTEE_LABELS: Record<
     color:
       "bg-[#EFF3FE] text-[#4F6BFF] border-[#DCE4FD] dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800/60",
     badge: "bg-[#EFF3FE] text-[#4F6BFF]",
-    gradient: "from-[#4F6BFF]/15 via-[#6C5CE7]/10 to-transparent",
+    gradient: "from-[#4F6BFF]/15 to-transparent",
   },
   COMMUNITY_SERVICE: {
     label: "Community Service",
     color:
       "bg-[#E9F9F0] text-[#10B981] border-[#D1F2DF] dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/60",
     badge: "bg-[#E9F9F0] text-[#10B981]",
-    gradient: "from-[#10B981]/15 via-[#059669]/10 to-transparent",
+    gradient: "from-[#10B981]/15 to-transparent",
   },
   VOCATIONAL: {
     label: "Vocational Service",
     color:
       "bg-[#EFF1FE] text-[#6366F1] border-[#D8DCFC] dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800/60",
     badge: "bg-[#EFF1FE] text-[#6366F1]",
-    gradient: "from-[#6366F1]/15 via-[#4F46E5]/10 to-transparent",
+    gradient: "from-[#6366F1]/15 to-transparent",
   },
   INTERNATIONAL: {
     label: "International Service",
     color:
       "bg-[#EAF8FE] text-[#0284C7] border-[#C8EDFD] dark:bg-cyan-950/40 dark:text-cyan-300 dark:border-cyan-800/60",
     badge: "bg-[#EAF8FE] text-[#0284C7]",
-    gradient: "from-[#0284C7]/15 via-[#0284C7]/10 to-transparent",
+    gradient: "from-[#0284C7]/15 to-transparent",
   },
   PUBLIC_IMAGE: {
     label: "Public Image",
     color:
       "bg-[#F3EFFE] text-[#8B5CF6] border-[#E3D9FD] dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800/60",
     badge: "bg-[#F3EFFE] text-[#8B5CF6]",
-    gradient: "from-[#8B5CF6]/15 via-[#EC4899]/10 to-transparent",
+    gradient: "from-[#8B5CF6]/15 to-transparent",
   },
   FINANCE: {
     label: "Finance & Ways",
     color:
       "bg-[#FEF5E7] text-[#D97706] border-[#FDE6C8] dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/60",
     badge: "bg-[#FEF5E7] text-[#D97706]",
-    gradient: "from-[#F59E0B]/15 via-[#D97706]/10 to-transparent",
+    gradient: "from-[#F59E0B]/15 to-transparent",
   },
   SECRETARIAT: {
     label: "Secretariat",
     color:
       "bg-[#F1F3F8] text-[#64748B] border-[#E2E6EF] dark:bg-slate-800/50 dark:text-slate-300 dark:border-slate-700",
     badge: "bg-[#F1F3F8] text-[#64748B]",
-    gradient: "from-[#64748B]/15 via-[#475569]/10 to-transparent",
+    gradient: "from-[#64748B]/15 to-transparent",
   },
   BOARD: {
     label: "Board of Directors",
     color:
       "bg-[#FEECEC] text-[#E11D48] border-[#FCCECE] dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800/60",
     badge: "bg-[#FEECEC] text-[#E11D48]",
-    gradient: "from-[#E11D48]/15 via-[#BE123C]/10 to-transparent",
+    gradient: "from-[#E11D48]/15 to-transparent",
   },
 };
 
@@ -317,7 +316,7 @@ export function TasksClient({
     null
   );
 
-  // UI Enhanced States (Matching Reference UI/UX)
+  // UI Enhanced States
   const [viewMode, setViewMode] = useState<"BOARD" | "GRID">("BOARD");
   const [isFiltersExpanded, setIsFiltersExpanded] = useState(false);
   const [selectedProjectFilter, setSelectedProjectFilter] =
@@ -325,7 +324,7 @@ export function TasksClient({
   const [selectedMemberFilter, setSelectedMemberFilter] =
     useState<string>("ALL");
 
-  // Best Practice Enhancement 1: Collapsible Connected Projects Drawer (Hidden by default to save board space)
+  // Best Practice Enhancement 1: Collapsible Connected Projects Drawer (Hidden by default to keep board clean)
   const [showProjectsSection, setShowProjectsSection] = useState(false);
 
   // Best Practice Enhancement 2: Dedicated Task Detail / Inspection View Modal ("View Mark")
@@ -665,7 +664,11 @@ export function TasksClient({
     }
   }
 
-  // Helper renderer for a single task card (used in both Board and Grid modes)
+  // =========================================================================
+  // Clean, Uncluttered, Scannable Task Card (Matching Reference Screenshot)
+  // Only the most essential data is rendered on the card face.
+  // Full checklists, editing & details are accessible via 1-click inspection.
+  // =========================================================================
   function renderTaskCard(task: GroupTaskDTO) {
     const committeeMeta = COMMITTEE_LABELS[task.committee] || {
       label: task.committee,
@@ -676,34 +679,27 @@ export function TasksClient({
     const priorityMeta = PRIORITY_BADGES[task.priority];
     const completedCount = task.checklist.filter((i) => i.completed).length;
     const totalCount = task.checklist.length;
-    const progressPercent =
-      totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
     const isDone = task.status === "COMPLETED";
 
     return (
       <div
         key={task.id}
         onClick={() => setViewingTask(task)}
-        className="group relative bg-white dark:bg-[#111622] border border-[#E8EDF5] dark:border-slate-800/80 rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-xs hover:shadow-md hover:border-[#4F6BFF]/40 transition-all duration-200 flex flex-col justify-between cursor-pointer overflow-hidden"
+        className="group relative bg-white dark:bg-[#111622] border border-[#E8EDF5] dark:border-slate-800/80 rounded-2xl p-4 shadow-xs hover:shadow-md hover:border-[#4F6BFF]/40 transition-all duration-200 flex flex-col justify-between gap-3 cursor-pointer"
       >
-        {/* Subtle Decorative Visual Header Accent (Matching Reference Illustrative Feel) */}
-        {task.projectTitle && (
-          <div
-            className={`absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r ${committeeMeta.gradient}`}
-          />
-        )}
-
         <div>
-          {/* Header Metadata: Due Date & Category Pill & Quick Mark Checkmark */}
-          <div className="flex items-center justify-between gap-2 mb-3">
-            <span
-              className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border transition ${committeeMeta.color}`}
-            >
-              {committeeMeta.label}
-            </span>
+          {/* Row 1: Target Date & Quick Checkmark */}
+          <div className="flex items-center justify-between text-xs mb-2.5">
+            <div className="flex items-center gap-1.5 text-[#8E95A5] dark:text-slate-400 font-medium text-[11px]">
+              <Calendar className="w-3.5 h-3.5 text-slate-400" />
+              <span>{task.dueDate}</span>
+            </div>
 
-            <div className="flex items-center gap-1.5">
-              {/* Quick 1-Click "Mark as Complete" Checkmark Action */}
+            <div
+              className="flex items-center gap-1.5"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Quick 1-click complete toggle */}
               <button
                 type="button"
                 onClick={(e) => handleQuickCompleteToggle(e, task)}
@@ -719,42 +715,22 @@ export function TasksClient({
                 }`}
               >
                 <CheckCircle2
-                  className={`w-4 h-4 ${isDone ? "fill-[#10B981] text-white" : ""}`}
+                  className={`w-4 h-4 ${
+                    isDone ? "fill-[#10B981] text-white" : ""
+                  }`}
                 />
               </button>
 
-              <span
-                className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${priorityMeta.color}`}
-              >
-                {priorityMeta.icon}
-                {priorityMeta.label}
-              </span>
-
-              {isAdmin && (
-                <div
-                  className="flex items-center opacity-70 group-hover:opacity-100 transition"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <button
-                    onClick={() => openEditTask(task)}
-                    className="p-1 rounded-lg text-slate-400 hover:text-[#4F6BFF] hover:bg-slate-50 dark:hover:bg-slate-800 transition cursor-pointer"
-                    title="Edit Task & Assignees"
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => handleDeleteTask(task.id, task.title)}
-                    className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
-                    title="Delete Task"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+              {task.priority === "URGENT" && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-[#FEECEC] text-[#EF4444] border-[#FCD2D2]">
+                  <Flame className="w-3 h-3 animate-pulse text-[#EF4444] inline mr-1" />
+                  Urgent
+                </span>
               )}
             </div>
           </div>
 
-          {/* Task Title & Description */}
+          {/* Row 2: Title */}
           <h3
             className={`text-sm font-bold tracking-tight line-clamp-2 leading-snug transition ${
               isDone
@@ -764,259 +740,101 @@ export function TasksClient({
           >
             {task.title}
           </h3>
-          {task.description && (
-            <p className="text-xs text-[#58627A] dark:text-slate-400 mt-1 line-clamp-2 leading-relaxed">
-              {task.description}
-            </p>
-          )}
 
-          {/* Linked Service Project Dossier Badge (With View Details cue) */}
+          {/* Connected Project mini indicator */}
           {task.projectTitle && (
-            <div
-              className="mt-2.5 px-3 py-1.5 rounded-xl bg-[#F8F9FD] dark:bg-slate-800/60 border border-[#E8EDF5] dark:border-slate-800 flex items-center justify-between text-xs"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                <FolderKanban className="w-3.5 h-3.5 text-[#4F6BFF] shrink-0" />
-                <span className="font-semibold text-[#111625] dark:text-slate-200 truncate block text-[11px]">
-                  {task.projectTitle}
-                </span>
-              </div>
-              <Link
-                href="/projects"
-                className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-[#4F6BFF] dark:text-blue-400 hover:underline shrink-0 ml-1"
-              >
-                <span>View</span>
-                <ArrowRight className="w-3 h-3" />
-              </Link>
+            <div className="mt-1.5 flex items-center gap-1 text-[11px] text-[#4F6BFF] dark:text-blue-400 font-semibold truncate">
+              <FolderKanban className="w-3 h-3 shrink-0" />
+              <span className="truncate">{task.projectTitle}</span>
             </div>
           )}
 
-          {/* Due Date & Member Assignees */}
-          <div className="flex items-center justify-between gap-2 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 text-xs">
-            <div className="flex items-center gap-1.5 text-[#8E95A5] dark:text-slate-400 text-[11px] font-medium">
-              <Calendar className="w-3.5 h-3.5 text-slate-400" />
-              <span>{task.dueDate}</span>
-            </div>
-
-            {/* Member Avatars Stack */}
-            <div
-              className="flex items-center gap-1.5 relative"
-              onClick={(e) => e.stopPropagation()}
+          {/* Row 3: Category & Priority Tags */}
+          <div className="flex items-center gap-1.5 flex-wrap mt-2.5">
+            <span
+              className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border transition ${committeeMeta.color}`}
             >
-              {task.assignedMemberNames.length > 0 && (
-                <div className="flex items-center -space-x-2 overflow-hidden">
-                  {task.assignedMemberNames.slice(0, 3).map((name, i) => {
-                    const initials = name
-                      .split(" ")
-                      .map((p) => p[0])
-                      .slice(0, 2)
-                      .join("");
-                    return (
-                      <div
-                        key={i}
-                        title={name}
-                        className="w-6 h-6 rounded-full bg-[#1C2035] text-white flex items-center justify-center text-[9.5px] font-bold border-2 border-white dark:border-[#111622]"
-                      >
-                        {initials}
-                      </div>
-                    );
-                  })}
-                  {task.assignedMemberNames.length > 3 && (
-                    <div className="w-6 h-6 rounded-full bg-[#EFF3FE] text-[#4F6BFF] flex items-center justify-center text-[9px] font-bold border-2 border-white dark:border-[#111622]">
-                      +{task.assignedMemberNames.length - 3}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Quick Assign Button (Admin only) */}
-              {isAdmin && (
-                <div className="relative">
-                  <button
-                    onClick={() =>
-                      setQuickAssignTaskId(
-                        quickAssignTaskId === task.id ? null : task.id
-                      )
-                    }
-                    className="w-6 h-6 rounded-full border border-dashed border-slate-300 dark:border-slate-600 hover:border-[#4F6BFF] text-slate-400 hover:text-[#4F6BFF] flex items-center justify-center text-xs transition cursor-pointer"
-                    title="Assign members"
-                  >
-                    <UserPlus className="w-3 h-3" />
-                  </button>
-
-                  {quickAssignTaskId === task.id && (
-                    <div className="absolute right-0 top-full mt-1.5 w-56 bg-white dark:bg-[#161B26] border border-[#EDEDF2] dark:border-slate-800 rounded-xl shadow-lg p-2 z-30 space-y-1">
-                      <p className="px-2 py-1 text-[10px] font-bold text-[#8E95A5] uppercase tracking-wider">
-                        Assign Members
-                      </p>
-                      <div className="max-h-40 overflow-y-auto space-y-0.5">
-                        {members.map((member) => {
-                          const isAssigned = (
-                            task.assignedMemberIds || []
-                          ).includes(member.id);
-                          return (
-                            <button
-                              key={member.id}
-                              onClick={() =>
-                                handleQuickAssignToggle(task.id, member.id)
-                              }
-                              className={`w-full flex items-center justify-between p-1.5 rounded-lg text-xs transition text-left cursor-pointer ${
-                                isAssigned
-                                  ? "bg-[#EFF3FE] text-[#4F6BFF] font-semibold"
-                                  : "hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"
-                              }`}
-                            >
-                              <span className="truncate">{member.name}</span>
-                              {isAssigned && (
-                                <Check className="w-3 h-3 text-[#10B981] shrink-0" />
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Interactive Checklist & Progress Bar */}
-          <div
-            className="mt-3.5 space-y-2"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between text-[11px]">
-              <span className="font-semibold text-[#58627A] dark:text-slate-300 flex items-center gap-1">
-                <CheckSquare className="w-3.5 h-3.5 text-[#4F6BFF]" />
-                Checklist ({completedCount}/{totalCount})
-              </span>
-              <span className="text-slate-400 font-bold">{progressPercent}%</span>
-            </div>
-
-            {/* Smooth Progress Bar */}
-            <div className="w-full bg-[#E8EDF5] dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
-              <div
-                className={`h-full transition-all duration-300 ${
-                  progressPercent === 100 ? "bg-[#10B981]" : "bg-[#4F6BFF]"
-                }`}
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
-
-            {/* Checklist Items list */}
-            <div className="space-y-1.5 pt-1 max-h-36 overflow-y-auto pr-1">
-              {task.checklist.map((item) => (
-                <label
-                  key={item.id}
-                  className="flex items-start gap-2 p-1 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/60 cursor-pointer transition text-xs"
-                >
-                  <input
-                    type="checkbox"
-                    checked={item.completed}
-                    onChange={() => handleToggleItem(task.id, item.id)}
-                    className="mt-0.5 w-3.5 h-3.5 text-[#4F6BFF] rounded border-slate-300 focus:ring-[#4F6BFF] cursor-pointer"
-                  />
-                  <span
-                    className={`flex-1 text-[11px] leading-tight ${
-                      item.completed
-                        ? "line-through text-slate-400 dark:text-slate-500"
-                        : "text-slate-700 dark:text-slate-300 font-medium"
-                    }`}
-                  >
-                    {item.title}
-                  </span>
-                </label>
-              ))}
-            </div>
-
-            {/* Inline Add Checklist Item */}
-            <div className="flex items-center gap-1 pt-1">
-              <input
-                type="text"
-                placeholder="Add to-do item..."
-                value={inlineNewItem[task.id] || ""}
-                onChange={(e) =>
-                  setInlineNewItem({
-                    ...inlineNewItem,
-                    [task.id]: e.target.value,
-                  })
-                }
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    handleAddInlineItem(task.id);
-                  }
-                }}
-                className="flex-1 px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-[11px] text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-[#4F6BFF]"
-              />
-              <button
-                onClick={() => handleAddInlineItem(task.id)}
-                className="px-2 py-1 bg-[#EFF3FE] hover:bg-[#DCE4FD] text-[#4F6BFF] rounded-lg text-[10px] font-semibold transition cursor-pointer"
+              {committeeMeta.label}
+            </span>
+            {task.priority !== "URGENT" && (
+              <span
+                className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${priorityMeta.color}`}
               >
-                Add
-              </button>
-            </div>
+                {priorityMeta.label}
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Footer: View Details cue & Status Selector */}
-        <div
-          className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            type="button"
-            onClick={() => setViewingTask(task)}
-            className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#8E95A5] hover:text-[#4F6BFF] transition cursor-pointer"
-          >
-            <Eye className="w-3.5 h-3.5" />
-            <span>View Mark</span>
-          </button>
+        {/* Row 4: Clean Footer (Avatars + Checklist counter) */}
+        <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2 text-xs">
+          {/* Member Avatars Stack */}
+          <div className="flex items-center -space-x-1.5">
+            {task.assignedMemberNames.slice(0, 3).map((name, i) => {
+              const initials = name
+                .split(" ")
+                .map((p) => p[0])
+                .slice(0, 2)
+                .join("");
+              return (
+                <div
+                  key={i}
+                  title={name}
+                  className="w-5 h-5 rounded-full bg-[#1C2035] text-white flex items-center justify-center text-[8.5px] font-bold border-2 border-white dark:border-[#111622]"
+                >
+                  {initials}
+                </div>
+              );
+            })}
+            {task.assignedMemberNames.length > 3 && (
+              <div className="w-5 h-5 rounded-full bg-[#EFF3FE] text-[#4F6BFF] flex items-center justify-center text-[8.5px] font-bold border-2 border-white dark:border-[#111622]">
+                +{task.assignedMemberNames.length - 3}
+              </div>
+            )}
+            {task.assignedMemberNames.length === 0 && (
+              <span className="text-[10px] text-slate-400 italic">
+                Unassigned
+              </span>
+            )}
+          </div>
 
-          <select
-            value={task.status}
-            onChange={(e) =>
-              handleStatusChange(task.id, e.target.value as TaskStatus)
-            }
-            className={`text-xs font-bold px-2.5 py-1 rounded-lg border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#4F6BFF] transition ${
-              STATUS_CONFIG[task.status].badge
-            }`}
-          >
-            <option value="TODO">To Do</option>
-            <option value="IN_PROGRESS">In Progress</option>
-            <option value="IN_REVIEW">In Review</option>
-            <option value="COMPLETED">Completed</option>
-          </select>
+          {/* Checklist Counter: e.g. ✓ 2/5 */}
+          {totalCount > 0 && (
+            <div className="flex items-center gap-1 text-[11px] font-semibold text-[#8E95A5] dark:text-slate-400">
+              <CheckSquare className="w-3 h-3 text-[#4F6BFF]" />
+              <span>
+                {completedCount}/{totalCount}
+              </span>
+            </div>
+          )}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* =========================================================================
-          STEP 2: App Shell Workspace Header & Top Utility Bar
+          Clean, Modern Header & Utility Bar (Aligned with Reference Design)
           ========================================================================= */}
-      <div className="bg-white dark:bg-[#111622] border border-[#E8EDF5] dark:border-slate-800/80 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xs space-y-4">
-        {/* Row 1: Workspace Title, Telemetry Pill, Search & Primary CTA */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      <div className="bg-white dark:bg-[#111622] border border-[#E8EDF5] dark:border-slate-800/80 rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-xs space-y-3.5">
+        {/* Row 1: Workspace Title, Live Summary & Primary CTA */}
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3.5">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-[#EFF3FE] text-[#4F6BFF] flex items-center justify-center shadow-xs shrink-0">
-              <CheckSquare className="w-5 h-5" />
+            <div className="w-9 h-9 rounded-2xl bg-[#EFF3FE] text-[#4F6BFF] flex items-center justify-center shadow-xs shrink-0">
+              <CheckSquare className="w-4 h-4" />
             </div>
             <div>
-              <div className="flex items-center gap-2.5 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-xl sm:text-2xl font-black tracking-tight text-[#111625] dark:text-white">
                   Committee Task Center
                 </h1>
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#EFF3FE] text-[#4F6BFF]">
-                  {currentStats.total} Active Milestones
+                  {currentStats.total} Tasks
                 </span>
               </div>
-              <p className="text-xs text-[#8E95A5] mt-0.5">
-                Real-time committee deliverables, member assignment rosters & Rotary project linkages
+              <p className="text-[11px] text-[#8E95A5] mt-0.5">
+                {currentStats.todo} to do · {currentStats.inProgress} in progress · {currentStats.completed} completed · {currentStats.urgent} urgent
               </p>
             </div>
           </div>
@@ -1024,11 +842,11 @@ export function TasksClient({
           {/* Header Action Tools */}
           <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
             {/* Search Input Box */}
-            <div className="relative flex-1 sm:w-64">
+            <div className="relative flex-1 sm:w-60">
               <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder="Search tasks, committees, assignees..."
+                placeholder="Search tasks or assignees..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-8 pr-7 py-2 rounded-xl bg-[#F8F9FD] dark:bg-slate-800/60 border border-[#E8EDF5] dark:border-slate-700 text-xs text-[#111625] dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#4F6BFF]"
@@ -1072,7 +890,7 @@ export function TasksClient({
             ) : (
               <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#EFF3FE] text-[#4F6BFF] text-xs font-semibold shrink-0">
                 <Users className="w-3.5 h-3.5" />
-                <span>Assigned to You ({myAssignedTasks.length})</span>
+                <span>Assigned ({myAssignedTasks.length})</span>
               </div>
             )}
 
@@ -1083,7 +901,7 @@ export function TasksClient({
                   setSelectedStatus("TODO");
                   setIsModalOpen(true);
                 }}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#4F6BFF] hover:bg-[#3D54D8] text-white text-xs font-bold shadow-xs hover:shadow-sm transition cursor-pointer shrink-0"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#4F6BFF] hover:bg-[#3D54D8] text-white text-xs font-bold shadow-xs hover:shadow-sm transition cursor-pointer shrink-0"
               >
                 <Plus className="w-4 h-4" />
                 <span>New Task</span>
@@ -1092,18 +910,18 @@ export function TasksClient({
           </div>
         </div>
 
-        {/* Row 2: Sub-Header Workspace Quick Controls (Reference Match: Board Select, Avatars, Filters & View Toggle) */}
-        <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-col md:flex-row md:items-center md:justify-between gap-3 text-xs">
-          {/* Left Controls: Committee Focus Selector, Project Toggle & Member Avatars */}
-          <div className="flex items-center gap-2.5 flex-wrap">
-            {/* Committee Board Selector (styled like "Design Task v" in reference) */}
+        {/* Row 2: Sub-Header Workspace Controls (Reference Match: Board Select, Projects, Avatars, Filters, Board|Grid) */}
+        <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800 flex flex-col md:flex-row md:items-center md:justify-between gap-2.5 text-xs">
+          {/* Left Controls: Committee Selector, Collapsible Projects Button & Roster Avatars */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Committee Board Selector */}
             <div className="relative">
               <select
                 value={selectedCommittee}
                 onChange={(e) => setSelectedCommittee(e.target.value)}
                 className="appearance-none pl-3 pr-8 py-1.5 rounded-xl bg-[#F8F9FD] dark:bg-slate-800 border border-[#E8EDF5] dark:border-slate-700 font-bold text-xs text-[#111625] dark:text-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#4F6BFF]"
               >
-                <option value="ALL">All Committee Boards</option>
+                <option value="ALL">All Committees</option>
                 {Object.entries(COMMITTEE_LABELS).map(([k, meta]) => (
                   <option key={k} value={k}>
                     {meta.label}
@@ -1113,7 +931,7 @@ export function TasksClient({
               <ChevronDown className="w-3.5 h-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             </div>
 
-            {/* Best Practice: Connected Projects Collapsible Toggle Button */}
+            {/* Connected Projects Toggle Button */}
             {projects && projects.length > 0 && (
               <button
                 type="button"
@@ -1137,30 +955,28 @@ export function TasksClient({
               </button>
             )}
 
-            {/* Active Members Facepile Stack with Invite/Quick-assign */}
-            <div className="flex items-center gap-1.5 pl-2 border-l border-slate-200 dark:border-slate-800">
-              <div className="flex items-center -space-x-1.5">
-                {members.slice(0, 4).map((m, idx) => (
-                  <div
-                    key={m.id || idx}
-                    title={m.name}
-                    className="w-6 h-6 rounded-full bg-[#1C2035] text-white flex items-center justify-center text-[9px] font-bold border-2 border-white dark:border-[#111622]"
-                  >
-                    {m.name.charAt(0)}
-                  </div>
-                ))}
-                {members.length > 4 && (
-                  <div className="w-6 h-6 rounded-full bg-[#F1F3F8] text-[#58627A] flex items-center justify-center text-[9px] font-bold border-2 border-white dark:border-[#111622]">
-                    +{members.length - 4}
-                  </div>
-                )}
-              </div>
+            {/* Member Avatars */}
+            <div className="flex items-center -space-x-1.5 pl-1.5 border-l border-slate-200 dark:border-slate-800">
+              {members.slice(0, 4).map((m, idx) => (
+                <div
+                  key={m.id || idx}
+                  title={m.name}
+                  className="w-5 h-5 rounded-full bg-[#1C2035] text-white flex items-center justify-center text-[8.5px] font-bold border-2 border-white dark:border-[#111622]"
+                >
+                  {m.name.charAt(0)}
+                </div>
+              ))}
+              {members.length > 4 && (
+                <div className="w-5 h-5 rounded-full bg-[#F1F3F8] text-[#58627A] flex items-center justify-center text-[8.5px] font-bold border-2 border-white dark:border-[#111622]">
+                  +{members.length - 4}
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Right Controls: Star Bookmark, Filters Toggle, View Switcher [Board | Grid], & Reset */}
+          {/* Right Controls: Star Bookmark, Filters Toggle & View Switcher [Board | Grid] */}
           <div className="flex items-center gap-2 self-end md:self-auto">
-            {/* Star Favorite Button (Reference Match) */}
+            {/* Star Favorite Button */}
             <button
               onClick={() => setIsStarred(!isStarred)}
               className={`p-1.5 rounded-xl border transition cursor-pointer ${
@@ -1237,7 +1053,7 @@ export function TasksClient({
 
         {/* Expandable Advanced Filters Bar */}
         {isFiltersExpanded && (
-          <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
+          <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2.5 animate-in fade-in slide-in-from-top-1 duration-200">
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
               {/* Status Filter */}
               <div>
@@ -1313,33 +1129,6 @@ export function TasksClient({
                 </select>
               </div>
             </div>
-
-            {/* Quick Committee Pills */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
-              <button
-                onClick={() => setSelectedCommittee("ALL")}
-                className={`px-3 py-1 rounded-full whitespace-nowrap text-[11px] font-semibold transition cursor-pointer ${
-                  selectedCommittee === "ALL"
-                    ? "bg-[#4F6BFF] text-white"
-                    : "bg-[#F1F3F8] dark:bg-slate-800 text-[#58627A] dark:text-slate-300 hover:bg-slate-200"
-                }`}
-              >
-                All
-              </button>
-              {Object.entries(COMMITTEE_LABELS).map(([key, config]) => (
-                <button
-                  key={key}
-                  onClick={() => setSelectedCommittee(key)}
-                  className={`px-3 py-1 rounded-full whitespace-nowrap text-[11px] font-medium transition cursor-pointer ${
-                    selectedCommittee === key
-                      ? "bg-[#4F6BFF] text-white font-bold"
-                      : "bg-[#F1F3F8] dark:bg-slate-800 text-[#58627A] dark:text-slate-300 hover:bg-slate-200"
-                  }`}
-                >
-                  {config.label}
-                </button>
-              ))}
-            </div>
           </div>
         )}
       </div>
@@ -1352,71 +1141,8 @@ export function TasksClient({
         </div>
       )}
 
-      {/* KPI Telemetry Stat Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
-        {/* Card 1: Total */}
-        <div className="bg-white dark:bg-[#111622] border border-[#E8EDF5] dark:border-slate-800/80 rounded-2xl p-4 shadow-xs">
-          <div className="flex items-center justify-between text-[#8E95A5] text-xs font-semibold">
-            <span>Total Tasks</span>
-            <ListTodo className="w-4 h-4 text-slate-400" />
-          </div>
-          <div className="text-2xl font-black text-[#111625] dark:text-white mt-1.5">
-            {currentStats.total}
-          </div>
-          <div className="text-[11px] text-[#8E95A5] mt-0.5">
-            Active committee initiatives
-          </div>
-        </div>
-
-        {/* Card 2: In Progress */}
-        <div className="bg-white dark:bg-[#111622] border border-[#E8EDF5] dark:border-slate-800/80 rounded-2xl p-4 shadow-xs">
-          <div className="flex items-center justify-between text-[#4F6BFF] text-xs font-semibold">
-            <span>In Progress</span>
-            <Clock className="w-4 h-4" />
-          </div>
-          <div className="text-2xl font-black text-[#4F6BFF] mt-1.5">
-            {currentStats.inProgress}
-          </div>
-          <div className="text-[11px] text-[#8E95A5] mt-0.5">
-            {currentStats.inReview} in review pipeline
-          </div>
-        </div>
-
-        {/* Card 3: Completed */}
-        <div className="bg-white dark:bg-[#111622] border border-[#E8EDF5] dark:border-slate-800/80 rounded-2xl p-4 shadow-xs">
-          <div className="flex items-center justify-between text-[#10B981] text-xs font-semibold">
-            <span>Completed</span>
-            <CheckCircle2 className="w-4 h-4" />
-          </div>
-          <div className="text-2xl font-black text-[#10B981] mt-1.5">
-            {currentStats.completed}
-          </div>
-          <div className="text-[11px] text-[#8E95A5] mt-0.5">
-            {currentStats.total > 0
-              ? `${Math.round(
-                  (currentStats.completed / currentStats.total) * 100
-                )}% completion rate`
-              : "0%"}
-          </div>
-        </div>
-
-        {/* Card 4: Urgent */}
-        <div className="bg-white dark:bg-[#111622] border border-[#E8EDF5] dark:border-slate-800/80 rounded-2xl p-4 shadow-xs">
-          <div className="flex items-center justify-between text-[#EF4444] text-xs font-semibold">
-            <span>Urgent Attention</span>
-            <Flame className="w-4 h-4 text-[#EF4444] animate-pulse" />
-          </div>
-          <div className="text-2xl font-black text-[#EF4444] mt-1.5">
-            {currentStats.urgent}
-          </div>
-          <div className="text-[11px] text-[#8E95A5] mt-0.5">
-            Require immediate action
-          </div>
-        </div>
-      </div>
-
       {/* =========================================================================
-          Best Practice 1: Collapsible Connected Rotary Projects Section (Hidden by Default)
+          Collapsible Connected Rotary Projects Section (Hidden by Default)
           ========================================================================= */}
       {projects && projects.length > 0 && showProjectsSection && (
         <div className="bg-white dark:bg-[#111622] border border-[#E8EDF5] dark:border-slate-800/80 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
@@ -1491,7 +1217,7 @@ export function TasksClient({
       )}
 
       {/* =========================================================================
-          STEP 3: Main Task Workspace (Kanban Board vs Grid View)
+          Main Task Workspace (Kanban Board vs Grid View)
           ========================================================================= */}
       {filteredTasks.length === 0 ? (
         <div className="p-12 text-center bg-white dark:bg-[#111622] border border-[#E8EDF5] dark:border-slate-800/80 rounded-3xl shadow-xs">
@@ -1544,7 +1270,7 @@ export function TasksClient({
                   </div>
                 </div>
 
-                {/* Column Cards */}
+                {/* Column Cards (Clean, Scannable) */}
                 <div className="space-y-3 flex-1 overflow-y-auto max-h-[75vh] pr-0.5">
                   {stageTasks.map((task) => renderTaskCard(task))}
                 </div>
@@ -1581,7 +1307,8 @@ export function TasksClient({
       )}
 
       {/* =========================================================================
-          Best Practice 2: Dedicated Task Detail / Inspection View Modal ("View Mark")
+          Dedicated Task Detail / Inspection View Modal ("View Mark")
+          All deep details (checklist items, add item, full description, edit) live here!
           ========================================================================= */}
       {viewingTask && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
@@ -1628,7 +1355,7 @@ export function TasksClient({
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3.5 rounded-2xl bg-[#F8F9FD] dark:bg-slate-800/60 border border-[#E8EDF5] dark:border-slate-800 gap-3">
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] font-bold text-[#8E95A5] uppercase tracking-wider">
-                    Current Stage:
+                    Stage:
                   </span>
                   <select
                     value={viewingTask.status}
