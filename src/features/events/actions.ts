@@ -84,14 +84,35 @@ export async function startQrAttendanceSessionAction(eventId: string) {
   const user = await requireUser();
   const adminClient = createAdminClient();
 
-  // Expire any existing active sessions for this event
+  // Expire truly stale sessions whose time window has elapsed
   await adminClient
     .from("attendance_sessions")
     .update({ status: "EXPIRED" })
     .eq("event_id", eventId)
-    .eq("status", "ACTIVE");
+    .lt("expires_at", new Date().toISOString());
 
-  // Create fresh time-bound session token
+  // Check if there is already an active session for this event created recently (within 5 minutes)
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  const { data: existingActive } = await adminClient
+    .from("attendance_sessions")
+    .select("session_token, expires_at")
+    .eq("event_id", eventId)
+    .eq("status", "ACTIVE")
+    .gt("expires_at", new Date().toISOString())
+    .gt("created_at", fiveMinutesAgo)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existingActive) {
+    return {
+      success: true,
+      sessionToken: existingActive.session_token,
+      expiresAt: existingActive.expires_at,
+    };
+  }
+
+  // Create fresh time-bound session token (valid for 3 hours)
   const token = `racspeed-${eventId.slice(0, 8)}-${Date.now().toString(36)}`;
   const expiresAt = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(); // 3 hours window
 
@@ -115,3 +136,4 @@ export async function startQrAttendanceSessionAction(eventId: string) {
   revalidatePath("/events");
   return { success: true, sessionToken: token, expiresAt };
 }
+

@@ -20,17 +20,47 @@ import {
   ScanLine,
   RefreshCw,
   Radio,
+  Copy,
+  Check,
+  ExternalLink,
 } from "lucide-react";
 import { formatManilaDate } from "@/lib/utils/dates";
 import { createClient } from "@/lib/supabase/client";
 import { createEventAction, startQrAttendanceSessionAction } from "@/features/events/actions";
 import { EventDTO } from "@/features/events/queries";
 
-interface EventsClientProps {
-  initialEvents: EventDTO[];
+export function extractSessionToken(raw: string): string {
+  if (!raw) return "";
+  const trimmed = raw.trim();
+
+  // 1. If full URL, parse query param
+  try {
+    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+      const parsed = new URL(trimmed);
+      const qToken =
+        parsed.searchParams.get("token") ||
+        parsed.searchParams.get("sessionToken") ||
+        parsed.searchParams.get("checkInToken");
+      if (qToken) return qToken.trim();
+    }
+  } catch {}
+
+  // 2. Query param regex match
+  const match = trimmed.match(/[?&](?:token|sessionToken|checkInToken)=([^&#\s]+)/i);
+  if (match) {
+    return decodeURIComponent(match[1]).trim();
+  }
+
+  // 3. Raw token
+  return trimmed;
 }
 
-export function EventsClient({ initialEvents }: EventsClientProps) {
+interface EventsClientProps {
+  initialEvents: EventDTO[];
+  initialToken?: string;
+}
+
+export function EventsClient({ initialEvents, initialToken }: EventsClientProps) {
   const [events, setEvents] = useState<EventDTO[]>(initialEvents);
   const [selectedEvent, setSelectedEvent] = useState<EventDTO | null>(null);
   const [qrModalOpen, setQrModalOpen] = useState(false);
@@ -39,8 +69,10 @@ export function EventsClient({ initialEvents }: EventsClientProps) {
   const [sessionToken, setSessionToken] = useState<string>("");
   const [secondsRemaining, setSecondsRemaining] = useState<number>(60);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [checkInTokenInput, setCheckInTokenInput] = useState("");
+  const [checkInTokenInput, setCheckInTokenInput] = useState(initialToken ? extractSessionToken(initialToken) : "");
   const [notification, setNotification] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const hasAutoCheckedInRef = React.useRef(false);
 
   // In-Browser Camera Scanner States
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -188,9 +220,11 @@ export function EventsClient({ initialEvents }: EventsClientProps) {
   }
 
   async function submitScannedToken(tokenText: string) {
-    const cleanToken = tokenText.trim();
+    const cleanToken = extractSessionToken(tokenText);
+    if (!cleanToken) return;
+
     setCheckInTokenInput(cleanToken);
-    setNotification({ message: `QR Code detected! Verifying attendance for "${cleanToken}"...`, type: "success" });
+    setNotification({ message: `Verifying attendance token "${cleanToken}"...`, type: "success" });
 
     try {
       const response = await fetch("/api/attendance/check-in", {
@@ -205,9 +239,16 @@ export function EventsClient({ initialEvents }: EventsClientProps) {
       const result = await response.json();
       if (response.ok && result.success) {
         setNotification({
-          message: `Attendance verified via camera scan! ${result.volunteerHours || 3} volunteer hours credited.`,
+          message: `Attendance confirmed! ${result.volunteerHours || 3} volunteer hours logged to your record.`,
           type: "success",
         });
+        setEvents((prev) =>
+          prev.map((ev) =>
+            selectedEvent && ev.id === selectedEvent.id
+              ? { ...ev, attendeesCount: ev.attendeesCount + 1 }
+              : ev
+          )
+        );
       } else {
         setNotification({
           message: result.error || "Attendance verification failed.",
@@ -216,13 +257,24 @@ export function EventsClient({ initialEvents }: EventsClientProps) {
       }
     } catch {
       setNotification({
-        message: "Attendance confirmed for session.",
-        type: "success",
+        message: "Network error during check-in. Please try again.",
+        type: "error",
       });
     } finally {
-      setTimeout(() => setNotification(null), 5000);
+      setTimeout(() => setNotification(null), 6000);
     }
   }
+
+  // Auto-check in if token was passed in URL query param
+  useEffect(() => {
+    if (initialToken && !hasAutoCheckedInRef.current) {
+      hasAutoCheckedInRef.current = true;
+      const clean = extractSessionToken(initialToken);
+      if (clean) {
+        submitScannedToken(clean);
+      }
+    }
+  }, [initialToken]);
 
   // Dynamic token rotation timer
   useEffect(() => {
@@ -243,31 +295,30 @@ export function EventsClient({ initialEvents }: EventsClientProps) {
     try {
       const QRCode = (await import("qrcode")).default;
       const res = await startQrAttendanceSessionAction(event.id);
-      if (res.success && res.sessionToken) {
-        setSessionToken(res.sessionToken);
-        const dataUrl = await QRCode.toDataURL(res.sessionToken, {
-          width: 320,
-          margin: 2,
-          color: { dark: "#0f172a", light: "#ffffff" },
-        });
-        setQrCodeDataUrl(dataUrl);
-      } else {
-        // Fallback for offline demo mode
-        const fallbackToken = `racspeed-${event.id}-${Date.now().toString(36)}`;
-        setSessionToken(fallbackToken);
-        const dataUrl = await QRCode.toDataURL(fallbackToken, {
-          width: 320,
-          margin: 2,
-          color: { dark: "#0f172a", light: "#ffffff" },
-        });
-        setQrCodeDataUrl(dataUrl);
-      }
+      const activeToken =
+        res.success && res.sessionToken
+          ? res.sessionToken
+          : `racspeed-${event.id.slice(0, 8)}-${Date.now().toString(36)}`;
+      setSessionToken(activeToken);
+
+      // Encode universal check-in URL so standard camera apps navigate to check-in directly
+      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      const checkInUrl = `${origin}/events?token=${encodeURIComponent(activeToken)}`;
+
+      const dataUrl = await QRCode.toDataURL(checkInUrl, {
+        width: 320,
+        margin: 2,
+        color: { dark: "#0f172a", light: "#ffffff" },
+      });
+      setQrCodeDataUrl(dataUrl);
     } catch {
       try {
         const QRCode = (await import("qrcode")).default;
-        const fallbackToken = `racspeed-${event.id}-${Date.now().toString(36)}`;
+        const fallbackToken = `racspeed-${event.id.slice(0, 8)}-${Date.now().toString(36)}`;
         setSessionToken(fallbackToken);
-        const dataUrl = await QRCode.toDataURL(fallbackToken, {
+        const origin = typeof window !== "undefined" ? window.location.origin : "";
+        const checkInUrl = `${origin}/events?token=${encodeURIComponent(fallbackToken)}`;
+        const dataUrl = await QRCode.toDataURL(checkInUrl, {
           width: 320,
           margin: 2,
           color: { dark: "#0f172a", light: "#ffffff" },
@@ -286,47 +337,10 @@ export function EventsClient({ initialEvents }: EventsClientProps) {
 
   async function handleManualCheckIn(e: React.FormEvent) {
     e.preventDefault();
-    if (!checkInTokenInput.trim()) return;
-
-    try {
-      const response = await fetch("/api/attendance/check-in", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionToken: checkInTokenInput.trim(),
-          token: checkInTokenInput.trim(),
-        }),
-      });
-
-      const result = await response.json();
-      if (response.ok && result.success) {
-        setNotification({
-          message: `Check-in recorded! ${result.volunteerHours || 3} volunteer hours logged to your member record.`,
-          type: "success",
-        });
-        setEvents((prev) =>
-          prev.map((ev) =>
-            selectedEvent && ev.id === selectedEvent.id
-              ? { ...ev, attendeesCount: ev.attendeesCount + 1 }
-              : ev
-          )
-        );
-      } else {
-        setNotification({
-          message: result.error || "Attendance verification failed.",
-          type: "error",
-        });
-      }
-      setCheckInTokenInput("");
-    } catch {
-      setNotification({
-        message: "Attendance confirmed for session.",
-        type: "success",
-      });
-      setCheckInTokenInput("");
-    } finally {
-      setTimeout(() => setNotification(null), 5000);
-    }
+    const cleanToken = extractSessionToken(checkInTokenInput);
+    if (!cleanToken) return;
+    await submitScannedToken(cleanToken);
+    setCheckInTokenInput("");
   }
 
   async function handleCreateEvent(e: React.FormEvent<HTMLFormElement>) {
@@ -550,20 +564,49 @@ export function EventsClient({ initialEvents }: EventsClientProps) {
             </div>
 
             {/* Rotating countdown token */}
-            <div className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60 space-y-1">
+            <div className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60 space-y-2">
               <div className="flex items-center justify-between text-xs font-semibold">
-                <span className="text-slate-500">Token rotates in:</span>
+                <span className="text-slate-500">Live Token:</span>
                 <span className="text-rose-600 dark:text-rose-400 font-mono font-bold">
-                  {secondsRemaining}s
+                  Refreshes in {secondsRemaining}s
                 </span>
               </div>
-              <p className="font-mono text-[11px] text-slate-600 dark:text-slate-300 truncate select-all">
+              <p className="font-mono text-xs text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-900 py-1.5 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 truncate select-all">
                 {sessionToken}
               </p>
+
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const origin = typeof window !== "undefined" ? window.location.origin : "";
+                    const checkInUrl = `${origin}/events?token=${encodeURIComponent(sessionToken)}`;
+                    navigator.clipboard.writeText(checkInUrl);
+                    setCopiedLink(true);
+                    setNotification({ message: "Direct check-in link copied to clipboard!", type: "success" });
+                    setTimeout(() => setCopiedLink(false), 3000);
+                  }}
+                  className="flex-1 py-1.5 px-2.5 rounded-lg bg-slate-200/70 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-[11px] font-semibold text-slate-700 dark:text-slate-200 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedLink ? "Link Copied!" : "Copy Link"}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCheckInTokenInput(sessionToken);
+                    submitScannedToken(sessionToken);
+                    setQrModalOpen(false);
+                  }}
+                  className="py-1.5 px-3 rounded-lg bg-rose-600 hover:bg-rose-500 text-[11px] font-semibold text-white transition shadow-xs cursor-pointer shrink-0"
+                >
+                  Check In as Me
+                </button>
+              </div>
             </div>
 
             <p className="mt-3 text-[11px] text-slate-400">
-              Time-bound cryptographic tokens prevent screenshot attendance sharing.
+              Point your smartphone camera at this QR code or click Copy Link to share with attendees.
             </p>
           </div>
         </div>
@@ -713,6 +756,7 @@ export function EventsClient({ initialEvents }: EventsClientProps) {
             <div className="relative w-full aspect-square bg-slate-950 rounded-2xl overflow-hidden mt-4 border border-slate-800 flex items-center justify-center shadow-inner">
               <video
                 ref={videoRef}
+                autoPlay
                 playsInline
                 muted
                 className="w-full h-full object-cover"

@@ -1,6 +1,33 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { z } from "zod";
+
+function extractToken(raw: string): string {
+  if (!raw) return "";
+  const trimmed = raw.trim();
+
+  // 1. If full URL, parse query param
+  try {
+    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+      const parsed = new URL(trimmed);
+      const qToken =
+        parsed.searchParams.get("token") ||
+        parsed.searchParams.get("sessionToken") ||
+        parsed.searchParams.get("checkInToken");
+      if (qToken) return qToken.trim();
+    }
+  } catch {}
+
+  // 2. Query param regex match
+  const match = trimmed.match(/[?&](?:token|sessionToken|checkInToken)=([^&#\s]+)/i);
+  if (match) {
+    return decodeURIComponent(match[1]).trim();
+  }
+
+  // 3. Raw token
+  return trimmed;
+}
 
 const checkInSchema = z
   .object({
@@ -16,54 +43,100 @@ const checkInSchema = z
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    let {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    // Also support Authorization Bearer token for mobile/PWA scanners and API requests
+    if (!user) {
+      const authHeader = request.headers.get("authorization");
+      if (authHeader?.startsWith("Bearer ")) {
+        const jwt = authHeader.slice(7).trim();
+        const { data: userRes } = await supabase.auth.getUser(jwt);
+        if (userRes?.user) {
+          user = userRes.user;
+          authError = null;
+        }
+      }
+    }
 
     if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized: Please sign in to check in." }, { status: 401 });
+      return NextResponse.json(
+        { error: "Unauthorized: Please sign in to check in." },
+        { status: 401 }
+      );
     }
 
     const body = await request.json();
     const parsed = checkInSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ error: "Invalid request payload", details: parsed.error.issues }, { status: 400 });
+      return NextResponse.json(
+        { error: "Invalid request payload", details: parsed.error.issues },
+        { status: 400 }
+      );
     }
 
-    const sessionToken = (parsed.data.sessionToken || parsed.data.token)!.trim();
+    const rawToken = (parsed.data.sessionToken || parsed.data.token)!.trim();
+    const sessionToken = extractToken(rawToken);
 
-    // Verify attendance session exists and is ACTIVE
-    const { data: session, error: sessionError } = await supabase
+    if (!sessionToken) {
+      return NextResponse.json(
+        { error: "Invalid check-in token provided." },
+        { status: 400 }
+      );
+    }
+
+    // Use admin client to verify attendance session and insert record (bypasses RLS for attendees)
+    const admin = createAdminClient();
+
+    // Verify attendance session exists
+    const { data: session, error: sessionError } = await admin
       .from("attendance_sessions")
-      .select("id, event_id, status, expires_at, events(host_club_id, volunteer_hours_default)")
+      .select("id, event_id, status, expires_at, events(title, host_club_id, volunteer_hours_default)")
       .eq("session_token", sessionToken)
-      .single();
+      .maybeSingle();
 
     if (sessionError || !session) {
-      return NextResponse.json({ error: "Invalid or expired check-in session token." }, { status: 404 });
+      return NextResponse.json(
+        { error: "Invalid check-in session token. Please scan the active QR code." },
+        { status: 404 }
+      );
     }
 
-    if (session.status !== "ACTIVE" || new Date(session.expires_at) < new Date()) {
-      return NextResponse.json({ error: "Check-in window for this session has closed." }, { status: 410 });
+    // Verify session has not expired by timestamp and is not explicitly closed
+    const isPastExpiry = new Date(session.expires_at) < new Date();
+    if (session.status === "CLOSED" || isPastExpiry) {
+      return NextResponse.json(
+        { error: "Check-in window for this session has closed." },
+        { status: 410 }
+      );
     }
 
     const event = (session as any).events;
-    const hours = event?.volunteer_hours_default || 0.0;
+    const hours = Number(event?.volunteer_hours_default || 3.0);
+    const eventTitle = event?.title || "Event";
 
     // Check if user has already checked in for this event
-    const { data: existingCheckIn } = await supabase
+    const { data: existingCheckIn } = await admin
       .from("attendance_records")
-      .select("id")
+      .select("id, check_in_time")
       .eq("event_id", session.event_id)
       .eq("profile_id", user.id)
-      .single();
+      .maybeSingle();
 
     if (existingCheckIn) {
-      return NextResponse.json({
-        error: "Duplicate check-in rejected: You have already checked in for this event.",
-      }, { status: 409 });
+      return NextResponse.json(
+        {
+          error: `You have already checked in for ${eventTitle}.`,
+          alreadyCheckedIn: true,
+        },
+        { status: 409 }
+      );
     }
 
-    // Insert verified attendance record
-    const { data: record, error: insertError } = await supabase
+    // Insert verified attendance record with admin client
+    const { data: record, error: insertError } = await admin
       .from("attendance_records")
       .insert({
         event_id: session.event_id,
@@ -72,21 +145,32 @@ export async function POST(request: NextRequest) {
         attended: true,
         check_in_method: "QR",
         volunteer_hours: hours,
+        check_in_time: new Date().toISOString(),
       })
       .select()
       .single();
 
     if (insertError) {
-      return NextResponse.json({ error: "Failed to record attendance. Please try again." }, { status: 500 });
+      console.error("Attendance check-in insert error:", insertError);
+      return NextResponse.json(
+        { error: "Failed to record attendance. Please try again." },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({
       success: true,
-      message: `Check-in confirmed! ${hours} volunteer hours recorded.`,
+      message: `Check-in confirmed for ${eventTitle}! ${hours} volunteer hours recorded.`,
       recordId: record.id,
       volunteerHours: hours,
+      eventTitle,
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err?.message || "Internal server error" }, { status: 500 });
+    console.error("Unexpected error during check-in:", err);
+    return NextResponse.json(
+      { error: err?.message || "Internal server error" },
+      { status: 500 }
+    );
   }
 }
+
