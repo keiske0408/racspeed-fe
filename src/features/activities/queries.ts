@@ -6,6 +6,7 @@ import type {
   ActivityCommentDTO,
   ActivityDetailDTO,
   ActivityKind,
+  ActivityMediaDTO,
   ActivityProjectDetailsDTO,
   ActivityStatus,
   ActivitySummaryDTO,
@@ -26,7 +27,7 @@ const SUMMARY_COLUMNS = `
   owner:profiles!activities_owner_id_fkey(full_name),
   activity_rsvps(profile_id, response),
   attendance_records(profile_id),
-  activity_comments(count),
+  activity_comments(count), activity_media(count),
   tasks(status)
 `;
 
@@ -60,6 +61,7 @@ interface ActivitySummaryRow {
   attendance_records?: { profile_id: string }[] | null;
   tasks?: { status: string }[] | null;
   activity_comments?: { count: number }[] | null;
+  activity_media?: { count: number }[] | null;
 }
 
 interface ProfileRow {
@@ -223,6 +225,7 @@ function mapSummary(
     tasksTotal: tasks.length,
     tasksDone: tasks.filter((t) => t.status === "COMPLETED").length,
     commentsCount: row.activity_comments?.[0]?.count ?? 0,
+    mediaCount: row.activity_media?.[0]?.count ?? 0,
     coverUrl: row.cover_storage_path
       ? coverUrls.get(row.cover_storage_path) || null
       : null,
@@ -269,6 +272,32 @@ export async function listActivities(
     console.warn("Could not load activities:", err);
     return [];
   }
+}
+
+export async function getActivityMediaPage(
+  activityId: string,
+  offset: number,
+): Promise<{ media: ActivityMediaDTO[]; hasMore: boolean }> {
+  const { data, error } = await createAdminClient()
+    .from("activity_media")
+    .select("id, storage_path, caption, is_featured, sort_order")
+    .eq("activity_id", activityId)
+    .order("sort_order", { ascending: true })
+    .order("id", { ascending: true })
+    .range(offset, offset + 24);
+  if (error) throw new Error("Photos could not be loaded.");
+  const rows = (data || []) as ActivityMediaRow[];
+  const page = rows.slice(0, 24);
+  const urls = await signPaths(page.map((photo) => photo.storage_path));
+  return {
+    media: page.map((photo) => ({
+      id: photo.id,
+      url: urls.get(photo.storage_path) || null,
+      caption: photo.caption,
+      isFeatured: photo.is_featured,
+    })),
+    hasMore: rows.length > 24,
+  };
 }
 
 function person(p: ProfileRow | null, fallbackId: string) {

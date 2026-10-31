@@ -11,8 +11,10 @@ import {
   Plus,
   Search,
   SlidersHorizontal,
+  Images,
 } from "lucide-react";
 import { ActivityCalendar } from "./_components/activity-calendar";
+import { ActivityMoments } from "./_components/activity-moments";
 import { ActivityCard } from "./_components/activity-card";
 import { ActivityStatusBadge, KindBadge } from "./_components/badges";
 import {
@@ -26,7 +28,7 @@ import {
 import type { GroupTaskDTO } from "@/lib/data/tasks-types";
 import { formatActivityWhen } from "./_components/activity-card";
 
-type ViewMode = "LIST" | "BOARD" | "CALENDAR" | "TASKS";
+type ViewMode = "LIST" | "BOARD" | "CALENDAR" | "TASKS" | "MOMENTS";
 
 export function ProjectCenterClient({
   initialActivities,
@@ -43,14 +45,19 @@ export function ProjectCenterClient({
 }) {
   const searchParams = useSearchParams();
   const [view, setView] = useState<ViewMode>(
-    searchParams.get("view") === "tasks"
-      ? "TASKS"
-      : searchParams.get("view") === "calendar"
-        ? "CALENDAR"
-        : "LIST",
+    searchParams.get("view") === "moments"
+      ? "MOMENTS"
+      : searchParams.get("view") === "tasks"
+        ? "TASKS"
+        : searchParams.get("view") === "calendar"
+          ? "CALENDAR"
+          : "LIST",
   );
   const [kind, setKind] = useState(searchParams.get("kind") || "ALL");
-  const [status, setStatus] = useState(searchParams.get("status") || "ACTIVE");
+  const [status, setStatus] = useState(
+    searchParams.get("status") ||
+      (searchParams.get("view") === "moments" ? "ALL" : "ACTIVE"),
+  );
   const [query, setQuery] = useState("");
 
   const filtered = useMemo(() => {
@@ -222,13 +229,19 @@ export function ProjectCenterClient({
                   ["LIST", List, "List"],
                   ["BOARD", LayoutGrid, "Board"],
                   ["CALENDAR", CalendarDays, "Calendar"],
+                  ["MOMENTS", Images, "Moments"],
                 ] as const
               ).map(([mode, Icon, label]) => (
                 <button
                   key={mode}
                   type="button"
-                  onClick={() => setView(mode)}
+                  onClick={() => {
+                    setView(mode);
+                    if (mode === "MOMENTS" && status === "ACTIVE")
+                      setStatus("ALL");
+                  }}
                   aria-pressed={view === mode}
+                  aria-label={label}
                   title={label}
                   className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold ${view === mode ? "bg-[#0D3594] text-white" : "text-slate-600 dark:text-slate-300"}`}
                 >
@@ -244,7 +257,9 @@ export function ProjectCenterClient({
           Showing {filtered.length} of {initialActivities.length} activities
         </div>
 
-        {view === "TASKS" ? (
+        {view === "MOMENTS" ? (
+          <ActivityMoments activities={filtered} />
+        ) : view === "TASKS" ? (
           myTasks.length ? (
             <div className="overflow-hidden rounded-xl border border-[#EDEDF2] bg-white dark:border-slate-800 dark:bg-[#161B26]">
               {myTasks.map((task) => (

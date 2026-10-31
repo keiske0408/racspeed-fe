@@ -209,6 +209,7 @@ export interface ActivitySummaryDTO {
   tasksTotal: number;
   tasksDone: number;
   commentsCount: number;
+  mediaCount?: number;
   coverUrl: string | null;
 }
 

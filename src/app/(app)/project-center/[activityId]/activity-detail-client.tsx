@@ -50,6 +50,7 @@ import {
 import { minMembersStatus } from "@/features/activities/rules";
 import { formatManila } from "@/lib/utils/dates";
 import { notifyToast } from "@/components/shared/toast-viewport";
+import { uploadActivityPhotos } from "@/features/activities/media-upload";
 import {
   ActivityStatusBadge,
   Avatar,
@@ -1052,6 +1053,8 @@ function MediaPanel({
   onRefresh: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   return (
     <section className="space-y-4">
@@ -1070,17 +1073,56 @@ function MediaPanel({
             className="flex flex-wrap items-center gap-2"
             onSubmit={(event) => {
               event.preventDefault();
-              const data = new FormData(event.currentTarget);
-              data.set("activityId", activity.id);
+              const form = event.currentTarget;
+              const caption = String(new FormData(form).get("caption") || "");
               setError(null);
               startTransition(async () => {
-                const result = await uploadActivityMediaAction(data);
-                if (!result.success) {
-                  setError(result.error);
-                  return;
+                try {
+                  const result = await uploadActivityPhotos({
+                    files: selectedFiles,
+                    activityId: activity.id,
+                    caption,
+                    upload: uploadActivityMediaAction,
+                    onProgress: setUploadProgress,
+                  });
+                  setSelectedFiles(
+                    result.failures.map((failure) => failure.file),
+                  );
+                  form.reset();
+                  if (result.failures.length) {
+                    setError(
+                      result.failures
+                        .map(
+                          (failure) => `${failure.file.name}: ${failure.error}`,
+                        )
+                        .join(" "),
+                    );
+                    const captionInput = form.elements.namedItem("caption");
+                    if (captionInput instanceof HTMLInputElement)
+                      captionInput.value = caption;
+                  }
+                  if (result.uploaded > 0) {
+                    const saved = Math.max(
+                      0,
+                      Math.round(
+                        (1 - result.uploadedBytes / result.originalBytes) * 100,
+                      ),
+                    );
+                    notifyToast({
+                      message: `${result.uploaded} photo(s) uploaded${saved ? `, ${saved}% smaller` : ""}.`,
+                      kind: "success",
+                    });
+                    onRefresh();
+                  }
+                } catch (error) {
+                  setError(
+                    error instanceof Error
+                      ? error.message
+                      : "Upload failed. Please retry.",
+                  );
+                } finally {
+                  setUploadProgress(null);
                 }
-                event.currentTarget.reset();
-                onRefresh();
               });
             }}
           >
@@ -1093,24 +1135,37 @@ function MediaPanel({
               type="file"
               accept="image/jpeg,image/png,image/webp,image/gif"
               multiple
-              required
+              required={selectedFiles.length === 0}
+              disabled={pending}
+              onChange={(event) => {
+                setSelectedFiles(Array.from(event.target.files || []));
+                setError(null);
+              }}
               className="max-w-52 text-[11px] file:mr-2 file:rounded-md file:border-0 file:bg-slate-100 file:px-2 file:py-1.5 file:text-[11px] file:font-semibold dark:file:bg-slate-800"
             />
             <input
               name="caption"
+              aria-label="Photo caption"
+              disabled={pending}
               placeholder="Caption (optional)"
               maxLength={280}
               className="w-40 rounded-lg border border-[#EDEDF2] bg-white px-2.5 py-2 text-xs dark:border-slate-700 dark:bg-slate-900"
             />
             <button
-              disabled={pending}
+              disabled={pending || selectedFiles.length === 0}
               className="inline-flex items-center gap-1.5 rounded-lg bg-[#0D3594] px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
             >
-              <Upload className="h-3.5 w-3.5" /> Upload
+              <Upload className="h-3.5 w-3.5" />{" "}
+              {error && selectedFiles.length ? "Retry photos" : "Upload"}
             </button>
           </form>
         )}
       </header>
+      {(uploadProgress || selectedFiles.length > 0) && (
+        <p role="status" aria-live="polite" className="text-xs text-slate-500">
+          {uploadProgress || `${selectedFiles.length} photo(s) selected`}
+        </p>
+      )}
       {error && (
         <p role="alert" className="text-xs text-rose-600">
           {error}
@@ -1131,6 +1186,8 @@ function MediaPanel({
                     alt={photo.caption || "Activity photo"}
                     width={800}
                     height={600}
+                    loading="lazy"
+                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                     className="aspect-[4/3] w-full object-cover"
                   />
                 </a>

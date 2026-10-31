@@ -26,11 +26,16 @@ import {
   type CreateActivityInput,
 } from "./schemas";
 import { canTransition, evaluateRsvp, evaluateSelfCheckIn } from "./rules";
-import { isClubParticipant, MEDIA_BUCKET } from "./queries";
+import {
+  getActivityMediaPage,
+  isClubParticipant,
+  MEDIA_BUCKET,
+} from "./queries";
 import {
   ACTIVITY_STATUSES,
   COMMITTEES,
   isProjectKind,
+  type ActivityMediaDTO,
   type ActivityStatus,
   type RsvpResponse,
 } from "./types";
@@ -194,10 +199,14 @@ async function syncProjectRelations(
 
 async function validateProjectPartners(data: CreateActivityData) {
   if (!("partners" in data)) return null;
-  const partnerIds = [...new Set([
-    ...(data.sisterClubId ? [data.sisterClubId] : []),
-    ...data.partners.flatMap((partner) => partner.sisterClubId ? [partner.sisterClubId] : []),
-  ])];
+  const partnerIds = [
+    ...new Set([
+      ...(data.sisterClubId ? [data.sisterClubId] : []),
+      ...data.partners.flatMap((partner) =>
+        partner.sisterClubId ? [partner.sisterClubId] : [],
+      ),
+    ]),
+  ];
   if (partnerIds.length === 0) return null;
   const { data: registeredPartners, error } = await createAdminClient()
     .from("sister_clubs")
@@ -947,6 +956,37 @@ const EXTENSION_BY_TYPE: Record<string, string> = {
   "image/gif": "gif",
 };
 
+export async function getActivityMomentsAction(
+  activityId: string,
+  offset = 0,
+): Promise<ActionResult<{ media: ActivityMediaDTO[]; hasMore: boolean }>> {
+  if (!z.number().int().min(0).max(100000).safeParse(offset).success) {
+    return { success: false, error: "Invalid photo page." };
+  }
+  const access = await loadActivityAccess(activityId);
+  if (
+    !access ||
+    (!access.isParticipant && !access.canManage) ||
+    (access.activity.status === "DRAFT" && !access.canManage)
+  ) {
+    return {
+      success: false,
+      error: "This photo album is not available to you.",
+    };
+  }
+  try {
+    return {
+      success: true,
+      ...(await getActivityMediaPage(activityId, offset)),
+    };
+  } catch {
+    return {
+      success: false,
+      error: "Photos could not be loaded. Please retry.",
+    };
+  }
+}
+
 export async function uploadActivityMediaAction(
   formData: FormData,
 ): Promise<ActionResult> {
@@ -978,7 +1018,17 @@ export async function uploadActivityMediaAction(
       };
     }
     if (file.size > MAX_MEDIA_BYTES)
-      return { success: false, error: `${file.name} is larger than 10 MB.` };
+      return {
+        success: false,
+        error: `${file.name} is larger than 3 MB. Compress it before uploading.`,
+      };
+  }
+  if (files.reduce((total, file) => total + file.size, 0) > MAX_MEDIA_BYTES) {
+    return {
+      success: false,
+      error:
+        "This photo batch exceeds 3 MB. Upload compressed photos individually.",
+    };
   }
 
   const admin = createAdminClient();
@@ -998,7 +1048,7 @@ export async function uploadActivityMediaAction(
     if (uploadError)
       return { success: false, error: `Upload failed: ${uploadError.message}` };
 
-    await admin.from("activity_media").insert({
+    const { error: recordError } = await admin.from("activity_media").insert({
       activity_id: activityId,
       storage_path: path,
       caption: caption || null,
@@ -1007,6 +1057,13 @@ export async function uploadActivityMediaAction(
       sort_order: nextOrder++,
       uploaded_by: access.user.id,
     });
+    if (recordError) {
+      await admin.storage.from(MEDIA_BUCKET).remove([path]);
+      return {
+        success: false,
+        error: "The photo could not be saved to the album. Please retry.",
+      };
+    }
   }
 
   const { data: activity } = await admin

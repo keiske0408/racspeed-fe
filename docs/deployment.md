@@ -137,3 +137,14 @@ Run this against a disposable local Supabase database after applying migrations 
 | Notifications           | Run the cron with the secret; verify in-app notices, Resend delivery (or preview log), and push on an opted-in browser.                              |
 
 This repository environment did not have Docker/local Postgres running, so migrations and database-backed workflows were not executed here. Typecheck, unit tests, focused lint, and the production build are separate checks and do not replace this checklist.
+
+## 7. Photo Uploads and Moments
+
+- Next.js Server Actions use a bounded `4mb` request limit. Restart the development server after configuration changes and rebuild/redeploy production; increasing the limit alone does not optimize uploads.
+- Project photo uploads accept JPG, PNG and WebP originals up to 25 MiB. Browser-side compression creates a WebP upload targeting 750 KiB with a maximum dimension of 1600 pixels, without copying EXIF metadata. Original local files are unchanged.
+- GIFs are not re-encoded, preserving animation; they must be no larger than 3 MiB. The server also rejects photo request payloads totaling more than 3 MiB, leaving multipart headroom under the action limit.
+- Up to 10 selected photos are processed sequentially, with one photo per action request. Progress is visible; partial failures retain only unsuccessful files for retry. Failed database metadata writes clean up their uploaded storage objects.
+- Compression runs locally in the browser. The compression worker loads the pinned `browser-image-compression@2.0.2` script from jsDelivr; photo data is not sent to that CDN.
+- Open Project Center > Moments, or `/project-center?view=moments`. Album covers and photo counts are shown first. Photos are fetched only when an album is opened, in pages of 24, and rendered with lazy loading. Members can inspect an image or open the project's Media tab.
+- Storage remains private. Server actions authorize album access before creating signed preview links. Draft moments are hidden from members who cannot manage the project.
+- Existing stored originals are not automatically recompressed. Test a large camera photo, a multi-photo selection, partial-failure retry, album pagination and unauthorized access on a disposable test activity before deployment.

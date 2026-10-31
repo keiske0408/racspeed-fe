@@ -190,4 +190,4 @@ export const ALLOWED_MEDIA_TYPES = [
   "image/webp",
   "image/gif",
 ] as const;
-export const MAX_MEDIA_BYTES = 10 * 1024 * 1024;
+export const MAX_MEDIA_BYTES = 3 * 1024 * 1024;
