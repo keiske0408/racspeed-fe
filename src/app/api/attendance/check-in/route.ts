@@ -20,14 +20,19 @@ function extractToken(raw: string): string {
   if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
     try {
       const obj = JSON.parse(trimmed);
-      const val = obj.token || obj.sessionToken || obj.session_token || obj.checkInToken;
+      const val =
+        obj.token || obj.sessionToken || obj.session_token || obj.checkInToken;
       if (val) return String(val).trim();
     } catch {}
   }
 
   // 2. If full URL or URL path with query params
   try {
-    if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.includes("?")) {
+    if (
+      trimmed.startsWith("http://") ||
+      trimmed.startsWith("https://") ||
+      trimmed.includes("?")
+    ) {
       const parsed = trimmed.startsWith("http")
         ? new URL(trimmed)
         : new URL(trimmed, "http://localhost");
@@ -40,7 +45,9 @@ function extractToken(raw: string): string {
   } catch {}
 
   // 3. Query param regex match
-  const match = trimmed.match(/[?&](?:token|sessionToken|checkInToken)=([^&#\s]+)/i);
+  const match = trimmed.match(
+    /[?&](?:token|sessionToken|checkInToken)=([^&#\s]+)/i,
+  );
   if (match) {
     return decodeURIComponent(match[1]).trim();
   }
@@ -65,6 +72,7 @@ interface ActivityCheckInSource {
   title: string;
   kind: string;
   club_id: string;
+  end_at: string;
   volunteer_hours_default: number | string | null;
   legacy_event_id: string | null;
 }
@@ -74,6 +82,7 @@ interface EventCheckInSource {
   title: string;
   event_category: string;
   host_club_id: string;
+  end_time: string;
   volunteer_hours_default: number | string | null;
 }
 
@@ -106,7 +115,7 @@ export async function POST(request: NextRequest) {
     if (authError || !user) {
       return NextResponse.json(
         { error: "Unauthorized: Please sign in to check in." },
-        { status: 401 }
+        { status: 401 },
       );
     }
 
@@ -115,7 +124,7 @@ export async function POST(request: NextRequest) {
     if (!parsed.success) {
       return NextResponse.json(
         { error: "Invalid request payload", details: parsed.error.issues },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -125,7 +134,7 @@ export async function POST(request: NextRequest) {
     if (!sessionToken) {
       return NextResponse.json(
         { error: "Invalid check-in token provided." },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -136,15 +145,18 @@ export async function POST(request: NextRequest) {
     const { data: session, error: sessionError } = await admin
       .from("attendance_sessions")
       .select(
-        "id, event_id, activity_id, status, expires_at, events(title, event_category, host_club_id, volunteer_hours_default), activities(title, kind, club_id, volunteer_hours_default, legacy_event_id)"
+        "id, event_id, activity_id, status, expires_at, events(title, event_category, host_club_id, end_time, volunteer_hours_default), activities(title, kind, club_id, end_at, volunteer_hours_default, legacy_event_id)",
       )
       .eq("session_token", sessionToken)
       .maybeSingle();
 
     if (sessionError || !session) {
       return NextResponse.json(
-        { error: "Invalid check-in session token. Please scan the active QR code." },
-        { status: 404 }
+        {
+          error:
+            "Invalid check-in session token. Please scan the active QR code.",
+        },
+        { status: 404 },
       );
     }
 
@@ -153,7 +165,7 @@ export async function POST(request: NextRequest) {
     if (session.status !== "ACTIVE" || isPastExpiry) {
       return NextResponse.json(
         { error: "Check-in window for this session has closed." },
-        { status: 410 }
+        { status: 410 },
       );
     }
 
@@ -168,9 +180,20 @@ export async function POST(request: NextRequest) {
     const eventTitle = source?.title || "Event";
     const targetId: string = session.activity_id || session.event_id;
 
+    const activityEnd = activity?.end_at || event?.end_time;
+    if (activityEnd && new Date(activityEnd).getTime() < Date.now()) {
+      return NextResponse.json(
+        { error: "This activity has ended and is now archived." },
+        { status: 410 },
+      );
+    }
+
     const sourceClubId = activity?.club_id || event?.host_club_id;
     if (!sourceClubId) {
-      return NextResponse.json({ error: "The activity is not linked to a club." }, { status: 403 });
+      return NextResponse.json(
+        { error: "The activity is not linked to a club." },
+        { status: 403 },
+      );
     }
     const [{ data: membership }, { data: profile }] = await Promise.all([
       admin
@@ -179,23 +202,30 @@ export async function POST(request: NextRequest) {
         .eq("club_id", sourceClubId)
         .eq("profile_id", user.id)
         .maybeSingle(),
-      admin.from("profiles").select("status, is_platform_admin").eq("id", user.id).maybeSingle(),
+      admin
+        .from("profiles")
+        .select("status, is_platform_admin")
+        .eq("id", user.id)
+        .maybeSingle(),
     ]);
     const member = membership as unknown as MembershipCheckInRow | null;
     const memberProfile = member?.profiles;
     const canCheckIn =
       profile?.status === "ACTIVE" &&
-      (profile.is_platform_admin || (
-        ["ACTIVE", "ASPIRANT"].includes(member?.membership_status || "") && memberProfile?.status === "ACTIVE"
-      ));
+      (profile.is_platform_admin ||
+        (["ACTIVE", "ASPIRANT"].includes(member?.membership_status || "") &&
+          memberProfile?.status === "ACTIVE"));
     if (!canCheckIn) {
-      return NextResponse.json({ error: "Only active club members and aspirants can check in." }, { status: 403 });
+      return NextResponse.json(
+        { error: "Only active club members and aspirants can check in." },
+        { status: 403 },
+      );
     }
 
     // Check if user has already checked in for this activity/event
     const { data: existingCheckIn } = await admin
       .from("attendance_records")
-        .select("id, check_in_time")
+      .select("id, check_in_time")
       .eq(session.activity_id ? "activity_id" : "event_id", targetId)
       .eq("profile_id", user.id)
       .maybeSingle();
@@ -210,7 +240,7 @@ export async function POST(request: NextRequest) {
           volunteerHours: hours,
           checkInTime: existingCheckIn.check_in_time,
         },
-        { status: 409 }
+        { status: 409 },
       );
     }
 
@@ -234,18 +264,21 @@ export async function POST(request: NextRequest) {
       console.error("Attendance check-in insert error:", insertError);
       return NextResponse.json(
         { error: "Failed to record attendance. Please try again." },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
     const sourceKind = activity?.kind || event?.event_category;
-    const isServiceProject = sourceKind === "SERVICE_PROJECT" || sourceKind === "JOINT_PROJECT";
+    const isServiceProject =
+      sourceKind === "SERVICE_PROJECT" || sourceKind === "JOINT_PROJECT";
     await awardEngagementPoints({
       clubId: sourceClubId,
       profileId: user.id,
       sourceType: isServiceProject ? "SERVICE_CHECK_IN" : "CHECK_IN",
       sourceId: record.id,
-      reason: isServiceProject ? "Verified service project attendance" : "Verified activity attendance",
+      reason: isServiceProject
+        ? "Verified service project attendance"
+        : "Verified activity attendance",
     });
 
     return NextResponse.json({
@@ -260,8 +293,7 @@ export async function POST(request: NextRequest) {
     console.error("Unexpected error during check-in:", err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Internal server error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
-

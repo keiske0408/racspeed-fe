@@ -5,14 +5,22 @@ const isProduction = process.env.NODE_ENV === "production";
 
 const envSchema = z.object({
   NEXT_PUBLIC_SUPABASE_URL: z.string().url().default("http://127.0.0.1:54321"),
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1).default("placeholder_anon_key"),
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: z
+    .string()
+    .min(1)
+    .default("placeholder_anon_key"),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
   NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
   NEXT_PUBLIC_APP_NAME: z.string().default("Rotaract Club Operations Platform"),
-  NEXT_PUBLIC_DEFAULT_CLUB_ID: z.string().min(1).default("00000000-0000-0000-0000-000000000001"),
+  NEXT_PUBLIC_DEFAULT_CLUB_ID: z
+    .string()
+    .min(1)
+    .default("00000000-0000-0000-0000-000000000001"),
   NEXT_PUBLIC_DEFAULT_DISTRICT: z.string().default("3820"),
   RESEND_API_KEY: z.string().optional(),
-  EMAIL_FROM: z.string().default("Rotaract San Pedro East <notifications@rotaract.local>"),
+  EMAIL_FROM: z
+    .string()
+    .default("Rotaract San Pedro East <notifications@rotaract.local>"),
   EMAIL_TEST_RECIPIENT: z.string().optional(),
   NEXT_PUBLIC_VAPID_PUBLIC_KEY: z.string().optional(),
   VAPID_PRIVATE_KEY: z.string().optional(),
@@ -38,4 +46,3 @@ export const env = envSchema.parse({
   VAPID_SUBJECT: process.env.VAPID_SUBJECT,
   CRON_SECRET: process.env.CRON_SECRET,
 });
-

@@ -8,7 +8,11 @@ import { getUserAccessContext, requireUser } from "@/lib/auth/session";
 import { manilaLocalToISO } from "@/lib/utils/dates";
 import { rotaryYearFor } from "@/lib/utils/rotary-year";
 import { awardEngagementPoints } from "@/lib/services/rewards";
-import { createTask, type TaskCommittee, type TaskPriority } from "@/lib/data/tasks-storage";
+import {
+  createTask,
+  type TaskCommittee,
+  type TaskPriority,
+} from "@/lib/data/tasks-storage";
 import {
   ALLOWED_MEDIA_TYPES,
   MAX_MEDIA_BYTES,
@@ -23,19 +27,34 @@ import {
 } from "./schemas";
 import { canTransition, evaluateRsvp, evaluateSelfCheckIn } from "./rules";
 import { isClubParticipant, MEDIA_BUCKET } from "./queries";
-import { ACTIVITY_STATUSES, COMMITTEES, isProjectKind, type ActivityStatus, type RsvpResponse } from "./types";
+import {
+  ACTIVITY_STATUSES,
+  COMMITTEES,
+  isProjectKind,
+  type ActivityStatus,
+  type RsvpResponse,
+} from "./types";
 
-type ActionResult<T = object> = ({ success: true; message?: string } & T) | { success: false; error: string };
+type ActionResult<T = object> =
+  ({ success: true; message?: string } & T) | { success: false; error: string };
 
 function revalidateActivity(activityId?: string) {
   revalidatePath("/project-center");
+  revalidatePath("/partnerships");
   if (activityId) revalidatePath(`/project-center/${activityId}`);
   revalidatePath("/dashboard");
 }
 
-async function logActivity(activityId: string, actorId: string, action: string, details: Record<string, unknown> = {}) {
+async function logActivity(
+  activityId: string,
+  actorId: string,
+  action: string,
+  details: Record<string, unknown> = {},
+) {
   try {
-    await createAdminClient().from("activity_log").insert({ activity_id: activityId, actor_id: actorId, action, details });
+    await createAdminClient()
+      .from("activity_log")
+      .insert({ activity_id: activityId, actor_id: actorId, action, details });
   } catch (err) {
     console.warn("Could not write activity log:", err);
   }
@@ -50,7 +69,7 @@ async function loadActivityAccess(activityId: string) {
   const { data: activity } = await admin
     .from("activities")
     .select(
-      "id, club_id, kind, status, title, owner_id, start_at, end_at, rsvp_enabled, rsvp_deadline, capacity, self_check_in_enabled, check_in_window_minutes, volunteer_hours_default, legacy_event_id"
+      "id, club_id, kind, status, title, owner_id, start_at, end_at, rsvp_enabled, rsvp_deadline, capacity, self_check_in_enabled, check_in_window_minutes, volunteer_hours_default, legacy_event_id",
     )
     .eq("id", activityId)
     .maybeSingle();
@@ -101,7 +120,9 @@ function toActivityRow(data: CreateActivityData) {
     min_members_required: resolveMinMembers(data),
     capacity: data.capacity || null,
     rsvp_enabled: data.rsvpEnabled,
-    rsvp_deadline: data.rsvpDeadline ? manilaLocalToISO(data.rsvpDeadline) : null,
+    rsvp_deadline: data.rsvpDeadline
+      ? manilaLocalToISO(data.rsvpDeadline)
+      : null,
     self_check_in_enabled: data.selfCheckInEnabled,
     check_in_window_minutes: data.checkInWindowMinutes,
     volunteer_hours_default: data.volunteerHoursDefault,
@@ -109,7 +130,10 @@ function toActivityRow(data: CreateActivityData) {
   };
 }
 
-async function syncProjectRelations(activityId: string, data: CreateActivityData) {
+async function syncProjectRelations(
+  activityId: string,
+  data: CreateActivityData,
+) {
   if (!("areasOfFocus" in data)) return;
   const admin = createAdminClient();
 
@@ -123,44 +147,93 @@ async function syncProjectRelations(activityId: string, data: CreateActivityData
     updated_at: new Date().toISOString(),
   });
 
-  await admin.from("activity_areas_of_focus").delete().eq("activity_id", activityId);
+  await admin
+    .from("activity_areas_of_focus")
+    .delete()
+    .eq("activity_id", activityId);
   if (data.areasOfFocus.length > 0) {
-    const { data: areas } = await admin.from("areas_of_focus").select("id, code").in("code", data.areasOfFocus);
+    const { data: areas } = await admin
+      .from("areas_of_focus")
+      .select("id, code")
+      .in("code", data.areasOfFocus);
     if (areas?.length) {
-      await admin.from("activity_areas_of_focus").insert(areas.map((a) => ({ activity_id: activityId, area_of_focus_id: a.id })));
+      await admin.from("activity_areas_of_focus").insert(
+        areas.map((a) => ({
+          activity_id: activityId,
+          area_of_focus_id: a.id,
+        })),
+      );
     }
   }
 
   await admin.from("activity_sdgs").delete().eq("activity_id", activityId);
   if (data.sdgs.length > 0) {
-    const { data: goals } = await admin.from("sdgs").select("id, number").in("number", data.sdgs);
+    const { data: goals } = await admin
+      .from("sdgs")
+      .select("id, number")
+      .in("number", data.sdgs);
     if (goals?.length) {
-      await admin.from("activity_sdgs").insert(goals.map((g) => ({ activity_id: activityId, sdg_id: g.id })));
+      await admin
+        .from("activity_sdgs")
+        .insert(goals.map((g) => ({ activity_id: activityId, sdg_id: g.id })));
     }
   }
 
   await admin.from("activity_partners").delete().eq("activity_id", activityId);
   if (data.partners.length > 0) {
-    await admin
-      .from("activity_partners")
-      .insert(data.partners.map((p) => ({ activity_id: activityId, name: p.name, partner_role: p.role })));
+    await admin.from("activity_partners").insert(
+      data.partners.map((p) => ({
+        activity_id: activityId,
+        name: p.name,
+        partner_role: p.role,
+        sister_club_id: p.sisterClubId || null,
+      })),
+    );
   }
 }
 
-export async function createActivityAction(input: CreateActivityInput): Promise<ActionResult<{ activityId: string }>> {
+async function validateProjectPartners(data: CreateActivityData) {
+  if (!("partners" in data)) return null;
+  const partnerIds = [...new Set([
+    ...(data.sisterClubId ? [data.sisterClubId] : []),
+    ...data.partners.flatMap((partner) => partner.sisterClubId ? [partner.sisterClubId] : []),
+  ])];
+  if (partnerIds.length === 0) return null;
+  const { data: registeredPartners, error } = await createAdminClient()
+    .from("sister_clubs")
+    .select("id")
+    .eq("home_club_id", data.clubId)
+    .in("id", partnerIds);
+  if (error || registeredPartners?.length !== partnerIds.length) {
+    return "The selected partners are not all registered to this club.";
+  }
+  return null;
+}
+
+export async function createActivityAction(
+  input: CreateActivityInput,
+): Promise<ActionResult<{ activityId: string }>> {
   const user = await requireUser();
   const parsed = createActivitySchema.safeParse(input);
   if (!parsed.success) {
-    return { success: false, error: parsed.error.issues[0]?.message || "Invalid activity details" };
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message || "Invalid activity details",
+    };
   }
   const data = parsed.data;
 
   const context = await getUserAccessContext(data.clubId);
   const required = isProjectKind(data.kind) ? "PROJECT_CREATE" : "EVENT_CREATE";
   if (!context.isPlatformAdmin && !context.permissions.has(required)) {
-    return { success: false, error: "You do not have permission to create this kind of activity." };
+    return {
+      success: false,
+      error: "You do not have permission to create this kind of activity.",
+    };
   }
 
+  const partnerError = await validateProjectPartners(data);
+  if (partnerError) return { success: false, error: partnerError };
   const admin = createAdminClient();
   const { data: created, error } = await admin
     .from("activities")
@@ -176,38 +249,76 @@ export async function createActivityAction(input: CreateActivityInput): Promise<
     .single();
 
   if (error || !created) {
-    return { success: false, error: `Failed to create activity: ${error?.message ?? "unknown error"}` };
+    return {
+      success: false,
+      error: `Failed to create activity: ${error?.message ?? "unknown error"}`,
+    };
   }
 
   await Promise.all([
-    admin.from("activity_team").insert({ activity_id: created.id, profile_id: user.id, team_role: "CHAIR" }),
-    admin.from("activity_followers").insert({ activity_id: created.id, profile_id: user.id }),
+    admin.from("activity_team").insert({
+      activity_id: created.id,
+      profile_id: user.id,
+      team_role: "CHAIR",
+    }),
+    admin
+      .from("activity_followers")
+      .insert({ activity_id: created.id, profile_id: user.id }),
     syncProjectRelations(created.id, data),
   ]);
   await logActivity(created.id, user.id, "CREATED", { kind: data.kind });
 
   revalidateActivity(created.id);
-  return { success: true, message: `'${data.title}' created.`, activityId: created.id };
+  return {
+    success: true,
+    message: `'${data.title}' created.`,
+    activityId: created.id,
+  };
 }
 
-export async function updateActivityAction(activityId: string, input: CreateActivityInput): Promise<ActionResult> {
+export async function updateActivityAction(
+  activityId: string,
+  input: CreateActivityInput,
+): Promise<ActionResult> {
   const access = await loadActivityAccess(activityId);
   if (!access) return { success: false, error: "Activity not found." };
-  if (!access.canManage) return { success: false, error: "Only the chair or officers can edit this activity." };
+  if (!access.canManage)
+    return {
+      success: false,
+      error: "Only the chair or officers can edit this activity.",
+    };
 
-  const parsed = createActivitySchema.safeParse({ ...input, clubId: access.activity.club_id });
+  const parsed = createActivitySchema.safeParse({
+    ...input,
+    clubId: access.activity.club_id,
+  });
   if (!parsed.success) {
-    return { success: false, error: parsed.error.issues[0]?.message || "Invalid activity details" };
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message || "Invalid activity details",
+    };
   }
   if (parsed.data.kind !== access.activity.kind) {
-    return { success: false, error: "The activity type cannot be changed after creation." };
+    return {
+      success: false,
+      error: "The activity type cannot be changed after creation.",
+    };
   }
 
+  const partnerError = await validateProjectPartners(parsed.data);
+  if (partnerError) return { success: false, error: partnerError };
   const { error } = await createAdminClient()
     .from("activities")
-    .update({ ...toActivityRow(parsed.data), updated_at: new Date().toISOString() })
+    .update({
+      ...toActivityRow(parsed.data),
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", activityId);
-  if (error) return { success: false, error: `Failed to update activity: ${error.message}` };
+  if (error)
+    return {
+      success: false,
+      error: `Failed to update activity: ${error.message}`,
+    };
 
   await syncProjectRelations(activityId, parsed.data);
   await logActivity(activityId, access.user.id, "UPDATED");
@@ -215,31 +326,57 @@ export async function updateActivityAction(activityId: string, input: CreateActi
   return { success: true, message: "Activity updated." };
 }
 
-export async function updateActivityStatusAction(activityId: string, status: ActivityStatus): Promise<ActionResult> {
+export async function updateActivityStatusAction(
+  activityId: string,
+  status: ActivityStatus,
+): Promise<ActionResult> {
   if (!(ACTIVITY_STATUSES as readonly string[]).includes(status)) {
     return { success: false, error: "Unknown status." };
   }
   const access = await loadActivityAccess(activityId);
   if (!access) return { success: false, error: "Activity not found." };
-  if (!access.canManage) return { success: false, error: "Only the chair or officers can change the status." };
+  if (!access.canManage)
+    return {
+      success: false,
+      error: "Only the chair or officers can change the status.",
+    };
 
-  const rule = canTransition(access.activity.status as ActivityStatus, status, isProjectKind(access.activity.kind));
+  const rule = canTransition(
+    access.activity.status as ActivityStatus,
+    status,
+    isProjectKind(access.activity.kind),
+  );
   if (!rule.allowed) return { success: false, error: rule.reason! };
 
   const { error } = await createAdminClient()
     .from("activities")
-    .update({ status, is_published: status !== "DRAFT", updated_at: new Date().toISOString() })
+    .update({
+      status,
+      is_published: status !== "DRAFT",
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", activityId);
   if (error) return { success: false, error: error.message };
 
-  await logActivity(activityId, access.user.id, "STATUS_CHANGED", { from: access.activity.status, to: status });
+  await logActivity(activityId, access.user.id, "STATUS_CHANGED", {
+    from: access.activity.status,
+    to: status,
+  });
   revalidateActivity(activityId);
   return { success: true, message: "Status updated." };
 }
 
-export async function setRsvpAction(input: { activityId: string; response: RsvpResponse; note?: string }): Promise<ActionResult> {
+export async function setRsvpAction(input: {
+  activityId: string;
+  response: RsvpResponse;
+  note?: string;
+}): Promise<ActionResult> {
   const parsed = rsvpSchema.safeParse(input);
-  if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message || "Invalid RSVP" };
+  if (!parsed.success)
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message || "Invalid RSVP",
+    };
 
   const access = await loadActivityAccess(parsed.data.activityId);
   if (!access) return { success: false, error: "Activity not found." };
@@ -286,7 +423,9 @@ export async function setRsvpAction(input: { activityId: string; response: RsvpR
   return { success: true, message: "RSVP saved." };
 }
 
-export async function selfCheckInAction(activityId: string): Promise<ActionResult<{ volunteerHours: number }>> {
+export async function selfCheckInAction(
+  activityId: string,
+): Promise<ActionResult<{ volunteerHours: number }>> {
   const access = await loadActivityAccess(activityId);
   if (!access) return { success: false, error: "Activity not found." };
 
@@ -324,8 +463,12 @@ export async function selfCheckInAction(activityId: string): Promise<ActionResul
     check_in_time: new Date().toISOString(),
   });
   if (error) {
-    if (error.code === "23505") return { success: false, error: "You are already checked in." };
-    return { success: false, error: "Could not record your check-in. Please try again." };
+    if (error.code === "23505")
+      return { success: false, error: "You are already checked in." };
+    return {
+      success: false,
+      error: "Could not record your check-in. Please try again.",
+    };
   }
 
   await awardEngagementPoints({
@@ -333,18 +476,32 @@ export async function selfCheckInAction(activityId: string): Promise<ActionResul
     profileId: access.user.id,
     sourceType: isProjectKind(a.kind) ? "SERVICE_CHECK_IN" : "CHECK_IN",
     sourceId: activityId,
-    reason: isProjectKind(a.kind) ? "Verified service project attendance" : "Verified activity attendance",
+    reason: isProjectKind(a.kind)
+      ? "Verified service project attendance"
+      : "Verified activity attendance",
   });
   await logActivity(activityId, access.user.id, "SELF_CHECK_IN");
   revalidateActivity(activityId);
-  return { success: true, message: `Checked in to ${a.title}.`, volunteerHours: hours };
+  return {
+    success: true,
+    message: `Checked in to ${a.title}.`,
+    volunteerHours: hours,
+  };
 }
 
-export async function revokeAttendanceAction(activityId: string, recordId: string): Promise<ActionResult> {
-  if (!uuidString.safeParse(recordId).success) return { success: false, error: "Invalid record." };
+export async function revokeAttendanceAction(
+  activityId: string,
+  recordId: string,
+): Promise<ActionResult> {
+  if (!uuidString.safeParse(recordId).success)
+    return { success: false, error: "Invalid record." };
   const access = await loadActivityAccess(activityId);
   if (!access) return { success: false, error: "Activity not found." };
-  if (!access.canManageAttendance) return { success: false, error: "You cannot manage attendance for this activity." };
+  if (!access.canManageAttendance)
+    return {
+      success: false,
+      error: "You cannot manage attendance for this activity.",
+    };
 
   const { error } = await createAdminClient()
     .from("attendance_records")
@@ -353,17 +510,29 @@ export async function revokeAttendanceAction(activityId: string, recordId: strin
     .eq("activity_id", activityId);
   if (error) return { success: false, error: error.message };
 
-  await logActivity(activityId, access.user.id, "ATTENDANCE_REVOKED", { recordId });
+  await logActivity(activityId, access.user.id, "ATTENDANCE_REVOKED", {
+    recordId,
+  });
   revalidateActivity(activityId);
   return { success: true, message: "Check-in removed." };
 }
 
 export async function startActivityQrSessionAction(
-  activityId: string
+  activityId: string,
 ): Promise<ActionResult<{ sessionToken: string; expiresAt: string }>> {
   const access = await loadActivityAccess(activityId);
   if (!access) return { success: false, error: "Activity not found." };
-  if (!access.canManageAttendance) return { success: false, error: "You cannot run check-in for this activity." };
+  if (!access.canManageAttendance)
+    return {
+      success: false,
+      error: "You cannot run check-in for this activity.",
+    };
+  if (new Date(access.activity.end_at).getTime() < Date.now()) {
+    return {
+      success: false,
+      error: "This activity has ended and is now archived.",
+    };
+  }
 
   const admin = createAdminClient();
   const nowIso = new Date().toISOString();
@@ -385,7 +554,12 @@ export async function startActivityQrSessionAction(
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (recent) return { success: true, sessionToken: recent.session_token, expiresAt: recent.expires_at };
+  if (recent)
+    return {
+      success: true,
+      sessionToken: recent.session_token,
+      expiresAt: recent.expires_at,
+    };
 
   // Unguessable token: knowing the activity id must not allow remote check-in.
   const token = `racspeed-${randomBytes(18).toString("base64url")}`;
@@ -399,7 +573,11 @@ export async function startActivityQrSessionAction(
     created_by: access.user.id,
     expires_at: expiresAt,
   });
-  if (error) return { success: false, error: `Failed to start QR session: ${error.message}` };
+  if (error)
+    return {
+      success: false,
+      error: `Failed to start QR session: ${error.message}`,
+    };
 
   return { success: true, sessionToken: token, expiresAt };
 }
@@ -411,11 +589,16 @@ export async function addCommentAction(input: {
   mentions?: string[];
 }): Promise<ActionResult<{ commentId: string }>> {
   const parsed = commentSchema.safeParse(input);
-  if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message || "Invalid comment" };
+  if (!parsed.success)
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message || "Invalid comment",
+    };
 
   const access = await loadActivityAccess(parsed.data.activityId);
   if (!access) return { success: false, error: "Activity not found." };
-  if (!access.isParticipant) return { success: false, error: "Only club members can comment." };
+  if (!access.isParticipant)
+    return { success: false, error: "Only club members can comment." };
 
   const admin = createAdminClient();
   const { data, error } = await admin
@@ -429,15 +612,23 @@ export async function addCommentAction(input: {
     })
     .select("id")
     .single();
-  if (error || !data) return { success: false, error: "Could not post your comment." };
+  if (error || !data)
+    return { success: false, error: "Could not post your comment." };
 
-  await admin.from("activity_followers").upsert({ activity_id: parsed.data.activityId, profile_id: access.user.id });
+  await admin.from("activity_followers").upsert({
+    activity_id: parsed.data.activityId,
+    profile_id: access.user.id,
+  });
   revalidateActivity(parsed.data.activityId);
   return { success: true, commentId: data.id };
 }
 
-export async function deleteCommentAction(activityId: string, commentId: string): Promise<ActionResult> {
-  if (!uuidString.safeParse(commentId).success) return { success: false, error: "Invalid comment." };
+export async function deleteCommentAction(
+  activityId: string,
+  commentId: string,
+): Promise<ActionResult> {
+  if (!uuidString.safeParse(commentId).success)
+    return { success: false, error: "Invalid comment." };
   const access = await loadActivityAccess(activityId);
   if (!access) return { success: false, error: "Activity not found." };
 
@@ -453,7 +644,10 @@ export async function deleteCommentAction(activityId: string, commentId: string)
     return { success: false, error: "You can only delete your own comments." };
   }
 
-  await admin.from("activity_comments").update({ deleted_at: new Date().toISOString() }).eq("id", commentId);
+  await admin
+    .from("activity_comments")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", commentId);
   revalidateActivity(activityId);
   return { success: true };
 }
@@ -462,10 +656,26 @@ const reactionSchema = z.string().trim().min(1).max(16);
 
 const publishProjectReportSchema = z.object({
   activityId: uuidString,
-  objective: z.string().trim().min(10, "Add a meaningful project objective").max(2000),
-  inspiration: z.string().trim().min(20, "Describe what inspired this activity").max(5000),
-  detailedDescription: z.string().trim().min(30, "Add the activity's detailed description").max(10000),
-  outcomesSummary: z.string().trim().min(20, "Summarize the project outcomes").max(5000),
+  objective: z
+    .string()
+    .trim()
+    .min(10, "Add a meaningful project objective")
+    .max(2000),
+  inspiration: z
+    .string()
+    .trim()
+    .min(20, "Describe what inspired this activity")
+    .max(5000),
+  detailedDescription: z
+    .string()
+    .trim()
+    .min(30, "Add the activity's detailed description")
+    .max(10000),
+  outcomesSummary: z
+    .string()
+    .trim()
+    .min(20, "Summarize the project outcomes")
+    .max(5000),
   beneficiaryType: z.string().trim().min(2, "Describe who benefited").max(200),
   beneficiaryCount: z.number().int().min(0).max(10000000),
   volunteerNonmemberCount: z.number().int().min(0).max(1000000),
@@ -476,24 +686,56 @@ const publishProjectReportSchema = z.object({
   supportsPolio: z.boolean().default(false),
 });
 
-export type PublishProjectReportInput = z.input<typeof publishProjectReportSchema>;
+export type PublishProjectReportInput = z.input<
+  typeof publishProjectReportSchema
+>;
 
-export async function publishProjectReportAction(input: PublishProjectReportInput): Promise<ActionResult<{ submissionId: string }>> {
+export async function publishProjectReportAction(
+  input: PublishProjectReportInput,
+): Promise<ActionResult<{ submissionId: string }>> {
   const parsed = publishProjectReportSchema.safeParse(input);
-  if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message || "Complete the required report fields." };
+  if (!parsed.success)
+    return {
+      success: false,
+      error:
+        parsed.error.issues[0]?.message ||
+        "Complete the required report fields.",
+    };
 
   const access = await loadActivityAccess(parsed.data.activityId);
   if (!access) return { success: false, error: "Activity not found." };
-  if (!isProjectKind(access.activity.kind)) return { success: false, error: "Only service projects can publish accomplishment reports." };
-  if (!access.canManage) return { success: false, error: "Only the project chair or an officer can publish this report." };
-  if (new Date(access.activity.end_at) > new Date()) return { success: false, error: "The project report can be published after the activity ends." };
-  if (!["ONGOING", "COMPLETED", "AWAITING_REPORT"].includes(access.activity.status)) {
-    return { success: false, error: "This project is not ready for report submission." };
+  if (!isProjectKind(access.activity.kind))
+    return {
+      success: false,
+      error: "Only service projects can publish accomplishment reports.",
+    };
+  if (!access.canManage)
+    return {
+      success: false,
+      error: "Only the project chair or an officer can publish this report.",
+    };
+  if (new Date(access.activity.end_at) > new Date())
+    return {
+      success: false,
+      error: "The project report can be published after the activity ends.",
+    };
+  if (
+    !["ONGOING", "COMPLETED", "AWAITING_REPORT"].includes(
+      access.activity.status,
+    )
+  ) {
+    return {
+      success: false,
+      error: "This project is not ready for report submission.",
+    };
   }
 
   const admin = createAdminClient();
   const [{ data: photos }, { data: template }] = await Promise.all([
-    admin.from("activity_media").select("id").eq("activity_id", parsed.data.activityId),
+    admin
+      .from("activity_media")
+      .select("id")
+      .eq("activity_id", parsed.data.activityId),
     admin
       .from("report_templates")
       .select("id")
@@ -502,18 +744,38 @@ export async function publishProjectReportAction(input: PublishProjectReportInpu
       .limit(1)
       .maybeSingle(),
   ]);
-  if (!photos?.length) return { success: false, error: "Upload at least one project photo before publishing." };
-  if (!template) return { success: false, error: "No report template is configured. Ask an administrator to configure one." };
+  if (!photos?.length)
+    return {
+      success: false,
+      error: "Upload at least one project photo before publishing.",
+    };
+  if (!template)
+    return {
+      success: false,
+      error:
+        "No report template is configured. Ask an administrator to configure one.",
+    };
 
   const [{ data: attendance }, { data: activity }] = await Promise.all([
-    admin.from("attendance_records").select("profile_id, volunteer_hours").eq("activity_id", parsed.data.activityId).eq("attended", true),
-    admin.from("activities").select("*").eq("id", parsed.data.activityId).single(),
+    admin
+      .from("attendance_records")
+      .select("profile_id, volunteer_hours")
+      .eq("activity_id", parsed.data.activityId)
+      .eq("attended", true),
+    admin
+      .from("activities")
+      .select("*")
+      .eq("id", parsed.data.activityId)
+      .single(),
   ]);
   if (!activity) return { success: false, error: "Project not found." };
 
   const attendanceRows = attendance || [];
   const volunteerCount = attendanceRows.length;
-  const volunteerHours = attendanceRows.reduce((total, row) => total + Number(row.volunteer_hours || 0), 0);
+  const volunteerHours = attendanceRows.reduce(
+    (total, row) => total + Number(row.volunteer_hours || 0),
+    0,
+  );
   const completedAt = new Date().toISOString();
   const report = parsed.data;
   const snapshot = {
@@ -558,37 +820,56 @@ export async function publishProjectReportAction(input: PublishProjectReportInpu
     })
     .select("id")
     .single();
-  if (reportError || !submission) return { success: false, error: `Could not save report: ${reportError?.message || "unknown error"}` };
+  if (reportError || !submission)
+    return {
+      success: false,
+      error: `Could not save report: ${reportError?.message || "unknown error"}`,
+    };
 
-  const { error: detailsError } = await admin.from("activity_project_details").upsert({
-    activity_id: activity.id,
-    objective: report.objective,
-    inspiration: report.inspiration,
-    outcomes_summary: report.outcomesSummary,
-    beneficiary_type: report.beneficiaryType,
-    beneficiary_count: report.beneficiaryCount,
-    volunteer_member_count: volunteerCount,
-    volunteer_nonmember_count: report.volunteerNonmemberCount,
-    total_volunteer_hours: volunteerHours,
-    funding_total: report.fundingTotal,
-    funding_currency: report.fundingCurrency.toUpperCase(),
-    funding_source: report.fundingSource || null,
-    total_expenses: report.totalExpenses,
-    supports_polio: report.supportsPolio,
-    completed_at: completedAt,
-    completed_by: access.user.id,
-    updated_at: completedAt,
+  const { error: detailsError } = await admin
+    .from("activity_project_details")
+    .upsert({
+      activity_id: activity.id,
+      objective: report.objective,
+      inspiration: report.inspiration,
+      outcomes_summary: report.outcomesSummary,
+      beneficiary_type: report.beneficiaryType,
+      beneficiary_count: report.beneficiaryCount,
+      volunteer_member_count: volunteerCount,
+      volunteer_nonmember_count: report.volunteerNonmemberCount,
+      total_volunteer_hours: volunteerHours,
+      funding_total: report.fundingTotal,
+      funding_currency: report.fundingCurrency.toUpperCase(),
+      funding_source: report.fundingSource || null,
+      total_expenses: report.totalExpenses,
+      supports_polio: report.supportsPolio,
+      completed_at: completedAt,
+      completed_by: access.user.id,
+      updated_at: completedAt,
+    });
+  if (detailsError)
+    return {
+      success: false,
+      error: `Report saved but project details could not be updated: ${detailsError.message}`,
+    };
+
+  const { error: updateError } = await admin
+    .from("activities")
+    .update({
+      description: report.detailedDescription,
+      status: "ACCOMPLISHED",
+      updated_at: completedAt,
+    })
+    .eq("id", activity.id);
+  if (updateError)
+    return {
+      success: false,
+      error: `Report saved but status could not be updated: ${updateError.message}`,
+    };
+
+  await logActivity(activity.id, access.user.id, "REPORT_PUBLISHED", {
+    submissionId: submission.id,
   });
-  if (detailsError) return { success: false, error: `Report saved but project details could not be updated: ${detailsError.message}` };
-
-  const { error: updateError } = await admin.from("activities").update({
-    description: report.detailedDescription,
-    status: "ACCOMPLISHED",
-    updated_at: completedAt,
-  }).eq("id", activity.id);
-  if (updateError) return { success: false, error: `Report saved but status could not be updated: ${updateError.message}` };
-
-  await logActivity(activity.id, access.user.id, "REPORT_PUBLISHED", { submissionId: submission.id });
   revalidateActivity(activity.id);
   return {
     success: true,
@@ -597,12 +878,20 @@ export async function publishProjectReportAction(input: PublishProjectReportInpu
   };
 }
 
-export async function toggleReactionAction(activityId: string, commentId: string, emoji: string): Promise<ActionResult> {
-  if (!uuidString.safeParse(commentId).success || !reactionSchema.safeParse(emoji).success) {
+export async function toggleReactionAction(
+  activityId: string,
+  commentId: string,
+  emoji: string,
+): Promise<ActionResult> {
+  if (
+    !uuidString.safeParse(commentId).success ||
+    !reactionSchema.safeParse(emoji).success
+  ) {
     return { success: false, error: "Invalid reaction." };
   }
   const access = await loadActivityAccess(activityId);
-  if (!access?.isParticipant) return { success: false, error: "Only club members can react." };
+  if (!access?.isParticipant)
+    return { success: false, error: "Only club members can react." };
 
   const admin = createAdminClient();
   const { data: comment } = await admin
@@ -614,21 +903,36 @@ export async function toggleReactionAction(activityId: string, commentId: string
   if (!comment) return { success: false, error: "Comment not found." };
 
   const match = { comment_id: commentId, profile_id: access.user.id, emoji };
-  const { data: existing } = await admin.from("activity_comment_reactions").select("emoji").match(match).maybeSingle();
-  if (existing) await admin.from("activity_comment_reactions").delete().match(match);
+  const { data: existing } = await admin
+    .from("activity_comment_reactions")
+    .select("emoji")
+    .match(match)
+    .maybeSingle();
+  if (existing)
+    await admin.from("activity_comment_reactions").delete().match(match);
   else await admin.from("activity_comment_reactions").insert(match);
 
   revalidateActivity(activityId);
   return { success: true };
 }
 
-export async function toggleFollowAction(activityId: string): Promise<ActionResult<{ following: boolean }>> {
+export async function toggleFollowAction(
+  activityId: string,
+): Promise<ActionResult<{ following: boolean }>> {
   const access = await loadActivityAccess(activityId);
-  if (!access?.isParticipant) return { success: false, error: "Only club members can follow activities." };
+  if (!access?.isParticipant)
+    return {
+      success: false,
+      error: "Only club members can follow activities.",
+    };
 
   const admin = createAdminClient();
   const match = { activity_id: activityId, profile_id: access.user.id };
-  const { data: existing } = await admin.from("activity_followers").select("profile_id").match(match).maybeSingle();
+  const { data: existing } = await admin
+    .from("activity_followers")
+    .select("profile_id")
+    .match(match)
+    .maybeSingle();
   if (existing) await admin.from("activity_followers").delete().match(match);
   else await admin.from("activity_followers").insert(match);
 
@@ -643,22 +947,38 @@ const EXTENSION_BY_TYPE: Record<string, string> = {
   "image/gif": "gif",
 };
 
-export async function uploadActivityMediaAction(formData: FormData): Promise<ActionResult> {
+export async function uploadActivityMediaAction(
+  formData: FormData,
+): Promise<ActionResult> {
   const activityId = String(formData.get("activityId") || "");
   const access = await loadActivityAccess(activityId);
   if (!access) return { success: false, error: "Activity not found." };
-  if (!access.canManage) return { success: false, error: "Only the chair or officers can upload photos." };
+  if (!access.canManage)
+    return {
+      success: false,
+      error: "Only the chair or officers can upload photos.",
+    };
 
-  const caption = String(formData.get("caption") || "").trim().slice(0, 280);
-  const files = formData.getAll("files").filter((f): f is File => f instanceof File && f.size > 0);
-  if (files.length === 0) return { success: false, error: "Choose at least one photo." };
-  if (files.length > 10) return { success: false, error: "Upload up to 10 photos at a time." };
+  const caption = String(formData.get("caption") || "")
+    .trim()
+    .slice(0, 280);
+  const files = formData
+    .getAll("files")
+    .filter((f): f is File => f instanceof File && f.size > 0);
+  if (files.length === 0)
+    return { success: false, error: "Choose at least one photo." };
+  if (files.length > 10)
+    return { success: false, error: "Upload up to 10 photos at a time." };
 
   for (const file of files) {
     if (!(ALLOWED_MEDIA_TYPES as readonly string[]).includes(file.type)) {
-      return { success: false, error: `${file.name}: only JPG, PNG, WEBP or GIF images are allowed.` };
+      return {
+        success: false,
+        error: `${file.name}: only JPG, PNG, WEBP or GIF images are allowed.`,
+      };
     }
-    if (file.size > MAX_MEDIA_BYTES) return { success: false, error: `${file.name} is larger than 10 MB.` };
+    if (file.size > MAX_MEDIA_BYTES)
+      return { success: false, error: `${file.name} is larger than 10 MB.` };
   }
 
   const admin = createAdminClient();
@@ -675,7 +995,8 @@ export async function uploadActivityMediaAction(formData: FormData): Promise<Act
     const { error: uploadError } = await admin.storage
       .from(MEDIA_BUCKET)
       .upload(path, buffer, { contentType: file.type, upsert: false });
-    if (uploadError) return { success: false, error: `Upload failed: ${uploadError.message}` };
+    if (uploadError)
+      return { success: false, error: `Upload failed: ${uploadError.message}` };
 
     await admin.from("activity_media").insert({
       activity_id: activityId,
@@ -688,7 +1009,11 @@ export async function uploadActivityMediaAction(formData: FormData): Promise<Act
     });
   }
 
-  const { data: activity } = await admin.from("activities").select("cover_storage_path").eq("id", activityId).single();
+  const { data: activity } = await admin
+    .from("activities")
+    .select("cover_storage_path")
+    .eq("id", activityId)
+    .single();
   if (!activity?.cover_storage_path) {
     const { data: first } = await admin
       .from("activity_media")
@@ -697,18 +1022,32 @@ export async function uploadActivityMediaAction(formData: FormData): Promise<Act
       .order("sort_order")
       .limit(1)
       .maybeSingle();
-    if (first) await admin.from("activities").update({ cover_storage_path: first.storage_path }).eq("id", activityId);
+    if (first)
+      await admin
+        .from("activities")
+        .update({ cover_storage_path: first.storage_path })
+        .eq("id", activityId);
   }
 
-  await logActivity(activityId, access.user.id, "MEDIA_UPLOADED", { count: files.length });
+  await logActivity(activityId, access.user.id, "MEDIA_UPLOADED", {
+    count: files.length,
+  });
   revalidateActivity(activityId);
   return { success: true, message: `${files.length} photo(s) uploaded.` };
 }
 
-export async function deleteActivityMediaAction(activityId: string, mediaId: string): Promise<ActionResult> {
-  if (!uuidString.safeParse(mediaId).success) return { success: false, error: "Invalid photo." };
+export async function deleteActivityMediaAction(
+  activityId: string,
+  mediaId: string,
+): Promise<ActionResult> {
+  if (!uuidString.safeParse(mediaId).success)
+    return { success: false, error: "Invalid photo." };
   const access = await loadActivityAccess(activityId);
-  if (!access?.canManage) return { success: false, error: "Only the chair or officers can remove photos." };
+  if (!access?.canManage)
+    return {
+      success: false,
+      error: "Only the chair or officers can remove photos.",
+    };
 
   const admin = createAdminClient();
   const { data: media } = await admin
@@ -731,10 +1070,18 @@ export async function deleteActivityMediaAction(activityId: string, mediaId: str
   return { success: true };
 }
 
-export async function setCoverMediaAction(activityId: string, mediaId: string): Promise<ActionResult> {
-  if (!uuidString.safeParse(mediaId).success) return { success: false, error: "Invalid photo." };
+export async function setCoverMediaAction(
+  activityId: string,
+  mediaId: string,
+): Promise<ActionResult> {
+  if (!uuidString.safeParse(mediaId).success)
+    return { success: false, error: "Invalid photo." };
   const access = await loadActivityAccess(activityId);
-  if (!access?.canManage) return { success: false, error: "Only the chair or officers can change the cover." };
+  if (!access?.canManage)
+    return {
+      success: false,
+      error: "Only the chair or officers can change the cover.",
+    };
 
   const admin = createAdminClient();
   const { data: media } = await admin
@@ -745,21 +1092,43 @@ export async function setCoverMediaAction(activityId: string, mediaId: string): 
     .maybeSingle();
   if (!media) return { success: false, error: "Photo not found." };
 
-  await admin.from("activity_media").update({ is_featured: false }).eq("activity_id", activityId);
-  await admin.from("activity_media").update({ is_featured: true }).eq("id", mediaId);
-  await admin.from("activities").update({ cover_storage_path: media.storage_path }).eq("id", activityId);
+  await admin
+    .from("activity_media")
+    .update({ is_featured: false })
+    .eq("activity_id", activityId);
+  await admin
+    .from("activity_media")
+    .update({ is_featured: true })
+    .eq("id", mediaId);
+  await admin
+    .from("activities")
+    .update({ cover_storage_path: media.storage_path })
+    .eq("id", activityId);
 
   revalidateActivity(activityId);
   return { success: true };
 }
 
-export async function setTeamMemberAction(input: { activityId: string; profileId: string; role: string }): Promise<ActionResult> {
+export async function setTeamMemberAction(input: {
+  activityId: string;
+  profileId: string;
+  role: string;
+}): Promise<ActionResult> {
   const parsed = teamMemberSchema.safeParse(input);
   if (!parsed.success) return { success: false, error: "Invalid team member." };
   const access = await loadActivityAccess(parsed.data.activityId);
-  if (!access?.canManage) return { success: false, error: "Only the chair or officers can manage the team." };
-  if (!(await isClubParticipant(access.activity.club_id, parsed.data.profileId))) {
-    return { success: false, error: "That person is not an active member of this club." };
+  if (!access?.canManage)
+    return {
+      success: false,
+      error: "Only the chair or officers can manage the team.",
+    };
+  if (
+    !(await isClubParticipant(access.activity.club_id, parsed.data.profileId))
+  ) {
+    return {
+      success: false,
+      error: "That person is not an active member of this club.",
+    };
   }
 
   const { error } = await createAdminClient().from("activity_team").upsert({
@@ -769,24 +1138,43 @@ export async function setTeamMemberAction(input: { activityId: string; profileId
   });
   if (error) return { success: false, error: error.message };
 
-  await logActivity(parsed.data.activityId, access.user.id, "TEAM_UPDATED", { profileId: parsed.data.profileId, role: parsed.data.role });
+  await logActivity(parsed.data.activityId, access.user.id, "TEAM_UPDATED", {
+    profileId: parsed.data.profileId,
+    role: parsed.data.role,
+  });
   revalidateActivity(parsed.data.activityId);
   return { success: true };
 }
 
-export async function removeTeamMemberAction(activityId: string, profileId: string): Promise<ActionResult> {
-  if (!uuidString.safeParse(profileId).success) return { success: false, error: "Invalid team member." };
+export async function removeTeamMemberAction(
+  activityId: string,
+  profileId: string,
+): Promise<ActionResult> {
+  if (!uuidString.safeParse(profileId).success)
+    return { success: false, error: "Invalid team member." };
   const access = await loadActivityAccess(activityId);
-  if (!access?.canManage) return { success: false, error: "Only the chair or officers can manage the team." };
+  if (!access?.canManage)
+    return {
+      success: false,
+      error: "Only the chair or officers can manage the team.",
+    };
 
-  await createAdminClient().from("activity_team").delete().eq("activity_id", activityId).eq("profile_id", profileId);
+  await createAdminClient()
+    .from("activity_team")
+    .delete()
+    .eq("activity_id", activityId)
+    .eq("profile_id", profileId);
   revalidateActivity(activityId);
   return { success: true };
 }
 
 const activityTaskSchema = z.object({
   activityId: uuidString,
-  title: z.string().trim().min(3, "Task title must be at least 3 characters").max(200),
+  title: z
+    .string()
+    .trim()
+    .min(3, "Task title must be at least 3 characters")
+    .max(200),
   description: z.string().trim().max(2000).default(""),
   committee: z.enum(COMMITTEES).default("CLUB_SERVICE"),
   priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).default("MEDIUM"),
@@ -794,16 +1182,29 @@ const activityTaskSchema = z.object({
   assigneeIds: z.array(uuidString).max(20).default([]),
 });
 
-export async function createActivityTaskAction(input: z.input<typeof activityTaskSchema>): Promise<ActionResult> {
+export async function createActivityTaskAction(
+  input: z.input<typeof activityTaskSchema>,
+): Promise<ActionResult> {
   const parsed = activityTaskSchema.safeParse(input);
-  if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message || "Invalid task" };
+  if (!parsed.success)
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message || "Invalid task",
+    };
   const access = await loadActivityAccess(parsed.data.activityId);
   if (!access) return { success: false, error: "Activity not found." };
-  if (!access.canManage) return { success: false, error: "Only the chair or officers can add tasks." };
+  if (!access.canManage)
+    return {
+      success: false,
+      error: "Only the chair or officers can add tasks.",
+    };
 
   const admin = createAdminClient();
   const { data: assignees } = parsed.data.assigneeIds.length
-    ? await admin.from("profiles").select("id, full_name").in("id", parsed.data.assigneeIds)
+    ? await admin
+        .from("profiles")
+        .select("id, full_name")
+        .in("id", parsed.data.assigneeIds)
     : { data: [] as { id: string; full_name: string }[] };
 
   const created = createTask({
@@ -839,9 +1240,12 @@ export async function createActivityTaskAction(input: z.input<typeof activityTas
     created_at: created.createdAt,
     updated_at: created.updatedAt,
   });
-  if (error) console.warn("Could not sync activity task to Supabase:", error.message);
+  if (error)
+    console.warn("Could not sync activity task to Supabase:", error.message);
 
-  await logActivity(parsed.data.activityId, access.user.id, "TASK_CREATED", { title: created.title });
+  await logActivity(parsed.data.activityId, access.user.id, "TASK_CREATED", {
+    title: created.title,
+  });
   revalidateActivity(parsed.data.activityId);
   revalidatePath("/tasks");
   return { success: true, message: "Task added." };

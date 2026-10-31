@@ -3,9 +3,21 @@
 import React, { useState, useTransition } from "react";
 import { StatusBadge } from "@/components/shared/badge";
 import { formatPHP } from "@/lib/utils/money";
-import { FileSpreadsheet, Plus, CheckCircle2, ShieldCheck, XCircle, ArrowRight, X } from "lucide-react";
-import { createBudgetRequestAction, approveBudgetByOfficerAction } from "@/features/budgets/actions";
+import {
+  FileSpreadsheet,
+  Plus,
+  CheckCircle2,
+  ShieldCheck,
+  XCircle,
+  ArrowRight,
+  X,
+} from "lucide-react";
+import {
+  createBudgetRequestAction,
+  approveBudgetByOfficerAction,
+} from "@/features/budgets/actions";
 import { BudgetRequestDTO } from "@/features/budgets/queries";
+import { notifyToast } from "@/components/shared/toast-viewport";
 
 interface BudgetsClientProps {
   initialBudgets: BudgetRequestDTO[];
@@ -13,7 +25,6 @@ interface BudgetsClientProps {
 
 export function BudgetsClient({ initialBudgets }: BudgetsClientProps) {
   const [budgets, setBudgets] = useState<BudgetRequestDTO[]>(initialBudgets);
-  const [notification, setNotification] = useState<string | null>(null);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [isPending, startTransition] = useTransition();
 
@@ -33,8 +44,10 @@ export function BudgetsClient({ initialBudgets }: BudgetsClientProps) {
       setBudgets((prev) =>
         prev.map((b) => {
           if (b.id !== id) return b;
-          const newPresident = role === "PRESIDENT" ? true : b.presidentApproved;
-          const newTreasurer = role === "TREASURER" ? true : b.treasurerApproved;
+          const newPresident =
+            role === "PRESIDENT" ? true : b.presidentApproved;
+          const newTreasurer =
+            role === "TREASURER" ? true : b.treasurerApproved;
           const isApproved = newPresident && newTreasurer;
           return {
             ...b,
@@ -42,10 +55,12 @@ export function BudgetsClient({ initialBudgets }: BudgetsClientProps) {
             treasurerApproved: newTreasurer,
             status: isApproved ? "APPROVED" : "PENDING_APPROVAL",
           };
-        })
+        }),
       );
-      setNotification(`${role} approval recorded in Supabase for project budget.`);
-      setTimeout(() => setNotification(null), 4000);
+      notifyToast({
+        message: `${role} approval recorded for the project budget.`,
+        kind: "success",
+      });
     });
   }
 
@@ -82,14 +97,20 @@ export function BudgetsClient({ initialBudgets }: BudgetsClientProps) {
       setNewTitle("");
       setNewAmount("");
       setNewJustification("");
-      setNotification(`Budget request for "${newTitle}" submitted to Supabase for dual officer approval.`);
-      setTimeout(() => setNotification(null), 4000);
+      notifyToast({
+        message: `Budget request for "${newTitle}" submitted for dual officer approval.`,
+        kind: "success",
+      });
     });
   }
 
   const totalRequested = budgets.reduce((acc, b) => acc + b.amount, 0);
-  const totalApproved = budgets.filter((b) => b.status === "APPROVED").reduce((acc, b) => acc + b.amount, 0);
-  const pendingCount = budgets.filter((b) => b.status === "PENDING_APPROVAL").length;
+  const totalApproved = budgets
+    .filter((b) => b.status === "APPROVED")
+    .reduce((acc, b) => acc + b.amount, 0);
+  const pendingCount = budgets.filter(
+    (b) => b.status === "PENDING_APPROVAL",
+  ).length;
 
   return (
     <div className="space-y-6">
@@ -100,7 +121,8 @@ export function BudgetsClient({ initialBudgets }: BudgetsClientProps) {
             Project Budgets & Liquidations
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Live Supabase dual Presidential & Treasurer approvals, disbursement auditing & variance liquidation
+            Live Supabase dual Presidential & Treasurer approvals, disbursement
+            auditing & variance liquidation
           </p>
         </div>
         <button
@@ -112,29 +134,28 @@ export function BudgetsClient({ initialBudgets }: BudgetsClientProps) {
         </button>
       </div>
 
-      {notification && (
-        <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-medium flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 shrink-0" />
-          <span>{notification}</span>
-        </div>
-      )}
-
       {/* Summary KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs">
-          <p className="text-xs font-semibold text-slate-400">Total Budget Proposals</p>
+          <p className="text-xs font-semibold text-slate-400">
+            Total Budget Proposals
+          </p>
           <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-2">
             {formatPHP(totalRequested)}
           </h3>
         </div>
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs">
-          <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Dual-Approved Disbursements</p>
+          <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+            Dual-Approved Disbursements
+          </p>
           <h3 className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-2">
             {formatPHP(totalApproved)}
           </h3>
         </div>
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs">
-          <p className="text-xs font-semibold text-amber-500">Pending Officer Sign-off</p>
+          <p className="text-xs font-semibold text-amber-500">
+            Pending Officer Sign-off
+          </p>
           <h3 className="text-2xl font-bold text-amber-500 mt-2">
             {pendingCount} Request{pendingCount !== 1 ? "s" : ""}
           </h3>
@@ -162,7 +183,10 @@ export function BudgetsClient({ initialBudgets }: BudgetsClientProps) {
                 {b.justification}
               </p>
               <p className="mt-2 text-[11px] text-slate-400">
-                Submitted by: <span className="font-semibold text-slate-600 dark:text-slate-300">{b.requesterName}</span>
+                Submitted by:{" "}
+                <span className="font-semibold text-slate-600 dark:text-slate-300">
+                  {b.requesterName}
+                </span>
               </p>
             </div>
 
@@ -174,7 +198,9 @@ export function BudgetsClient({ initialBudgets }: BudgetsClientProps) {
               <div className="space-y-2.5 text-xs">
                 {/* President Sign-off */}
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-600 dark:text-slate-300">Club President:</span>
+                  <span className="text-slate-600 dark:text-slate-300">
+                    Club President:
+                  </span>
                   {b.presidentApproved ? (
                     <span className="inline-flex items-center gap-1 font-bold text-emerald-600 dark:text-emerald-400">
                       <CheckCircle2 className="w-3.5 h-3.5" /> Approved
@@ -192,7 +218,9 @@ export function BudgetsClient({ initialBudgets }: BudgetsClientProps) {
 
                 {/* Treasurer Sign-off */}
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-600 dark:text-slate-300">Club Treasurer:</span>
+                  <span className="text-slate-600 dark:text-slate-300">
+                    Club Treasurer:
+                  </span>
                   {b.treasurerApproved ? (
                     <span className="inline-flex items-center gap-1 font-bold text-emerald-600 dark:text-emerald-400">
                       <CheckCircle2 className="w-3.5 h-3.5" /> Approved

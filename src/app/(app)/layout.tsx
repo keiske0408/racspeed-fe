@@ -13,6 +13,7 @@ export default async function AppLayout({
 
   return (
     <AppShell
+      userId={context.user.id}
       userEmail={context.user.email}
       userFullName={context.user.fullName || "Member"}
       roleLabel={context.roleLabel}

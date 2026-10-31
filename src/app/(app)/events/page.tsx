@@ -1,7 +1,10 @@
 import React from "react";
 import { redirect } from "next/navigation";
 import { assertPageAccess } from "@/lib/auth/session";
-import { getEventsList, getUserCheckedInEventIds } from "@/features/events/queries";
+import {
+  getEventsList,
+  getUserCheckedInEventIds,
+} from "@/features/events/queries";
 import { EventsClient } from "./events-client";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +25,9 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
     redirect("/project-center/new");
   }
   const initialEvents = await getEventsList();
-  const initialCheckedInEventIds = await getUserCheckedInEventIds(context.user.id);
+  const initialCheckedInEventIds = await getUserCheckedInEventIds(
+    context.user.id,
+  );
   const initialToken =
     resolvedSearchParams.token ||
     resolvedSearchParams.sessionToken ||
@@ -41,4 +46,3 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
     />
   );
 }
-

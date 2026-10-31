@@ -9,7 +9,9 @@ import { OnboardingStage } from "@/lib/services/workflows/onboarding";
 
 export async function createProspectAction(formData: FormData) {
   const user = await requireUser();
-  const rawClubId = (formData.get("clubId") as string) || "00000000-0000-0000-0000-000000000001";
+  const rawClubId =
+    (formData.get("clubId") as string) ||
+    "00000000-0000-0000-0000-000000000001";
   await assertPermission(rawClubId, "RECRUITMENT_MANAGE");
 
   const name = (formData.get("name") as string) || "";
@@ -44,7 +46,7 @@ export async function createProspectAction(formData: FormData) {
 export async function updateProspectStageAction(
   prospectId: string,
   newStage: OnboardingStage,
-  clubId = "00000000-0000-0000-0000-000000000001"
+  clubId = "00000000-0000-0000-0000-000000000001",
 ) {
   await requireUser();
   await assertPermission(clubId, "RECRUITMENT_MANAGE");
@@ -66,12 +68,16 @@ export async function updateProspectStageAction(
 export async function inductProspectToMemberAction(
   prospectId: string,
   clubId = "00000000-0000-0000-0000-000000000001",
-  rotaryId?: string
+  rotaryId?: string,
 ) {
   const user = await requireUser();
   await assertPermission(clubId, "MEMBER_APPROVE");
   const validRotaryId = rotaryId?.trim();
-  if (!validRotaryId) return { success: false, error: "A Rotary ID is required before induction to full membership." };
+  if (!validRotaryId)
+    return {
+      success: false,
+      error: "A Rotary ID is required before induction to full membership.",
+    };
 
   const adminClient = createAdminClient();
 
@@ -118,7 +124,10 @@ export async function inductProspectToMemberAction(
       .single();
 
     if (profErr || !newProfile) {
-      return { success: false, error: `Could not create member profile: ${profErr?.message}` };
+      return {
+        success: false,
+        error: `Could not create member profile: ${profErr?.message}`,
+      };
     }
     profileId = newProfile.id;
   } else {
@@ -129,19 +138,17 @@ export async function inductProspectToMemberAction(
   }
 
   // 4. Upsert club_memberships as an ACTIVE club member
-  await adminClient
-    .from("club_memberships")
-    .upsert(
-      {
-        club_id: clubId,
-        profile_id: profileId,
-        membership_status: "ACTIVE",
-        rotary_id: validRotaryId,
-        joined_date: new Date().toISOString().split("T")[0],
-        classification: "Rotaract General",
-      },
-      { onConflict: "club_id,profile_id" }
-    );
+  await adminClient.from("club_memberships").upsert(
+    {
+      club_id: clubId,
+      profile_id: profileId,
+      membership_status: "ACTIVE",
+      rotary_id: validRotaryId,
+      joined_date: new Date().toISOString().split("T")[0],
+      classification: "Rotaract General",
+    },
+    { onConflict: "club_id,profile_id" },
+  );
 
   revalidatePath("/recruitment");
   revalidatePath("/members");

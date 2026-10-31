@@ -6,10 +6,30 @@ import { Check, HelpCircle, X } from "lucide-react";
 import { setRsvpAction } from "@/features/activities/actions";
 import type { RsvpResponse } from "@/features/activities/types";
 
-const OPTIONS: { value: RsvpResponse; label: string; icon: React.ComponentType<{ className?: string }>; active: string }[] = [
-  { value: "GOING", label: "Going", icon: Check, active: "bg-emerald-600 text-white border-emerald-600" },
-  { value: "MAYBE", label: "Maybe", icon: HelpCircle, active: "bg-amber-500 text-white border-amber-500" },
-  { value: "NOT_GOING", label: "Can't go", icon: X, active: "bg-slate-700 text-white border-slate-700" },
+const OPTIONS: {
+  value: RsvpResponse;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  active: string;
+}[] = [
+  {
+    value: "GOING",
+    label: "Going",
+    icon: Check,
+    active: "bg-emerald-600 text-white border-emerald-600",
+  },
+  {
+    value: "MAYBE",
+    label: "Maybe",
+    icon: HelpCircle,
+    active: "bg-amber-500 text-white border-amber-500",
+  },
+  {
+    value: "NOT_GOING",
+    label: "Can't go",
+    icon: X,
+    active: "bg-slate-700 text-white border-slate-700",
+  },
 ];
 
 export function RsvpButtons({
@@ -68,7 +88,11 @@ export function RsvpButtons({
           );
         })}
       </div>
-      {error && <p className="text-[11px] text-rose-600" role="alert">{error}</p>}
+      {error && (
+        <p className="text-[11px] text-rose-600" role="alert">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

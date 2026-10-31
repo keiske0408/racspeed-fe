@@ -2,7 +2,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   readPartnershipsStore,
   StoredInitiative,
-  StoredSisterClub,
   InitiativeStatus,
   SisterClubDTO,
 } from "@/lib/data/partnerships-storage";
@@ -10,17 +9,19 @@ import {
 export * from "@/lib/data/partnerships-types";
 
 export async function getSisterClubsList(
-  clubId = "00000000-0000-0000-0000-000000000001"
+  clubId = "00000000-0000-0000-0000-000000000001",
 ): Promise<SisterClubDTO[]> {
   const store = readPartnershipsStore();
   let baseClubs: SisterClubDTO[] = [];
+  let linkedActivityInitiatives: StoredInitiative[] = [];
 
   try {
     const admin = createAdminClient();
 
     const { data: rows, error } = await admin
       .from("sister_clubs")
-      .select(`
+      .select(
+        `
         id,
         partner_club_name,
         district,
@@ -32,9 +33,9 @@ export async function getSisterClubsList(
         liaison_email,
         liaison_phone,
         status,
-        notes,
-        partnership_initiatives ( id, title, description, joint_volunteer_count, created_at, status )
-      `)
+        notes
+      `,
+      )
       .eq("home_club_id", clubId)
       .order("created_at", { ascending: false });
 
@@ -52,20 +53,58 @@ export async function getSisterClubsList(
         liaisonPhone: r.liaison_phone || "",
         status: r.status,
         notes: r.notes || "",
-        initiativesCount: Array.isArray(r.partnership_initiatives) ? r.partnership_initiatives.length : 0,
-        initiatives: Array.isArray(r.partnership_initiatives)
-          ? r.partnership_initiatives.map((i: any) => ({
-              id: i.id,
-              sisterClubId: r.id,
-              title: i.title,
-              description: i.description || "",
-              jointVolunteers: i.joint_volunteer_count || 0,
-              rotaryYear: "2026-27",
-              status: (i.status as InitiativeStatus) || "IN_PROGRESS",
-              createdAt: i.created_at,
-            }))
-          : [],
+        initiativesCount: 0,
+        initiatives: [],
       }));
+    }
+
+    const { data: linkedProjects } = await admin
+      .from("activity_partners")
+      .select(
+        `
+        sister_club_id,
+        name,
+        activities!inner(
+          id,
+          title,
+          short_description,
+          status,
+          rotary_year,
+          created_at,
+          activity_rsvps(response)
+        )
+      `,
+      )
+      .eq("activities.club_id", clubId)
+      .in("activities.kind", ["JOINT_PROJECT", "SERVICE_PROJECT"]);
+
+    if (linkedProjects?.length) {
+      linkedActivityInitiatives = linkedProjects.map((row: any) => {
+        const activity = row.activities;
+        const status: InitiativeStatus =
+          activity.status === "ACCOMPLISHED" || activity.status === "COMPLETED"
+            ? "COMPLETED"
+            : activity.status === "CANCELLED"
+              ? "CANCELLED"
+              : activity.status === "DRAFT" || activity.status === "PLANNED"
+                ? "PROPOSED"
+                : "IN_PROGRESS";
+        return {
+          id: activity.id,
+          activityId: activity.id,
+          sisterClubId: row.sister_club_id || "",
+          partnerName: row.name,
+          source: "ACTIVITY" as const,
+          title: activity.title,
+          description: activity.short_description || "",
+          jointVolunteers: (activity.activity_rsvps || []).filter(
+            (rsvp: { response: string }) => rsvp.response === "GOING",
+          ).length,
+          rotaryYear: activity.rotary_year || "2026-27",
+          status,
+          createdAt: activity.created_at,
+        } satisfies StoredInitiative;
+      });
     }
   } catch {
     // If Supabase query fails, proceed with persistent store
@@ -89,21 +128,19 @@ export async function getSisterClubsList(
     }
   }
 
-  // Attach all initiatives from persistent store to each club
   return baseClubs.map((club) => {
-    const clubStoreInitiatives = store.initiatives.filter((i) => i.sisterClubId === club.id);
-    const existingInitiatives = club.initiatives || [];
-
-    const uniqueStoreInitiatives = clubStoreInitiatives.filter(
-      (si) => !existingInitiatives.some((ei) => ei.id === si.id)
+    const clubActivities = linkedActivityInitiatives.filter(
+      (activity) =>
+        activity.sisterClubId === club.id ||
+        (!activity.sisterClubId &&
+          activity.partnerName?.trim().toLowerCase() ===
+            club.partnerClubName.trim().toLowerCase()),
     );
-
-    const combinedInitiatives = [...uniqueStoreInitiatives, ...existingInitiatives];
-
-    return {
-      ...club,
-      initiativesCount: combinedInitiatives.length,
-      initiatives: combinedInitiatives,
-    };
+    const initiatives = clubActivities.filter(
+      (initiative, index, all) =>
+        all.findIndex((candidate) => candidate.id === initiative.id) === index,
+    );
+    return { ...club, initiatives, initiativesCount: initiatives.length };
   });
+
 }

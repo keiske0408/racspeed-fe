@@ -36,33 +36,38 @@ export interface UserAccessContext {
   isPlatformAdmin: boolean;
 }
 
-export const getCurrentUser = cache(async function getCurrentUser(): Promise<CurrentUserContext | null> {
-  const supabase = await createClient();
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
+export const getCurrentUser = cache(
+  async function getCurrentUser(): Promise<CurrentUserContext | null> {
+    const supabase = await createClient();
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
 
-  if (authError || !user) {
-    return null;
-  }
+    if (authError || !user) {
+      return null;
+    }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("id, email, full_name, status, is_platform_admin, avatar_url")
-    .eq("id", user.id)
-    .single();
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("id, email, full_name, status, is_platform_admin, avatar_url")
+      .eq("id", user.id)
+      .single();
 
-  if (!profile) {
-    return null;
-  }
+    if (!profile) {
+      return null;
+    }
 
-  return {
-    id: profile.id,
-    email: profile.email,
-    fullName: profile.full_name,
-    status: profile.status as CurrentUserContext["status"],
-    isPlatformAdmin: profile.is_platform_admin,
-    avatarUrl: profile.avatar_url,
-  };
-});
+    return {
+      id: profile.id,
+      email: profile.email,
+      fullName: profile.full_name,
+      status: profile.status as CurrentUserContext["status"],
+      isPlatformAdmin: profile.is_platform_admin,
+      avatarUrl: profile.avatar_url,
+    };
+  },
+);
 
 export async function requireUser(): Promise<CurrentUserContext> {
   const user = await getCurrentUser();
@@ -79,7 +84,8 @@ export async function requireUser(): Promise<CurrentUserContext> {
 }
 
 export const getUserAccessContext = cache(async function getUserAccessContext(
-  clubId = process.env.NEXT_PUBLIC_DEFAULT_CLUB_ID || "00000000-0000-0000-0000-000000000001"
+  clubId = process.env.NEXT_PUBLIC_DEFAULT_CLUB_ID ||
+    "00000000-0000-0000-0000-000000000001",
 ): Promise<UserAccessContext> {
   const user = await requireUser();
 
@@ -102,7 +108,8 @@ export const getUserAccessContext = cache(async function getUserAccessContext(
     const admin = createAdminClient();
     const { data: membership } = await admin
       .from("club_memberships")
-      .select(`
+      .select(
+        `
         id,
         membership_roles (
           roles (
@@ -113,7 +120,8 @@ export const getUserAccessContext = cache(async function getUserAccessContext(
             )
           )
         )
-      `)
+      `,
+      )
       .eq("club_id", clubId)
       .eq("profile_id", user.id)
       .eq("membership_status", "ACTIVE")
@@ -139,7 +147,8 @@ export const getUserAccessContext = cache(async function getUserAccessContext(
 
   const store = readRolePermissionsStore();
   const roleConfig = store[roleKey];
-  const allowedPages = roleConfig?.allowedPages || DEFAULT_ROLE_PAGES[roleKey] || ["dashboard", "events"];
+  const allowedPages = roleConfig?.allowedPages ||
+    DEFAULT_ROLE_PAGES[roleKey] || ["dashboard", "events"];
 
   return {
     user,
@@ -151,22 +160,30 @@ export const getUserAccessContext = cache(async function getUserAccessContext(
   };
 });
 
-export async function getClubPermissions(clubId: string): Promise<Set<Permission>> {
+export async function getClubPermissions(
+  clubId: string,
+): Promise<Set<Permission>> {
   const context = await getUserAccessContext(clubId);
   return context.permissions;
 }
 
-export async function assertPermission(clubId: string, permission: Permission): Promise<void> {
+export async function assertPermission(
+  clubId: string,
+  permission: Permission,
+): Promise<void> {
   const perms = await getClubPermissions(clubId);
   const user = await getCurrentUser();
   if (!user || (!user.isPlatformAdmin && !perms.has(permission))) {
-    throw new Error(`Unauthorized: User lacks required permission '${permission}' for this club.`);
+    throw new Error(
+      `Unauthorized: User lacks required permission '${permission}' for this club.`,
+    );
   }
 }
 
 export async function assertPageAccess(
   moduleKey: string,
-  clubId = process.env.NEXT_PUBLIC_DEFAULT_CLUB_ID || "00000000-0000-0000-0000-000000000001"
+  clubId = process.env.NEXT_PUBLIC_DEFAULT_CLUB_ID ||
+    "00000000-0000-0000-0000-000000000001",
 ): Promise<UserAccessContext> {
   const context = await getUserAccessContext(clubId);
   if (context.isPlatformAdmin) {

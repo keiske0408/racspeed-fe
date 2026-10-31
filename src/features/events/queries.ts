@@ -12,7 +12,8 @@ export interface EventDTO {
   description?: string;
 }
 
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const DEFAULT_EVENTS: EventDTO[] = [
   {
@@ -24,7 +25,8 @@ const DEFAULT_EVENTS: EventDTO[] = [
     endTime: "2026-10-28T13:00:00Z",
     volunteerHours: 4.0,
     attendeesCount: 28,
-    description: "Interactive workshop for high school and collegiate youth leaders on parliamentary procedure and community mobilization.",
+    description:
+      "Interactive workshop for high school and collegiate youth leaders on parliamentary procedure and community mobilization.",
   },
   {
     id: "00000000-0000-0000-0001-000000000002",
@@ -35,7 +37,8 @@ const DEFAULT_EVENTS: EventDTO[] = [
     endTime: "2026-10-30T21:00:00Z",
     volunteerHours: 2.0,
     attendeesCount: 12,
-    description: "Monthly board review evaluating Q2 project liquidations and membership retention intervention plans.",
+    description:
+      "Monthly board review evaluating Q2 project liquidations and membership retention intervention plans.",
   },
   {
     id: "00000000-0000-0000-0001-000000000003",
@@ -46,7 +49,8 @@ const DEFAULT_EVENTS: EventDTO[] = [
     endTime: "2026-11-07T12:00:00Z",
     volunteerHours: 5.0,
     attendeesCount: 42,
-    description: "Joint environmental stewardship action planting 500 mangrove saplings and conducting shoreline waste auditing.",
+    description:
+      "Joint environmental stewardship action planting 500 mangrove saplings and conducting shoreline waste auditing.",
   },
   {
     id: "00000000-0000-0000-0001-000000000004",
@@ -57,7 +61,8 @@ const DEFAULT_EVENTS: EventDTO[] = [
     endTime: "2026-11-14T18:00:00Z",
     volunteerHours: 3.0,
     attendeesCount: 35,
-    description: "Regular club assembly featuring committee reports, induction of 5 new members, and guest speaker on maternal health.",
+    description:
+      "Regular club assembly featuring committee reports, induction of 5 new members, and guest speaker on maternal health.",
   },
   {
     id: "00000000-0000-0000-0001-000000000005",
@@ -68,7 +73,8 @@ const DEFAULT_EVENTS: EventDTO[] = [
     endTime: "2026-11-21T23:00:00Z",
     volunteerHours: 3.0,
     attendeesCount: 65,
-    description: "Formal gala ceremony charging newly inducted officers and honoring sponsor Rotary Club of San Pedro East partners.",
+    description:
+      "Formal gala ceremony charging newly inducted officers and honoring sponsor Rotary Club of San Pedro East partners.",
   },
   {
     id: "00000000-0000-0000-0001-000000000006",
@@ -79,7 +85,8 @@ const DEFAULT_EVENTS: EventDTO[] = [
     endTime: "2026-11-28T14:00:00Z",
     volunteerHours: 6.0,
     attendeesCount: 50,
-    description: "Annual blood donation campaign in partnership with Philippine Red Cross Laguna Chapter targeting 100 bags.",
+    description:
+      "Annual blood donation campaign in partnership with Philippine Red Cross Laguna Chapter targeting 100 bags.",
   },
   {
     id: "00000000-0000-0000-0001-000000000007",
@@ -90,17 +97,21 @@ const DEFAULT_EVENTS: EventDTO[] = [
     endTime: "2026-12-05T17:00:00Z",
     volunteerHours: 3.0,
     attendeesCount: 20,
-    description: "Official evaluation and presentation of club achievements to District Governor 3820 leadership.",
+    description:
+      "Official evaluation and presentation of club achievements to District Governor 3820 leadership.",
   },
 ];
 
 // Legacy adapter: events are now rows in `activities` (ids preserved by migration 0008).
-export async function getEventsList(clubId = "00000000-0000-0000-0000-000000000001"): Promise<EventDTO[]> {
+export async function getEventsList(
+  clubId = "00000000-0000-0000-0000-000000000001",
+): Promise<EventDTO[]> {
   try {
     const adminClient = createAdminClient();
     const { data: activities, error: activitiesError } = await adminClient
       .from("activities")
-      .select(`
+      .select(
+        `
         id,
         title,
         short_description,
@@ -112,7 +123,8 @@ export async function getEventsList(clubId = "00000000-0000-0000-0000-0000000000
         end_at,
         volunteer_hours_default,
         attendance_records (count)
-      `)
+      `,
+      )
       .eq("club_id", clubId)
       .neq("status", "CANCELLED")
       .order("start_at", { ascending: true });
@@ -136,7 +148,8 @@ export async function getEventsList(clubId = "00000000-0000-0000-0000-0000000000
 
     const { data: events, error } = await adminClient
       .from("events")
-      .select(`
+      .select(
+        `
         id,
         title,
         description,
@@ -146,12 +159,16 @@ export async function getEventsList(clubId = "00000000-0000-0000-0000-0000000000
         end_time,
         volunteer_hours_default,
         attendance_records (count)
-      `)
+      `,
+      )
       .eq("host_club_id", clubId)
       .order("start_time", { ascending: true });
 
     if (error || !events) {
-      console.warn("Could not query events from Supabase, using defaults:", error?.message);
+      console.warn(
+        "Could not query events from Supabase, using defaults:",
+        error?.message,
+      );
       return DEFAULT_EVENTS;
     }
 
@@ -188,7 +205,9 @@ export interface EventAttendeeDTO {
   attended: boolean;
 }
 
-export async function getUserCheckedInEventIds(userId: string): Promise<string[]> {
+export async function getUserCheckedInEventIds(
+  userId: string,
+): Promise<string[]> {
   if (!userId || !UUID_REGEX.test(userId)) return [];
   try {
     const adminClient = createAdminClient();
@@ -202,20 +221,25 @@ export async function getUserCheckedInEventIds(userId: string): Promise<string[]
       return [];
     }
 
-    return Array.from(new Set(data.map((r) => r.activity_id || r.event_id).filter(Boolean)));
+    return Array.from(
+      new Set(data.map((r) => r.activity_id || r.event_id).filter(Boolean)),
+    );
   } catch (err) {
     console.warn("Could not query user checked in event IDs:", err);
     return [];
   }
 }
 
-export async function getEventAttendees(eventId: string): Promise<EventAttendeeDTO[]> {
+export async function getEventAttendees(
+  eventId: string,
+): Promise<EventAttendeeDTO[]> {
   if (!eventId || !UUID_REGEX.test(eventId)) return [];
   try {
     const adminClient = createAdminClient();
     const { data, error } = await adminClient
       .from("attendance_records")
-      .select(`
+      .select(
+        `
         id,
         event_id,
         profile_id,
@@ -224,7 +248,8 @@ export async function getEventAttendees(eventId: string): Promise<EventAttendeeD
         volunteer_hours,
         attended,
         profile:profile_id(id, full_name, email, avatar_url)
-      `)
+      `,
+      )
       .or(`activity_id.eq.${eventId},event_id.eq.${eventId}`)
       .order("check_in_time", { ascending: false });
 

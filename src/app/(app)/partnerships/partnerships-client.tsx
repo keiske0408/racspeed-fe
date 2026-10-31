@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useTransition } from "react";
+import Link from "next/link";
 import {
   Globe,
   Plus,
@@ -25,17 +26,14 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { StatusBadge } from "@/components/shared/badge";
+import { notifyToast } from "@/components/shared/toast-viewport";
 import {
   createSisterClubAction,
   updateSisterClubAction,
   deleteSisterClubAction,
-  createPartnershipInitiativeAction,
-  updatePartnershipInitiativeAction,
-  deletePartnershipInitiativeAction,
 } from "@/features/partnerships/actions";
 import {
   SisterClubDTO,
-  StoredInitiative,
   InitiativeStatus,
   PartnershipType,
   ClubPartnershipStatus,
@@ -51,44 +49,52 @@ const INITIATIVE_STATUS_CONFIG: Record<
 > = {
   PROPOSED: {
     label: "Proposed",
-    color: "bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-900",
+    color:
+      "bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-900",
   },
   IN_PROGRESS: {
     label: "In Progress",
-    color: "bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-900",
+    color:
+      "bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-900",
   },
   COMPLETED: {
     label: "Completed",
-    color: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900",
+    color:
+      "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900",
   },
   CANCELLED: {
     label: "Postponed",
-    color: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700",
+    color:
+      "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700",
   },
 };
 
-export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientProps) {
-  const [sisterClubs, setSisterClubs] = useState<SisterClubDTO[]>(initialSisterClubs);
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function PartnershipsClient({
+  initialSisterClubs,
+}: PartnershipsClientProps) {
+  const [sisterClubs, setSisterClubs] =
+    useState<SisterClubDTO[]>(initialSisterClubs);
   const [filterType, setFilterType] = useState<string>("ALL");
 
   // Modals state
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditClubModal, setShowEditClubModal] = useState(false);
-  const [showInitiativeModal, setShowInitiativeModal] = useState(false);
-  const [showEditInitiativeModal, setShowEditInitiativeModal] = useState(false);
   const [showAllInitiativesModal, setShowAllInitiativesModal] = useState(false);
 
-  const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
   const [editingClub, setEditingClub] = useState<SisterClubDTO | null>(null);
-  const [editingInitiative, setEditingInitiative] = useState<StoredInitiative | null>(null);
-  const [initiativesViewFilter, setInitiativesViewFilter] = useState<string>("ALL");
+  const [initiativesViewFilter, setInitiativesViewFilter] =
+    useState<string>("ALL");
 
-  const [notification, setNotification] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   // Expanded cards state for initiatives
-  const [expandedClubIds, setExpandedClubIds] = useState<Record<string, boolean>>({});
+  const [expandedClubIds, setExpandedClubIds] = useState<
+    Record<string, boolean>
+  >({});
 
   function toggleClubExpanded(clubId: string) {
     setExpandedClubIds((prev) => ({
@@ -106,20 +112,25 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
     try {
       const res = await createSisterClubAction(formData);
       if (res.success) {
-        setNotification(res.message || "Sister club registered successfully");
+        notifyToast({
+          message: res.message || "Sister club registered successfully.",
+          kind: "success",
+        });
         const newClub: SisterClubDTO = res.club || {
           id: res.partnerId || `sc-${Date.now()}`,
           partnerClubName: formData.get("partnerClubName") as string,
           district: formData.get("district") as string,
           country: (formData.get("country") as string) || "Philippines",
           partnershipType:
-            (formData.get("partnershipType") as PartnershipType) || "SISTER_CLUB_MOA",
+            (formData.get("partnershipType") as PartnershipType) ||
+            "SISTER_CLUB_MOA",
           agreementSignedDate:
             (formData.get("agreementSignedDate") as string) ||
             new Date().toISOString().split("T")[0],
           renewalDate: (formData.get("renewalDate") as string) || "2027-06-30",
           liaisonOfficerName:
-            (formData.get("liaisonOfficerName") as string) || "Designated Liaison",
+            (formData.get("liaisonOfficerName") as string) ||
+            "Designated Liaison",
           liaisonEmail: (formData.get("liaisonEmail") as string) || "",
           liaisonPhone: (formData.get("liaisonPhone") as string) || "",
           status: "ACTIVE",
@@ -130,13 +141,20 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
         setSisterClubs((prev) => [newClub, ...prev]);
         setShowAddModal(false);
       } else {
-        alert(res.error || "Failed to register sister club");
+        notifyToast({
+          title: "Partner club not added",
+          message: res.error || "Failed to register sister club.",
+          kind: "error",
+        });
       }
     } catch (err: any) {
-      alert(err?.message || "Failed to submit request.");
+      notifyToast({
+        title: "Partner club not added",
+        message: err?.message || "Failed to submit request.",
+        kind: "error",
+      });
     } finally {
       setIsSubmitting(false);
-      setTimeout(() => setNotification(null), 4000);
     }
   }
 
@@ -166,18 +184,28 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
                   initiatives: c.initiatives,
                   initiativesCount: c.initiativesCount,
                 }
-              : c
-          )
+              : c,
+          ),
         );
         setShowEditClubModal(false);
         setEditingClub(null);
-        setNotification(res.message || "Partner club details updated successfully!");
-        setTimeout(() => setNotification(null), 3500);
+        notifyToast({
+          message: res.message || "Partner club details updated.",
+          kind: "success",
+        });
       } else {
-        alert(res.error || "Failed to update sister club");
+        notifyToast({
+          title: "Partner club not updated",
+          message: res.error || "Failed to update sister club.",
+          kind: "error",
+        });
       }
     } catch (err: any) {
-      alert(err?.message || "Failed to update sister club");
+      notifyToast({
+        title: "Partner club not updated",
+        message: err?.message || "Failed to update sister club.",
+        kind: "error",
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -187,7 +215,7 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
   function handleDeleteSisterClub(clubId: string, clubName: string) {
     if (
       !confirm(
-        `Are you sure you want to delete partner club "${clubName}" and all its collaborative initiatives?`
+        `Are you sure you want to delete partner club "${clubName}"? Bound Project Center projects will not be deleted.`,
       )
     ) {
       return;
@@ -199,118 +227,16 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
 
       const res = await deleteSisterClubAction(clubId);
       if (res.success) {
-        setNotification(res.message || "Partner club removed successfully.");
-        setTimeout(() => setNotification(null), 3000);
+        notifyToast({
+          message: res.message || "Partner club removed.",
+          kind: "success",
+        });
       } else {
-        alert(res.error || "Failed to delete partner club");
-      }
-    });
-  }
-
-  // Record New Initiative
-  async function handleAddInitiative(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!selectedClubId) return;
-    setIsSubmitting(true);
-    const formData = new FormData(e.currentTarget);
-    formData.append("sisterClubId", selectedClubId);
-
-    try {
-      const res = await createPartnershipInitiativeAction(formData);
-      if (res.success) {
-        setNotification(res.message || "Joint initiative registered successfully");
-        const newInit = res.initiative;
-        setSisterClubs((prev) =>
-          prev.map((c) =>
-            c.id === selectedClubId
-              ? {
-                  ...c,
-                  initiativesCount: c.initiativesCount + 1,
-                  initiatives: newInit ? [newInit, ...(c.initiatives || [])] : c.initiatives,
-                }
-              : c
-          )
-        );
-        setShowInitiativeModal(false);
-      } else {
-        alert(res.error || "Failed to record initiative");
-      }
-    } catch (err: any) {
-      alert(err?.message || "Failed to record initiative");
-    } finally {
-      setIsSubmitting(false);
-      setTimeout(() => setNotification(null), 4000);
-    }
-  }
-
-  // Edit Initiative
-  function handleOpenEditInitiative(init: StoredInitiative) {
-    setEditingInitiative(init);
-    setShowEditInitiativeModal(true);
-  }
-
-  async function handleUpdateInitiative(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!editingInitiative) return;
-    setIsSubmitting(true);
-    const formData = new FormData(e.currentTarget);
-    formData.append("initiativeId", editingInitiative.id);
-
-    try {
-      const res = await updatePartnershipInitiativeAction(formData);
-      if (res.success && res.initiative) {
-        const updated = res.initiative;
-        setSisterClubs((prev) =>
-          prev.map((c) => {
-            const hasInit = c.initiatives?.some((i) => i.id === updated.id);
-            if (!hasInit) return c;
-            return {
-              ...c,
-              initiatives: c.initiatives?.map((i) => (i.id === updated.id ? updated : i)),
-            };
-          })
-        );
-        setShowEditInitiativeModal(false);
-        setEditingInitiative(null);
-        setNotification(res.message || "Initiative updated successfully!");
-        setTimeout(() => setNotification(null), 3500);
-      } else {
-        alert(res.error || "Failed to update initiative");
-      }
-    } catch (err: any) {
-      alert(err?.message || "Failed to update initiative");
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
-  // Delete Initiative
-  function handleDeleteInitiative(initId: string, initTitle: string) {
-    if (!confirm(`Are you sure you want to delete collaborative project "${initTitle}"?`)) {
-      return;
-    }
-
-    startTransition(async () => {
-      // Optimistic UI update
-      setSisterClubs((prev) =>
-        prev.map((c) => {
-          const hasInit = c.initiatives?.some((i) => i.id === initId);
-          if (!hasInit) return c;
-          const filtered = c.initiatives?.filter((i) => i.id !== initId) || [];
-          return {
-            ...c,
-            initiatives: filtered,
-            initiativesCount: Math.max(0, c.initiativesCount - 1),
-          };
-        })
-      );
-
-      const res = await deletePartnershipInitiativeAction(initId);
-      if (res.success) {
-        setNotification(res.message || "Collaborative project removed successfully.");
-        setTimeout(() => setNotification(null), 3000);
-      } else {
-        alert(res.error || "Failed to delete initiative");
+        notifyToast({
+          title: "Partner club not removed",
+          message: res.error || "Failed to delete partner club.",
+          kind: "error",
+        });
       }
     });
   }
@@ -321,21 +247,20 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
   });
 
   const activeCount = sisterClubs.filter((c) => c.status === "ACTIVE").length;
-  const internationalCount = sisterClubs.filter((c) => c.country !== "Philippines").length;
-  const allInitiativesCount = sisterClubs.reduce(
-    (sum, c) => sum + (c.initiatives?.length || c.initiativesCount || 0),
-    0
-  );
-
-  // Flatten all initiatives for the comprehensive "All Collaborative Initiatives" view
+  const internationalCount = sisterClubs.filter(
+    (c) => c.country !== "Philippines",
+  ).length;
   const allInitiativesWithClub = sisterClubs.flatMap((c) =>
     (c.initiatives || []).map((init) => ({
       ...init,
       partnerClubName: c.partnerClubName,
       district: c.district,
       country: c.country,
-    }))
+    })),
   );
+  const allInitiativesCount = new Set(
+    allInitiativesWithClub.map((project) => project.activityId || project.id),
+  ).size;
 
   const filteredAllInitiatives = allInitiativesWithClub.filter((init) => {
     if (initiativesViewFilter === "ALL") return true;
@@ -351,16 +276,16 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
             Sister Clubs & Partnerships
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Memorandum of Agreements (MOA), Twin Clubs & Cross-District Collaborative Initiatives
+            Memorandum of Agreements (MOA), Twin Clubs & Joint Projects
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setShowAllInitiativesModal(true)}
             className="inline-flex items-center gap-2 py-2 px-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-semibold text-xs transition cursor-pointer"
           >
             <Eye className="w-4 h-4 text-rose-500" />
-            <span>View All Joint Projects ({allInitiativesCount})</span>
+            <span>View All Projects ({allInitiativesCount})</span>
           </button>
           <button
             onClick={() => setShowAddModal(true)}
@@ -369,21 +294,23 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
             <Plus className="w-4 h-4" />
             <span>Add Partner Club</span>
           </button>
+          <Link
+            href="/project-center/new?kind=JOINT_PROJECT"
+            className="inline-flex items-center gap-2 py-2 px-3.5 rounded-lg bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white font-semibold text-xs transition"
+          >
+            <Plus className="w-4 h-4" />
+            New Joint Project
+          </Link>
         </div>
       </div>
-
-      {notification && (
-        <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-medium flex items-center gap-2">
-          <CheckCircle className="w-4 h-4 shrink-0" />
-          <span>{notification}</span>
-        </div>
-      )}
 
       {/* Metrics Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-slate-400 font-medium">Active Partners</span>
+            <span className="text-xs text-slate-400 font-medium">
+              Active Partners
+            </span>
             <Handshake className="w-4 h-4 text-rose-500" />
           </div>
           <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-2">
@@ -392,7 +319,9 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
         </div>
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-slate-400 font-medium">International Clubs</span>
+            <span className="text-xs text-slate-400 font-medium">
+              International Clubs
+            </span>
             <Globe className="w-4 h-4 text-blue-500" />
           </div>
           <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-2">
@@ -401,7 +330,9 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
         </div>
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-slate-400 font-medium">Joint Projects</span>
+            <span className="text-xs text-slate-400 font-medium">
+              Bound Projects
+            </span>
             <Users className="w-4 h-4 text-emerald-500" />
           </div>
           <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-2">
@@ -410,19 +341,24 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
         </div>
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-slate-400 font-medium">Home District</span>
+            <span className="text-xs text-slate-400 font-medium">
+              Home District
+            </span>
             <Building2 className="w-4 h-4 text-amber-500" />
           </div>
-          <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-2">D3820</h3>
+          <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-2">
+            D3820
+          </h3>
         </div>
       </div>
 
       {/* Filter Tabs */}
-      <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 text-xs w-fit overflow-x-auto">
+      <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 text-xs w-fit max-w-full overflow-x-auto">
         {[
           { key: "ALL", label: "All Partnerships" },
           { key: "SISTER_CLUB_MOA", label: "Sister Club MOAs" },
           { key: "DISTRICT_TWIN_CLUB", label: "Twin Clubs" },
+          { key: "PROJECT_PARTNER", label: "Project Partners" },
           { key: "SPONSOR_ROTARY_CLUB", label: "Sponsor Rotary Club" },
         ].map((tab) => (
           <button
@@ -444,7 +380,9 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
         {filteredClubs.map((club) => {
           const isExpanded = !!expandedClubIds[club.id];
           const initiatives = club.initiatives || [];
-          const visibleInitiatives = isExpanded ? initiatives : initiatives.slice(0, 3);
+          const visibleInitiatives = isExpanded
+            ? initiatives
+            : initiatives.slice(0, 3);
 
           return (
             <div
@@ -476,7 +414,9 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleDeleteSisterClub(club.id, club.partnerClubName)}
+                      onClick={() =>
+                        handleDeleteSisterClub(club.id, club.partnerClubName)
+                      }
                       className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
                       title="Delete Partner Club"
                     >
@@ -485,13 +425,16 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
                   </div>
                 </div>
 
-                <p className="text-xs text-slate-600 dark:text-slate-300 mt-2">{club.notes}</p>
+                <p className="text-xs text-slate-600 dark:text-slate-300 mt-2">
+                  {club.notes}
+                </p>
 
                 {/* Agreement Metadata */}
                 <div className="mt-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 space-y-1.5 text-xs text-slate-500 dark:text-slate-400">
                   <div className="flex items-center justify-between">
                     <span className="flex items-center gap-1.5">
-                      <FileCheck className="w-3.5 h-3.5 text-slate-400" /> Agreement Signed:
+                      <FileCheck className="w-3.5 h-3.5 text-slate-400" />{" "}
+                      Agreement Signed:
                     </span>
                     <span className="font-semibold text-slate-700 dark:text-slate-200">
                       {club.agreementSignedDate}
@@ -499,7 +442,8 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="flex items-center gap-1.5">
-                      <Calendar className="w-3.5 h-3.5 text-slate-400" /> Renewal Date:
+                      <Calendar className="w-3.5 h-3.5 text-slate-400" />{" "}
+                      Renewal Date:
                     </span>
                     <span className="font-semibold text-slate-700 dark:text-slate-200">
                       {club.renewalDate}
@@ -507,10 +451,11 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="flex items-center gap-1.5">
-                      <Award className="w-3.5 h-3.5 text-slate-400" /> Joint Initiatives:
+                      <Award className="w-3.5 h-3.5 text-slate-400" /> Joint
+                      Projects:
                     </span>
                     <span className="font-semibold text-rose-600 dark:text-rose-400">
-                      {initiatives.length} Collaborative Projects
+                      {initiatives.length} Bound Projects
                     </span>
                   </div>
                 </div>
@@ -534,11 +479,10 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
                   </div>
                 </div>
 
-                {/* Collaborative Projects / Initiatives Section */}
                 <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                      Collaborative Initiatives ({initiatives.length}):
+                      Bound Projects ({initiatives.length})
                     </span>
                     {initiatives.length > 3 && (
                       <button
@@ -552,7 +496,8 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
                           </>
                         ) : (
                           <>
-                            View All ({initiatives.length}) <ChevronDown className="w-3 h-3" />
+                            View All ({initiatives.length}){" "}
+                            <ChevronDown className="w-3 h-3" />
                           </>
                         )}
                       </button>
@@ -561,7 +506,7 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
 
                   {initiatives.length === 0 ? (
                     <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 text-center text-xs text-slate-400">
-                      No joint initiatives recorded yet. Click below to add one!
+                      No bound projects yet.
                     </div>
                   ) : (
                     <div className="space-y-1.5">
@@ -583,9 +528,12 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
                                   >
                                     {statusMeta.label}
                                   </span>
-                                  <span className="font-semibold text-xs text-slate-900 dark:text-slate-100">
+                                  <Link
+                                    href={`/project-center/${init.activityId || init.id}`}
+                                    className="font-semibold text-xs text-slate-900 hover:underline dark:text-slate-100 break-words"
+                                  >
                                     {init.title}
-                                  </span>
+                                  </Link>
                                 </div>
                                 {init.description && (
                                   <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">
@@ -594,27 +542,16 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
                                 )}
                               </div>
 
-                              {/* Action Buttons: Volunteers + Edit & Delete Initiative */}
                               <div className="flex items-center gap-1 shrink-0">
                                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300 font-semibold">
                                   {init.jointVolunteers} vols
                                 </span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenEditInitiative(init)}
-                                  className="p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
-                                  title="Edit Initiative"
+                                <Link
+                                  href={`/project-center/${init.activityId || init.id}`}
+                                  className="rounded-md px-2 py-1 text-[10px] font-semibold text-[#0D3594] hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-500/10"
                                 >
-                                  <Edit2 className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteInitiative(init.id, init.title)}
-                                  className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
-                                  title="Delete Initiative"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                                  Open Project
+                                </Link>
                               </div>
                             </div>
                           </div>
@@ -627,16 +564,17 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
 
               {/* Card Footer: Record Joint Initiative Button */}
               <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    setSelectedClubId(club.id);
-                    setShowInitiativeModal(true);
-                  }}
+                <Link
+                  href={
+                    UUID_PATTERN.test(club.id)
+                      ? `/project-center/new?kind=JOINT_PROJECT&sisterClubId=${encodeURIComponent(club.id)}`
+                      : `/project-center/new?kind=JOINT_PROJECT&partnerClubName=${encodeURIComponent(club.partnerClubName)}`
+                  }
                   className="flex-1 py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white font-medium text-xs transition cursor-pointer flex items-center justify-center gap-1.5"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>Record Joint Initiative</span>
-                </button>
+                  <span>New Joint Project</span>
+                </Link>
               </div>
             </div>
           );
@@ -710,10 +648,18 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
                   defaultValue="SISTER_CLUB_MOA"
                   className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
                 >
-                  <option value="SISTER_CLUB_MOA">Sister Club MOA (Official Bilateral)</option>
-                  <option value="DISTRICT_TWIN_CLUB">District Twin Club (District-level)</option>
-                  <option value="PROJECT_PARTNER">Collaborative Project Partner</option>
-                  <option value="SPONSOR_ROTARY_CLUB">Sponsor Rotary Club</option>
+                  <option value="SISTER_CLUB_MOA">
+                    Sister Club MOA (Official Bilateral)
+                  </option>
+                  <option value="DISTRICT_TWIN_CLUB">
+                    District Twin Club (District-level)
+                  </option>
+                  <option value="PROJECT_PARTNER">
+                    Collaborative Project Partner
+                  </option>
+                  <option value="SPONSOR_ROTARY_CLUB">
+                    Sponsor Rotary Club
+                  </option>
                 </select>
               </div>
 
@@ -832,7 +778,10 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
               </button>
             </div>
 
-            <form onSubmit={handleUpdateSisterClub} className="mt-4 space-y-3.5">
+            <form
+              onSubmit={handleUpdateSisterClub}
+              className="mt-4 space-y-3.5"
+            >
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Partner Club Name *
@@ -883,10 +832,18 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
                     defaultValue={editingClub.partnershipType}
                     className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
                   >
-                    <option value="SISTER_CLUB_MOA">Sister Club MOA (Official Bilateral)</option>
-                    <option value="DISTRICT_TWIN_CLUB">District Twin Club (District-level)</option>
-                    <option value="PROJECT_PARTNER">Collaborative Project Partner</option>
-                    <option value="SPONSOR_ROTARY_CLUB">Sponsor Rotary Club</option>
+                    <option value="SISTER_CLUB_MOA">
+                      Sister Club MOA (Official Bilateral)
+                    </option>
+                    <option value="DISTRICT_TWIN_CLUB">
+                      District Twin Club (District-level)
+                    </option>
+                    <option value="PROJECT_PARTNER">
+                      Collaborative Project Partner
+                    </option>
+                    <option value="SPONSOR_ROTARY_CLUB">
+                      Sponsor Rotary Club
+                    </option>
                   </select>
                 </div>
                 <div>
@@ -1003,242 +960,16 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
         </div>
       )}
 
-      {/* Modal: Record Joint Initiative */}
-      {showInitiativeModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-2xl">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <div>
-                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                  Record Joint Initiative
-                </h3>
-                {sisterClubs.find((c) => c.id === selectedClubId) && (
-                  <p className="text-xs text-rose-600 dark:text-rose-400 font-semibold mt-0.5">
-                    Partner: {sisterClubs.find((c) => c.id === selectedClubId)?.partnerClubName}
-                  </p>
-                )}
-              </div>
-              <button
-                onClick={() => setShowInitiativeModal(false)}
-                aria-label="Close modal"
-                className="p-1 rounded-md text-slate-400 hover:text-slate-600"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleAddInitiative} className="mt-4 space-y-3.5">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Initiative / Project Title *
-                </label>
-                <input
-                  type="text"
-                  name="title"
-                  required
-                  placeholder="e.g. Dual-Club Coastal Cleanup & Mangrove Planting"
-                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Project Status *
-                  </label>
-                  <select
-                    name="status"
-                    defaultValue="IN_PROGRESS"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                  >
-                    <option value="PROPOSED">Proposed / Planning</option>
-                    <option value="IN_PROGRESS">Active / In Progress</option>
-                    <option value="COMPLETED">Completed</option>
-                    <option value="CANCELLED">Postponed / Cancelled</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Joint Volunteers Estimated
-                  </label>
-                  <input
-                    type="number"
-                    name="jointVolunteers"
-                    defaultValue={25}
-                    min={0}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Rotary Year
-                </label>
-                <input
-                  type="text"
-                  name="rotaryYear"
-                  defaultValue="2026-27"
-                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Description & Shared Responsibilities
-                </label>
-                <textarea
-                  name="description"
-                  rows={3}
-                  placeholder="Host venue, joint funding details, logistics split between clubs..."
-                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                />
-              </div>
-
-              <div className="pt-2 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowInitiativeModal(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs shadow-xs disabled:opacity-50"
-                >
-                  {isSubmitting ? "Recording..." : "Record Initiative"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: Edit Collaborative Initiative */}
-      {showEditInitiativeModal && editingInitiative && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-2xl">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                Edit Collaborative Initiative
-              </h3>
-              <button
-                onClick={() => {
-                  setShowEditInitiativeModal(false);
-                  setEditingInitiative(null);
-                }}
-                aria-label="Close modal"
-                className="p-1 rounded-md text-slate-400 hover:text-slate-600"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleUpdateInitiative} className="mt-4 space-y-3.5">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Initiative Title *
-                </label>
-                <input
-                  type="text"
-                  name="title"
-                  required
-                  defaultValue={editingInitiative.title}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Project Status *
-                  </label>
-                  <select
-                    name="status"
-                    defaultValue={editingInitiative.status || "IN_PROGRESS"}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                  >
-                    <option value="PROPOSED">Proposed / Planning</option>
-                    <option value="IN_PROGRESS">Active / In Progress</option>
-                    <option value="COMPLETED">Completed</option>
-                    <option value="CANCELLED">Postponed / Cancelled</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Joint Volunteers
-                  </label>
-                  <input
-                    type="number"
-                    name="jointVolunteers"
-                    defaultValue={editingInitiative.jointVolunteers}
-                    min={0}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Rotary Year
-                </label>
-                <input
-                  type="text"
-                  name="rotaryYear"
-                  defaultValue={editingInitiative.rotaryYear || "2026-27"}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Description & Deliverables
-                </label>
-                <textarea
-                  name="description"
-                  rows={3}
-                  defaultValue={editingInitiative.description}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                />
-              </div>
-
-              <div className="pt-2 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowEditInitiativeModal(false);
-                    setEditingInitiative(null);
-                  }}
-                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs shadow-xs disabled:opacity-50"
-                >
-                  {isSubmitting ? "Saving..." : "Save Changes"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: View All Collaborative Projects & Initiatives */}
       {showAllInitiativesModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl">
             <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-slate-800">
               <div>
                 <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                  All Collaborative Initiatives & Joint Projects
+                  All Bound Projects
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Complete directory of twin club and sister club collaborative endeavors
+                  Sister club, twin club, sponsor & partner projects
                 </p>
               </div>
               <button
@@ -1280,7 +1011,7 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
             <div className="flex-1 overflow-y-auto p-6 space-y-3">
               {filteredAllInitiatives.length === 0 ? (
                 <div className="text-center py-12 text-slate-400 text-xs">
-                  No collaborative initiatives match this filter.
+                  No bound projects match this filter.
                 </div>
               ) : (
                 filteredAllInitiatives.map((init) => {
@@ -1290,7 +1021,7 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
 
                   return (
                     <div
-                      key={init.id}
+                      key={`${init.id}:${init.sisterClubId || init.partnerClubName}`}
                       className="p-4 rounded-2xl bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 shadow-2xs hover:shadow-xs transition"
                     >
                       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
@@ -1310,7 +1041,9 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
                           </div>
 
                           <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-1">
-                            {init.title}
+                            <Link href={`/project-center/${init.activityId || init.id}`} className="hover:underline break-words">
+                              {init.title}
+                            </Link>
                           </h4>
 
                           {init.description && (
@@ -1326,21 +1059,13 @@ export function PartnershipsClient({ initialSisterClubs }: PartnershipsClientPro
                             {init.jointVolunteers} Volunteers
                           </span>
 
-                          <button
-                            onClick={() => handleOpenEditInitiative(init)}
-                            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs transition cursor-pointer"
-                            title="Edit Initiative"
+                          <Link
+                            href={`/project-center/${init.activityId || init.id}`}
+                            className="inline-flex items-center gap-1.5 p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs transition"
                           >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-
-                          <button
-                            onClick={() => handleDeleteInitiative(init.id, init.title)}
-                            className="p-1.5 rounded-lg border border-rose-200 dark:border-rose-900 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs transition cursor-pointer"
-                            title="Delete Initiative"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                            <Eye className="w-3.5 h-3.5" />
+                            Open Project
+                          </Link>
                         </div>
                       </div>
                     </div>

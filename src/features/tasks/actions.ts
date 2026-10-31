@@ -15,7 +15,9 @@ async function assertTaskAdmin() {
     !context.permissions.has("ROLE_ASSIGN") &&
     !context.permissions.has("SETTINGS_MANAGE")
   ) {
-    throw new Error("Unauthorized: Only administrators and designated officers have authority to perform task management operations.");
+    throw new Error(
+      "Unauthorized: Only administrators and designated officers have authority to perform task management operations.",
+    );
   }
   return { user, context };
 }
@@ -67,9 +69,12 @@ export async function createGroupTaskAction(formData: FormData) {
   const committee = formData.get("committee") as TaskCommittee;
   const priority = (formData.get("priority") as TaskPriority) || "MEDIUM";
   const dueDate = formData.get("dueDate") as string;
-  const clubId = (formData.get("clubId") as string) || "00000000-0000-0000-0000-000000000001";
+  const clubId =
+    (formData.get("clubId") as string) ||
+    "00000000-0000-0000-0000-000000000001";
   let projectId = (formData.get("projectId") as string)?.trim() || undefined;
-  const projectTitle = (formData.get("projectTitle") as string)?.trim() || undefined;
+  const projectTitle =
+    (formData.get("projectTitle") as string)?.trim() || undefined;
 
   // The task board links by title; resolve it to the Project Center activity id.
   if (!projectId && projectTitle) {
@@ -90,7 +95,9 @@ export async function createGroupTaskAction(formData: FormData) {
 
   // Parse multi-assignees and checklist items
   const assignedMemberIds = formData.getAll("assignedMemberIds") as string[];
-  const assignedMemberNames = formData.getAll("assignedMemberNames") as string[];
+  const assignedMemberNames = formData.getAll(
+    "assignedMemberNames",
+  ) as string[];
   const rawChecklist = formData.getAll("checklistItems") as string[];
 
   const parsed = createTaskSchema.safeParse({
@@ -143,7 +150,10 @@ export async function createGroupTaskAction(formData: FormData) {
       await admin.from("tasks").insert({
         id: created.id,
         club_id: created.clubId,
-        activity_id: created.projectId && /^[0-9a-f-]{36}$/i.test(created.projectId) ? created.projectId : null,
+        activity_id:
+          created.projectId && /^[0-9a-f-]{36}$/i.test(created.projectId)
+            ? created.projectId
+            : null,
         title: created.title,
         description: created.description,
         committee: created.committee,
@@ -178,18 +188,31 @@ export async function createGroupTaskAction(formData: FormData) {
   }
 }
 
-export async function updateTaskStatusAction(taskId: string, status: TaskStatus) {
+export async function updateTaskStatusAction(
+  taskId: string,
+  status: TaskStatus,
+) {
   const user = await requireUser();
-  const taskBefore = (await getGroupTasksList()).find((task) => task.id === taskId);
+  const taskBefore = (await getGroupTasksList()).find(
+    (task) => task.id === taskId,
+  );
   if (!taskBefore) return { success: false, error: "Task not found." };
 
   const context = await getUserAccessContext(taskBefore.clubId);
   const isAssigned =
     taskBefore.assignedMemberIds.includes(user.id) ||
-    taskBefore.assignedMemberNames.some((name) => name.toLowerCase() === user.fullName.toLowerCase());
+    taskBefore.assignedMemberNames.some(
+      (name) => name.toLowerCase() === user.fullName.toLowerCase(),
+    );
   const canManage =
-    context.isPlatformAdmin || context.permissions.has("ROLE_ASSIGN") || context.permissions.has("SETTINGS_MANAGE");
-  if (!isAssigned && !canManage) return { success: false, error: "Only an assignee or task manager can update this task." };
+    context.isPlatformAdmin ||
+    context.permissions.has("ROLE_ASSIGN") ||
+    context.permissions.has("SETTINGS_MANAGE");
+  if (!isAssigned && !canManage)
+    return {
+      success: false,
+      error: "Only an assignee or task manager can update this task.",
+    };
 
   try {
     const updated = updateTaskStatus(taskId, status);
@@ -199,7 +222,10 @@ export async function updateTaskStatusAction(taskId: string, status: TaskStatus)
 
     try {
       const admin = createAdminClient();
-      await admin.from("tasks").update({ status, updated_at: new Date().toISOString() }).eq("id", taskId);
+      await admin
+        .from("tasks")
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq("id", taskId);
     } catch (dbErr) {
       console.warn("Could not sync task status to Supabase:", dbErr);
     }
@@ -233,7 +259,7 @@ export async function updateTaskStatusAction(taskId: string, status: TaskStatus)
 export async function toggleChecklistItemAction(
   taskId: string,
   itemId: string,
-  forcedState?: boolean
+  forcedState?: boolean,
 ) {
   await requireUser();
 
@@ -245,11 +271,14 @@ export async function toggleChecklistItemAction(
 
     try {
       const admin = createAdminClient();
-      await admin.from("tasks").update({
-        checklist: updated.checklist,
-        status: updated.status,
-        updated_at: updated.updatedAt,
-      }).eq("id", taskId);
+      await admin
+        .from("tasks")
+        .update({
+          checklist: updated.checklist,
+          status: updated.status,
+          updated_at: updated.updatedAt,
+        })
+        .eq("id", taskId);
     } catch (dbErr) {
       console.warn("Could not sync checklist toggle to Supabase:", dbErr);
     }
@@ -271,7 +300,7 @@ export async function toggleChecklistItemAction(
 export async function addChecklistItemAction(
   taskId: string,
   title: string,
-  assignedMemberName?: string
+  assignedMemberName?: string,
 ) {
   await requireUser();
 
@@ -287,13 +316,19 @@ export async function addChecklistItemAction(
 
     try {
       const admin = createAdminClient();
-      await admin.from("tasks").update({
-        checklist: updated.checklist,
-        status: updated.status,
-        updated_at: updated.updatedAt,
-      }).eq("id", taskId);
+      await admin
+        .from("tasks")
+        .update({
+          checklist: updated.checklist,
+          status: updated.status,
+          updated_at: updated.updatedAt,
+        })
+        .eq("id", taskId);
     } catch (dbErr) {
-      console.warn("Could not sync checklist item addition to Supabase:", dbErr);
+      console.warn(
+        "Could not sync checklist item addition to Supabase:",
+        dbErr,
+      );
     }
 
     revalidatePath("/tasks");
@@ -321,7 +356,10 @@ export async function deleteTaskAction(taskId: string) {
   try {
     const ok = deleteTask(taskId);
     if (!ok) {
-      return { success: false, error: "Task not found or could not be removed." };
+      return {
+        success: false,
+        error: "Task not found or could not be removed.",
+      };
     }
 
     try {
@@ -346,7 +384,10 @@ export async function deleteTaskAction(taskId: string) {
   }
 }
 
-export async function updateGroupTaskAction(taskId: string, formData: FormData) {
+export async function updateGroupTaskAction(
+  taskId: string,
+  formData: FormData,
+) {
   try {
     await assertTaskAdmin();
   } catch (err: any) {
@@ -360,13 +401,19 @@ export async function updateGroupTaskAction(taskId: string, formData: FormData) 
   const status = formData.get("status") as TaskStatus;
   const dueDate = formData.get("dueDate") as string;
   const projectId = (formData.get("projectId") as string)?.trim() || undefined;
-  const projectTitle = (formData.get("projectTitle") as string)?.trim() || undefined;
+  const projectTitle =
+    (formData.get("projectTitle") as string)?.trim() || undefined;
 
   const assignedMemberIds = formData.getAll("assignedMemberIds") as string[];
-  const assignedMemberNames = formData.getAll("assignedMemberNames") as string[];
+  const assignedMemberNames = formData.getAll(
+    "assignedMemberNames",
+  ) as string[];
 
   if (!title || title.length < 3) {
-    return { success: false, error: "Task title must be at least 3 characters." };
+    return {
+      success: false,
+      error: "Task title must be at least 3 characters.",
+    };
   }
 
   try {
@@ -389,17 +436,20 @@ export async function updateGroupTaskAction(taskId: string, formData: FormData) 
 
     try {
       const admin = createAdminClient();
-      await admin.from("tasks").update({
-        title,
-        description,
-        committee,
-        priority,
-        status,
-        due_date: dueDate,
-        assigned_member_ids: assignedMemberIds,
-        assigned_member_names: assignedMemberNames,
-        updated_at: updated.updatedAt,
-      }).eq("id", taskId);
+      await admin
+        .from("tasks")
+        .update({
+          title,
+          description,
+          committee,
+          priority,
+          status,
+          due_date: dueDate,
+          assigned_member_ids: assignedMemberIds,
+          assigned_member_names: assignedMemberNames,
+          updated_at: updated.updatedAt,
+        })
+        .eq("id", taskId);
     } catch (dbErr) {
       console.warn("Could not sync task update to Supabase:", dbErr);
     }
@@ -423,7 +473,7 @@ export async function updateGroupTaskAction(taskId: string, formData: FormData) 
 export async function assignMembersToTaskAction(
   taskId: string,
   assignedMemberIds: string[],
-  assignedMemberNames: string[]
+  assignedMemberNames: string[],
 ) {
   try {
     await assertTaskAdmin();
@@ -456,4 +506,3 @@ export async function assignMembersToTaskAction(
     };
   }
 }
-

@@ -10,24 +10,41 @@ import {
   TEAM_ROLES,
 } from "./types";
 
-export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const uuidString = z.string().regex(UUID_PATTERN, "Invalid identifier");
 
 // Wall-clock value from a datetime-local input, interpreted in Asia/Manila.
 const localDateTime = z
   .string()
-  .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/, "Enter a valid date and time");
+  .regex(
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/,
+    "Enter a valid date and time",
+  );
 
-const optionalText = (max: number) => z.string().trim().max(max).optional().default("");
-const optionalPositiveInt = z.coerce.number().int().positive().max(100000).optional();
+const optionalText = (max: number) =>
+  z.string().trim().max(max).optional().default("");
+const optionalPositiveInt = z.coerce
+  .number()
+  .int()
+  .positive()
+  .max(100000)
+  .optional();
 
 const NON_PROJECT_KINDS = ACTIVITY_KINDS.filter(
-  (k) => k !== "MEETING" && !(PROJECT_KINDS as readonly string[]).includes(k)
-) as Exclude<(typeof ACTIVITY_KINDS)[number], "MEETING" | (typeof PROJECT_KINDS)[number]>[];
+  (k) => k !== "MEETING" && !(PROJECT_KINDS as readonly string[]).includes(k),
+) as Exclude<
+  (typeof ACTIVITY_KINDS)[number],
+  "MEETING" | (typeof PROJECT_KINDS)[number]
+>[];
 
 const baseShape = {
   clubId: uuidString,
-  title: z.string().trim().min(3, "Title must be at least 3 characters").max(160),
+  title: z
+    .string()
+    .trim()
+    .min(3, "Title must be at least 3 characters")
+    .max(160),
   shortDescription: optionalText(280),
   description: optionalText(10000),
   location: optionalText(300),
@@ -55,6 +72,7 @@ const meetingSchema = z.object({
 const partnerSchema = z.object({
   name: z.string().trim().min(1).max(200),
   role: z.enum(PARTNER_ROLES).default("IMPLEMENTING_PARTNER"),
+  sisterClubId: uuidString.optional(),
 });
 
 const AREA_CODES = AREAS_OF_FOCUS.map((a) => a.code) as [string, ...string[]];
@@ -62,6 +80,8 @@ const AREA_CODES = AREAS_OF_FOCUS.map((a) => a.code) as [string, ...string[]];
 const projectSchema = z.object({
   ...baseShape,
   kind: z.enum(PROJECT_KINDS),
+  sisterClubId: uuidString.optional(),
+  sisterClubName: optionalText(200),
   objective: optionalText(2000),
   beneficiaryType: optionalText(200),
   beneficiaryTarget: z.coerce.number().int().min(0).max(1000000).default(0),
@@ -80,14 +100,36 @@ const generalSchema = z.object({
 export const createActivitySchema = z
   .discriminatedUnion("kind", [meetingSchema, projectSchema, generalSchema])
   .superRefine((data, ctx) => {
+    const hasSisterClubId =
+      "sisterClubId" in data && Boolean(data.sisterClubId);
+    const hasSisterClubName =
+      "sisterClubName" in data && Boolean(data.sisterClubName?.trim());
+    const hasPartners = "partners" in data && data.partners.length > 0;
+    if (
+      data.kind === "JOINT_PROJECT" &&
+      !hasSisterClubId &&
+      !hasSisterClubName &&
+      !hasPartners
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["partners"],
+        message: "Select at least one partner for this joint project.",
+      });
+    }
     if (data.endAt < data.startAt) {
-      ctx.addIssue({ code: "custom", path: ["endAt"], message: "End must be after start" });
+      ctx.addIssue({
+        code: "custom",
+        path: ["endAt"],
+        message: "End must be after start",
+      });
     }
     if (data.minMembersEnabled && !data.minMembersRequired) {
       ctx.addIssue({
         code: "custom",
         path: ["minMembersRequired"],
-        message: "Enter the minimum number of members, or turn the requirement off",
+        message:
+          "Enter the minimum number of members, or turn the requirement off",
       });
     }
     if (
@@ -96,10 +138,18 @@ export const createActivitySchema = z
       data.capacity &&
       data.capacity < data.minMembersRequired
     ) {
-      ctx.addIssue({ code: "custom", path: ["capacity"], message: "Capacity cannot be below the minimum" });
+      ctx.addIssue({
+        code: "custom",
+        path: ["capacity"],
+        message: "Capacity cannot be below the minimum",
+      });
     }
     if (data.rsvpDeadline && data.rsvpDeadline > data.startAt) {
-      ctx.addIssue({ code: "custom", path: ["rsvpDeadline"], message: "RSVP deadline must be before the start" });
+      ctx.addIssue({
+        code: "custom",
+        path: ["rsvpDeadline"],
+        message: "RSVP deadline must be before the start",
+      });
     }
   });
 
@@ -107,8 +157,12 @@ export type CreateActivityInput = z.input<typeof createActivitySchema>;
 export type CreateActivityData = z.output<typeof createActivitySchema>;
 
 /** Minimum is only stored when the form toggle is on. */
-export function resolveMinMembers(data: Pick<CreateActivityData, "minMembersEnabled" | "minMembersRequired">) {
-  return data.minMembersEnabled && data.minMembersRequired ? data.minMembersRequired : null;
+export function resolveMinMembers(
+  data: Pick<CreateActivityData, "minMembersEnabled" | "minMembersRequired">,
+) {
+  return data.minMembersEnabled && data.minMembersRequired
+    ? data.minMembersRequired
+    : null;
 }
 
 export const rsvpSchema = z.object({
@@ -130,5 +184,10 @@ export const teamMemberSchema = z.object({
   role: z.enum(TEAM_ROLES),
 });
 
-export const ALLOWED_MEDIA_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"] as const;
+export const ALLOWED_MEDIA_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+] as const;
 export const MAX_MEDIA_BYTES = 10 * 1024 * 1024;

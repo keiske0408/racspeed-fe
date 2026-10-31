@@ -16,6 +16,7 @@ import {
   Filter,
 } from "lucide-react";
 import { MemberDTO } from "@/features/members/queries";
+import { notifyToast } from "@/components/shared/toast-viewport";
 
 export interface RetentionAlertItem {
   id: string;
@@ -25,7 +26,8 @@ export interface RetentionAlertItem {
   ruleTitle: string;
   explanation: string;
   supportingDates: string[];
-  followUpStatus: "NEW" | "CONTACT_RECOMMENDED" | "CONTACTED" | "RESOLVED" | "EXEMPTED";
+  followUpStatus:
+    "NEW" | "CONTACT_RECOMMENDED" | "CONTACTED" | "RESOLVED" | "EXEMPTED";
   notes?: string;
 }
 
@@ -36,7 +38,8 @@ const INITIAL_ALERTS: RetentionAlertItem[] = [
     email: "danilo.cruz@rotaract3820.org",
     rule: "MISSED_CONSECUTIVE_GAS",
     ruleTitle: "Missed 3 Consecutive General Assemblies",
-    explanation: "Member missed the last 3 scheduled club assemblies without an approved excuse on file.",
+    explanation:
+      "Member missed the last 3 scheduled club assemblies without an approved excuse on file.",
     supportingDates: ["2026-10-10", "2026-09-26", "2026-09-12"],
     followUpStatus: "NEW",
   },
@@ -46,7 +49,8 @@ const INITIAL_ALERTS: RetentionAlertItem[] = [
     email: "alyssa.m@gmail.com",
     rule: "SERVICE_INACTIVITY",
     ruleTitle: "Service Inactivity (>60 Days)",
-    explanation: "No qualifying community service project attendance recorded in the last 72 days.",
+    explanation:
+      "No qualifying community service project attendance recorded in the last 72 days.",
     supportingDates: ["Last attended: 2026-08-08 (Clean Water Drive)"],
     followUpStatus: "CONTACT_RECOMMENDED",
   },
@@ -59,18 +63,21 @@ interface RetentionClientProps {
 export function RetentionClient({ members }: RetentionClientProps) {
   const [alerts, setAlerts] = useState<RetentionAlertItem[]>(INITIAL_ALERTS);
   const [filterStatus, setFilterStatus] = useState<string>("ALL");
-  const [notification, setNotification] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showHowItWorks, setShowHowItWorks] = useState(true);
 
   // Form state for manual flag
   const [selectedMemberId, setSelectedMemberId] = useState<string>("");
-  const [flagReason, setFlagReason] = useState<RetentionAlertItem["rule"]>("PASTORAL_CARE");
+  const [flagReason, setFlagReason] =
+    useState<RetentionAlertItem["rule"]>("PASTORAL_CARE");
   const [customExplanation, setCustomExplanation] = useState<string>("");
 
-  function handleStatusChange(id: string, newStatus: RetentionAlertItem["followUpStatus"]) {
+  function handleStatusChange(
+    id: string,
+    newStatus: RetentionAlertItem["followUpStatus"],
+  ) {
     setAlerts((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, followUpStatus: newStatus } : a))
+      prev.map((a) => (a.id === id ? { ...a, followUpStatus: newStatus } : a)),
     );
     const statusLabels: Record<RetentionAlertItem["followUpStatus"], string> = {
       NEW: "Flagged as New",
@@ -79,8 +86,10 @@ export function RetentionClient({ members }: RetentionClientProps) {
       RESOLVED: "Resolved — Active Attendance Resumed",
       EXEMPTED: "Exempted (Approved Academic / Work Leave)",
     };
-    setNotification(`Status updated: ${statusLabels[newStatus]}`);
-    setTimeout(() => setNotification(null), 4000);
+    notifyToast({
+      message: `Status updated: ${statusLabels[newStatus]}`,
+      kind: "success",
+    });
   }
 
   function handleAddFlag(e: React.FormEvent) {
@@ -89,8 +98,10 @@ export function RetentionClient({ members }: RetentionClientProps) {
     if (!targetMember) return;
 
     let ruleTitle = "Pastoral Care & Member Check-in";
-    if (flagReason === "MISSED_CONSECUTIVE_GAS") ruleTitle = "Missed General Assemblies";
-    if (flagReason === "SERVICE_INACTIVITY") ruleTitle = "Project Inactivity (60+ Days)";
+    if (flagReason === "MISSED_CONSECUTIVE_GAS")
+      ruleTitle = "Missed General Assemblies";
+    if (flagReason === "SERVICE_INACTIVITY")
+      ruleTitle = "Project Inactivity (60+ Days)";
 
     const newAlert: RetentionAlertItem = {
       id: `alt-${Date.now()}`,
@@ -109,8 +120,10 @@ export function RetentionClient({ members }: RetentionClientProps) {
     setShowAddModal(false);
     setSelectedMemberId("");
     setCustomExplanation("");
-    setNotification(`Pastoral care flag created for ${targetMember.name}.`);
-    setTimeout(() => setNotification(null), 4000);
+    notifyToast({
+      message: `Pastoral care flag created for ${targetMember.name}.`,
+      kind: "success",
+    });
   }
 
   const filteredAlerts = alerts.filter((a) => {
@@ -127,7 +140,8 @@ export function RetentionClient({ members }: RetentionClientProps) {
             Member Retention & Engagement Alerts
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Confidential early-warning signals · Restricted to Club President, Secretary, and Membership Director
+            Confidential early-warning signals · Restricted to Club President,
+            Secretary, and Membership Director
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -148,13 +162,6 @@ export function RetentionClient({ members }: RetentionClientProps) {
         </div>
       </div>
 
-      {notification && (
-        <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-medium flex items-center gap-2">
-          <CheckCircle className="w-4 h-4 shrink-0" />
-          <span>{notification}</span>
-        </div>
-      )}
-
       {/* Explanatory Guide Box */}
       {showHowItWorks && (
         <div className="bg-gradient-to-br from-slate-900 via-rose-950/30 to-slate-900 border border-slate-800 rounded-2xl p-5 text-white shadow-sm space-y-3">
@@ -174,19 +181,30 @@ export function RetentionClient({ members }: RetentionClientProps) {
             <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
               <p className="font-bold text-rose-300">1. Automated Detection</p>
               <p>
-                You <strong>do NOT need to manually add old or inactive members</strong>! The system automatically inspects attendance check-ins and project logs every night.
+                You{" "}
+                <strong>
+                  do NOT need to manually add old or inactive members
+                </strong>
+                ! The system automatically inspects attendance check-ins and
+                project logs every night.
               </p>
             </div>
             <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
-              <p className="font-bold text-rose-300">2. Configurable Triggers</p>
+              <p className="font-bold text-rose-300">
+                2. Configurable Triggers
+              </p>
               <p>
-                Configured in Club Settings: Flags members who miss <strong>3 consecutive General Assemblies</strong> or have <strong>no service project attendance for 60+ days</strong>.
+                Configured in Club Settings: Flags members who miss{" "}
+                <strong>3 consecutive General Assemblies</strong> or have{" "}
+                <strong>no service project attendance for 60+ days</strong>.
               </p>
             </div>
             <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1">
               <p className="font-bold text-rose-300">3. Pastoral Follow-Up</p>
               <p>
-                Alerts are 100% confidential. Reach out via coffee chat, record follow-ups, or grant an <strong>Exemption</strong> (board exam, thesis, work shift) so they aren't repeatedly flagged.
+                Alerts are 100% confidential. Reach out via coffee chat, record
+                follow-ups, or grant an <strong>Exemption</strong> (board exam,
+                thesis, work shift) so they aren't repeatedly flagged.
               </p>
             </div>
           </div>
@@ -237,10 +255,10 @@ export function RetentionClient({ members }: RetentionClientProps) {
                     alert.followUpStatus === "RESOLVED"
                       ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
                       : alert.followUpStatus === "EXEMPTED"
-                      ? "bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300"
-                      : alert.followUpStatus === "CONTACTED"
-                      ? "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300"
-                      : "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
+                        ? "bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300"
+                        : alert.followUpStatus === "CONTACTED"
+                          ? "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300"
+                          : "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
                   }`}
                 >
                   {alert.followUpStatus.replace("_", " ")}
@@ -345,9 +363,15 @@ export function RetentionClient({ members }: RetentionClientProps) {
                   onChange={(e) => setFlagReason(e.target.value as any)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
                 >
-                  <option value="PASTORAL_CARE">Personal / Pastoral Care Check-in</option>
-                  <option value="MISSED_CONSECUTIVE_GAS">Missed Consecutive Meetings / GAs</option>
-                  <option value="SERVICE_INACTIVITY">Service Project Inactivity (60+ Days)</option>
+                  <option value="PASTORAL_CARE">
+                    Personal / Pastoral Care Check-in
+                  </option>
+                  <option value="MISSED_CONSECUTIVE_GAS">
+                    Missed Consecutive Meetings / GAs
+                  </option>
+                  <option value="SERVICE_INACTIVITY">
+                    Service Project Inactivity (60+ Days)
+                  </option>
                 </select>
               </div>
 

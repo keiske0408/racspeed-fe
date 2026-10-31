@@ -24,7 +24,12 @@ import {
   verifyPaymentSubmissionAction,
   rejectPaymentSubmissionAction,
 } from "@/features/treasury/actions";
-import { TreasuryDataDTO, InvoiceDTO, PaymentSubmissionDTO } from "@/features/treasury/queries";
+import {
+  TreasuryDataDTO,
+  InvoiceDTO,
+  PaymentSubmissionDTO,
+} from "@/features/treasury/queries";
+import { notifyToast } from "@/components/shared/toast-viewport";
 
 interface TreasuryClientProps {
   initialData: TreasuryDataDTO;
@@ -32,8 +37,9 @@ interface TreasuryClientProps {
 
 export function TreasuryClient({ initialData }: TreasuryClientProps) {
   const [invoices, setInvoices] = useState<InvoiceDTO[]>(initialData.invoices);
-  const [submissions, setSubmissions] = useState<PaymentSubmissionDTO[]>(initialData.submissions);
-  const [notification, setNotification] = useState<string | null>(null);
+  const [submissions, setSubmissions] = useState<PaymentSubmissionDTO[]>(
+    initialData.submissions,
+  );
   const [filterStatus, setFilterStatus] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [showIssueModal, setShowIssueModal] = useState(false);
@@ -48,7 +54,9 @@ export function TreasuryClient({ initialData }: TreasuryClientProps) {
 
   // Payment Proof Submission state
   const [showProofModal, setShowProofModal] = useState(false);
-  const [previewReceiptUrl, setPreviewReceiptUrl] = useState<string | null>(null);
+  const [previewReceiptUrl, setPreviewReceiptUrl] = useState<string | null>(
+    null,
+  );
   const [proofAmount, setProofAmount] = useState("");
   const [proofChannel, setProofChannel] = useState("GCash");
   const [proofRefNumber, setProofRefNumber] = useState("");
@@ -78,20 +86,27 @@ export function TreasuryClient({ initialData }: TreasuryClientProps) {
                   referenceNumber: newSub.reference_number || "N/A",
                   paymentChannel: newSub.payment_channel || "GCash",
                   status: newSub.status || "SUBMITTED",
-                  claimedDate: newSub.claimed_date || new Date().toISOString().split("T")[0],
+                  claimedDate:
+                    newSub.claimed_date ||
+                    new Date().toISOString().split("T")[0],
                   receiptStoragePath: newSub.receipt_storage_path,
                 },
                 ...prev,
               ]);
-              setNotification(`Live update: New payment submission received for ${formatPHP(Number(newSub.claimed_amount || 0))}!`);
-              setTimeout(() => setNotification(null), 4000);
+              notifyToast({
+                title: "Payment received",
+                message: `New payment submission: ${formatPHP(Number(newSub.claimed_amount || 0))}.`,
+                kind: "info",
+              });
             } else if (payload.eventType === "UPDATE") {
               const updated = payload.new as any;
               setSubmissions((prev) =>
-                prev.map((s) => (s.id === updated.id ? { ...s, status: updated.status } : s))
+                prev.map((s) =>
+                  s.id === updated.id ? { ...s, status: updated.status } : s,
+                ),
               );
             }
-          }
+          },
         )
         .subscribe((status: string) => {
           if (status === "SUBSCRIBED") {
@@ -138,12 +153,19 @@ export function TreasuryClient({ initialData }: TreasuryClientProps) {
       try {
         const res = await submitPaymentProofAction(formData);
         if (res.success) {
-          setNotification("Payment proof and receipt uploaded to Supabase Storage! Awaiting Treasurer review.");
+          notifyToast({
+            message: "Payment proof uploaded. Awaiting Treasurer review.",
+            kind: "success",
+          });
         } else {
-          setNotification(res.error || "Failed to submit payment proof");
+          notifyToast({
+            title: "Payment proof not submitted",
+            message: res.error || "Failed to submit payment proof.",
+            kind: "error",
+          });
         }
       } catch {
-        setNotification("Payment proof recorded.");
+        notifyToast({ message: "Payment proof recorded.", kind: "success" });
       }
 
       const newSub: PaymentSubmissionDTO = {
@@ -164,7 +186,6 @@ export function TreasuryClient({ initialData }: TreasuryClientProps) {
       setProofRefNumber("");
       setProofFile(null);
       setProofPreviewUrl(null);
-      setTimeout(() => setNotification(null), 5000);
     });
   }
 
@@ -180,17 +201,21 @@ export function TreasuryClient({ initialData }: TreasuryClientProps) {
       }
 
       setSubmissions((prev) =>
-        prev.map((s) => (s.id === subId ? { ...s, status: "VERIFIED" } : s))
+        prev.map((s) => (s.id === subId ? { ...s, status: "VERIFIED" } : s)),
       );
 
       setInvoices((prev) =>
         prev.map((inv) =>
-          inv.invoiceNumber === sub.invoiceNumber ? { ...inv, status: "PAID" } : inv
-        )
+          inv.invoiceNumber === sub.invoiceNumber
+            ? { ...inv, status: "PAID" }
+            : inv,
+        ),
       );
 
-      setNotification(`Payment of ${formatPHP(sub.claimedAmount)} verified and posted to confirmed ledger in Supabase!`);
-      setTimeout(() => setNotification(null), 4000);
+      notifyToast({
+        message: `Payment of ${formatPHP(sub.claimedAmount)} verified and posted to the ledger.`,
+        kind: "success",
+      });
     });
   }
 
@@ -203,10 +228,9 @@ export function TreasuryClient({ initialData }: TreasuryClientProps) {
       }
 
       setSubmissions((prev) =>
-        prev.map((s) => (s.id === subId ? { ...s, status: "REJECTED" } : s))
+        prev.map((s) => (s.id === subId ? { ...s, status: "REJECTED" } : s)),
       );
-      setNotification("Payment submission marked as REJECTED in Supabase.");
-      setTimeout(() => setNotification(null), 4000);
+      notifyToast({ message: "Payment submission rejected.", kind: "info" });
     });
   }
 
@@ -245,16 +269,23 @@ export function TreasuryClient({ initialData }: TreasuryClientProps) {
       setInvoiceAmount("");
       setInvoiceDueDate("");
       setInvoiceDescription("");
-      setNotification(`Invoice for ${memberSelection} created and dispatched to Supabase.`);
-      setTimeout(() => setNotification(null), 4000);
+      notifyToast({
+        message: `Invoice for ${memberSelection} created.`,
+        kind: "success",
+      });
     });
   }
 
-  const totalInvoicedCentavos = sumCentavos(invoices.map((i) => toCentavos(i.amount)));
-  const totalCollectedCentavos = sumCentavos(
-    invoices.filter((i) => i.status === "PAID").map((i) => toCentavos(i.amount))
+  const totalInvoicedCentavos = sumCentavos(
+    invoices.map((i) => toCentavos(i.amount)),
   );
-  const totalOutstandingCentavos = totalInvoicedCentavos - totalCollectedCentavos;
+  const totalCollectedCentavos = sumCentavos(
+    invoices
+      .filter((i) => i.status === "PAID")
+      .map((i) => toCentavos(i.amount)),
+  );
+  const totalOutstandingCentavos =
+    totalInvoicedCentavos - totalCollectedCentavos;
 
   const filteredInvoices = invoices.filter((inv) => {
     const matchesStatus = filterStatus === "ALL" || inv.status === filterStatus;
@@ -274,7 +305,8 @@ export function TreasuryClient({ initialData }: TreasuryClientProps) {
             Treasury, Dues & Liquidation
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Live Supabase cash records, proof verification & member balances (PHP)
+            Live Supabase cash records, proof verification & member balances
+            (PHP)
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -299,29 +331,28 @@ export function TreasuryClient({ initialData }: TreasuryClientProps) {
         </div>
       </div>
 
-      {notification && (
-        <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-medium flex items-center gap-2">
-          <CheckCircle className="w-4 h-4 shrink-0" />
-          <span>{notification}</span>
-        </div>
-      )}
-
       {/* Financial Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs">
-          <p className="text-xs font-semibold text-slate-400">Total Invoiced (RY 2026-27)</p>
+          <p className="text-xs font-semibold text-slate-400">
+            Total Invoiced (RY 2026-27)
+          </p>
           <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-2">
             {formatPHP(totalInvoicedCentavos / 100)}
           </h3>
         </div>
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs">
-          <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Verified Collections</p>
+          <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+            Verified Collections
+          </p>
           <h3 className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-2">
             {formatPHP(totalCollectedCentavos / 100)}
           </h3>
         </div>
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs">
-          <p className="text-xs font-semibold text-rose-600 dark:text-rose-400">Outstanding Receivables</p>
+          <p className="text-xs font-semibold text-rose-600 dark:text-rose-400">
+            Outstanding Receivables
+          </p>
           <h3 className="text-2xl font-bold text-rose-600 dark:text-rose-400 mt-2">
             {formatPHP(totalOutstandingCentavos / 100)}
           </h3>
@@ -336,16 +367,20 @@ export function TreasuryClient({ initialData }: TreasuryClientProps) {
               Payment Verification Queue
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Proof uploads require Treasurer sign-off before updating confirmed balances
+              Proof uploads require Treasurer sign-off before updating confirmed
+              balances
             </p>
           </div>
           <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300">
-            {submissions.filter((s) => s.status === "SUBMITTED").length} Awaiting Review
+            {submissions.filter((s) => s.status === "SUBMITTED").length}{" "}
+            Awaiting Review
           </span>
         </div>
 
         {submissions.length === 0 ? (
-          <p className="text-center py-6 text-xs text-slate-400 italic">No submissions awaiting review in Supabase</p>
+          <p className="text-center py-6 text-xs text-slate-400 italic">
+            No submissions awaiting review in Supabase
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
@@ -362,30 +397,44 @@ export function TreasuryClient({ initialData }: TreasuryClientProps) {
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {submissions.map((sub) => (
-                  <tr key={sub.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                  <tr
+                    key={sub.id}
+                    className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30"
+                  >
                     <td className="py-3 px-3 font-semibold text-slate-900 dark:text-slate-100">
                       {sub.memberName}
                     </td>
-                    <td className="py-3 px-3 font-mono text-slate-500">{sub.invoiceNumber}</td>
+                    <td className="py-3 px-3 font-mono text-slate-500">
+                      {sub.invoiceNumber}
+                    </td>
                     <td className="py-3 px-3 font-bold text-slate-800 dark:text-slate-200">
                       {formatPHP(sub.claimedAmount)}
                     </td>
                     <td className="py-3 px-3 text-slate-600 dark:text-slate-400">
                       <span className="font-medium">{sub.paymentChannel}</span>
-                      <p className="text-[10px] text-slate-400 font-mono">{sub.referenceNumber}</p>
+                      <p className="text-[10px] text-slate-400 font-mono">
+                        {sub.referenceNumber}
+                      </p>
                     </td>
                     <td className="py-3 px-3">
                       {sub.receiptUrl || sub.receiptStoragePath ? (
                         <button
                           type="button"
-                          onClick={() => setPreviewReceiptUrl(sub.receiptUrl || `https://placehold.co/600x800/png?text=${encodeURIComponent(sub.paymentChannel + ' Receipt')}`)}
+                          onClick={() =>
+                            setPreviewReceiptUrl(
+                              sub.receiptUrl ||
+                                `https://placehold.co/600x800/png?text=${encodeURIComponent(sub.paymentChannel + " Receipt")}`,
+                            )
+                          }
                           className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-700 dark:text-slate-300 hover:text-rose-600 text-xs font-medium transition cursor-pointer"
                         >
                           <Eye className="w-3.5 h-3.5" />
                           View Receipt
                         </button>
                       ) : (
-                        <span className="text-[11px] text-slate-400 italic">No receipt</span>
+                        <span className="text-[11px] text-slate-400 italic">
+                          No receipt
+                        </span>
                       )}
                     </td>
                     <td className="py-3 px-3">
@@ -410,7 +459,9 @@ export function TreasuryClient({ initialData }: TreasuryClientProps) {
                           </button>
                         </div>
                       ) : (
-                        <span className="text-slate-400 text-xs italic">Reviewed</span>
+                        <span className="text-slate-400 text-xs italic">
+                          Reviewed
+                        </span>
                       )}
                     </td>
                   </tr>
@@ -465,14 +516,19 @@ export function TreasuryClient({ initialData }: TreasuryClientProps) {
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {filteredInvoices.map((inv) => (
-                <tr key={inv.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                <tr
+                  key={inv.id}
+                  className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30"
+                >
                   <td className="py-3 px-3 font-mono font-medium text-slate-600 dark:text-slate-400">
                     {inv.invoiceNumber}
                   </td>
                   <td className="py-3 px-3 font-semibold text-slate-900 dark:text-slate-100">
                     {inv.memberName}
                   </td>
-                  <td className="py-3 px-3 text-slate-600 dark:text-slate-300">{inv.title}</td>
+                  <td className="py-3 px-3 text-slate-600 dark:text-slate-300">
+                    {inv.title}
+                  </td>
                   <td className="py-3 px-3 text-slate-500">{inv.dueDate}</td>
                   <td className="py-3 px-3 font-bold text-slate-800 dark:text-slate-200">
                     {formatPHP(inv.amount)}
@@ -484,7 +540,10 @@ export function TreasuryClient({ initialData }: TreasuryClientProps) {
               ))}
               {filteredInvoices.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="text-center py-6 text-xs text-slate-400 italic">
+                  <td
+                    colSpan={6}
+                    className="text-center py-6 text-xs text-slate-400 italic"
+                  >
                     No invoices match the selected filter criteria.
                   </td>
                 </tr>
@@ -520,11 +579,15 @@ export function TreasuryClient({ initialData }: TreasuryClientProps) {
                   onChange={(e) => setMemberSelection(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500 cursor-pointer"
                 >
-                  <option value="Rafael Alcantara">Rafael Alcantara (Project Chair)</option>
+                  <option value="Rafael Alcantara">
+                    Rafael Alcantara (Project Chair)
+                  </option>
                   <option value="Maria Santos">Maria Santos (Treasurer)</option>
                   <option value="Danilo Cruz">Danilo Cruz (Secretary)</option>
                   <option value="Kirsten Lim">Kirsten Lim (Member)</option>
-                  <option value="Alyssa Mendoza">Alyssa Mendoza (Inductee)</option>
+                  <option value="Alyssa Mendoza">
+                    Alyssa Mendoza (Inductee)
+                  </option>
                 </select>
               </div>
 
@@ -635,11 +698,17 @@ export function TreasuryClient({ initialData }: TreasuryClientProps) {
                   onChange={(e) => setProofChannel(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500 cursor-pointer"
                 >
-                  <option value="GCash">GCash (Instant QR / Express Send)</option>
+                  <option value="GCash">
+                    GCash (Instant QR / Express Send)
+                  </option>
                   <option value="Maya">Maya (PayMaya)</option>
-                  <option value="BDO Unibank">BDO Unibank (Online Transfer)</option>
+                  <option value="BDO Unibank">
+                    BDO Unibank (Online Transfer)
+                  </option>
                   <option value="BPI">BPI (Online Transfer)</option>
-                  <option value="Cash / In-Person">Cash / In-Person (To Club Treasurer)</option>
+                  <option value="Cash / In-Person">
+                    Cash / In-Person (To Club Treasurer)
+                  </option>
                 </select>
               </div>
 
@@ -691,7 +760,9 @@ export function TreasuryClient({ initialData }: TreasuryClientProps) {
                       alt="Receipt Preview"
                       className="max-h-48 rounded-lg object-contain"
                     />
-                    <span className="text-[10px] text-slate-400 mt-1">Ready to upload to Supabase bucket "receipts"</span>
+                    <span className="text-[10px] text-slate-400 mt-1">
+                      Ready to upload to Supabase bucket "receipts"
+                    </span>
                   </div>
                 )}
               </div>

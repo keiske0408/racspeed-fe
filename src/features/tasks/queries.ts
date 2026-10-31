@@ -16,7 +16,7 @@ export interface TaskStatsDTO {
 }
 
 export async function getGroupTasksList(
-  clubId = "00000000-0000-0000-0000-000000000001"
+  clubId = "00000000-0000-0000-0000-000000000001",
 ): Promise<GroupTaskDTO[]> {
   try {
     const admin = createAdminClient();
@@ -36,8 +36,12 @@ export async function getGroupTasksList(
         status: r.status,
         priority: r.priority,
         dueDate: r.due_date,
-        assignedMemberIds: Array.isArray(r.assigned_member_ids) ? r.assigned_member_ids : [],
-        assignedMemberNames: Array.isArray(r.assigned_member_names) ? r.assigned_member_names : [],
+        assignedMemberIds: Array.isArray(r.assigned_member_ids)
+          ? r.assigned_member_ids
+          : [],
+        assignedMemberNames: Array.isArray(r.assigned_member_names)
+          ? r.assigned_member_names
+          : [],
         checklist: Array.isArray(r.checklist) ? r.checklist : [],
         createdAt: r.created_at,
         updatedAt: r.updated_at,
@@ -55,7 +59,7 @@ export async function getGroupTasksList(
 }
 
 export async function getTaskStats(
-  clubId = "00000000-0000-0000-0000-000000000001"
+  clubId = "00000000-0000-0000-0000-000000000001",
 ): Promise<TaskStatsDTO> {
   const tasks = await getGroupTasksList(clubId);
 
@@ -65,6 +69,8 @@ export async function getTaskStats(
     inProgress: tasks.filter((t) => t.status === "IN_PROGRESS").length,
     inReview: tasks.filter((t) => t.status === "IN_REVIEW").length,
     completed: tasks.filter((t) => t.status === "COMPLETED").length,
-    urgent: tasks.filter((t) => t.priority === "URGENT" && t.status !== "COMPLETED").length,
+    urgent: tasks.filter(
+      (t) => t.priority === "URGENT" && t.status !== "COMPLETED",
+    ).length,
   };
 }

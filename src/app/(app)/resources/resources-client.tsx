@@ -29,12 +29,16 @@ import {
   updateResourceAction,
   deleteResourceAction,
 } from "@/features/resources/actions";
+import { notifyToast } from "@/components/shared/toast-viewport";
 
 interface ResourcesClientProps {
   initialResources: ClubResource[];
 }
 
-const CATEGORY_ICONS: Record<ResourceCategory, React.ComponentType<{ className?: string }>> = {
+const CATEGORY_ICONS: Record<
+  ResourceCategory,
+  React.ComponentType<{ className?: string }>
+> = {
   SOCIAL_MEDIA: Share2,
   DISTRICT_PORTAL: Globe,
   DRIVE_DOCUMENTS: Folder,
@@ -43,13 +47,40 @@ const CATEGORY_ICONS: Record<ResourceCategory, React.ComponentType<{ className?:
   OTHER: ExternalLink,
 };
 
-const CATEGORY_COLORS: Record<ResourceCategory, { bg: string; text: string; border: string }> = {
-  SOCIAL_MEDIA: { bg: "bg-[#E2EBFF]", text: "text-[#2563EB]", border: "border-[#2563EB]/20" },
-  DISTRICT_PORTAL: { bg: "bg-[#F4EDFE]", text: "text-[#8244E8]", border: "border-[#8244E8]/20" },
-  DRIVE_DOCUMENTS: { bg: "bg-[#E7F8F0]", text: "text-[#17A863]", border: "border-[#17A863]/20" },
-  DESIGN_BRAND: { bg: "bg-[#FFF3E4]", text: "text-[#D97706]", border: "border-[#D97706]/20" },
-  COMMUNITY_TOOL: { bg: "bg-[#FFEED8]", text: "text-[#C06109]", border: "border-[#C06109]/20" },
-  OTHER: { bg: "bg-slate-100 dark:bg-slate-800", text: "text-slate-600 dark:text-slate-300", border: "border-slate-200 dark:border-slate-700" },
+const CATEGORY_COLORS: Record<
+  ResourceCategory,
+  { bg: string; text: string; border: string }
+> = {
+  SOCIAL_MEDIA: {
+    bg: "bg-[#E2EBFF]",
+    text: "text-[#2563EB]",
+    border: "border-[#2563EB]/20",
+  },
+  DISTRICT_PORTAL: {
+    bg: "bg-[#F4EDFE]",
+    text: "text-[#8244E8]",
+    border: "border-[#8244E8]/20",
+  },
+  DRIVE_DOCUMENTS: {
+    bg: "bg-[#E7F8F0]",
+    text: "text-[#17A863]",
+    border: "border-[#17A863]/20",
+  },
+  DESIGN_BRAND: {
+    bg: "bg-[#FFF3E4]",
+    text: "text-[#D97706]",
+    border: "border-[#D97706]/20",
+  },
+  COMMUNITY_TOOL: {
+    bg: "bg-[#FFEED8]",
+    text: "text-[#C06109]",
+    border: "border-[#C06109]/20",
+  },
+  OTHER: {
+    bg: "bg-slate-100 dark:bg-slate-800",
+    text: "text-slate-600 dark:text-slate-300",
+    border: "border-slate-200 dark:border-slate-700",
+  },
 };
 
 export function ResourcesClient({ initialResources }: ResourcesClientProps) {
@@ -60,15 +91,17 @@ export function ResourcesClient({ initialResources }: ResourcesClientProps) {
 
   // Modals
   const [showAddModal, setShowAddModal] = useState(false);
-  const [editingResource, setEditingResource] = useState<ClubResource | null>(null);
+  const [editingResource, setEditingResource] = useState<ClubResource | null>(
+    null,
+  );
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [notification, setNotification] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
   // Form states
   const [formTitle, setFormTitle] = useState("");
   const [formUrl, setFormUrl] = useState("");
-  const [formCategory, setFormCategory] = useState<ResourceCategory>("SOCIAL_MEDIA");
+  const [formCategory, setFormCategory] =
+    useState<ResourceCategory>("SOCIAL_MEDIA");
   const [formDescription, setFormDescription] = useState("");
   const [formIsPinned, setFormIsPinned] = useState(false);
 
@@ -113,11 +146,17 @@ export function ResourcesClient({ initialResources }: ResourcesClientProps) {
         setResources((prev) => [res.data!, ...prev]);
         setShowAddModal(false);
         resetForm();
-        setNotification({ message: `Resource "${res.data.title}" saved successfully!`, type: "success" });
+        notifyToast({
+          message: `Resource "${res.data.title}" saved successfully.`,
+          kind: "success",
+        });
       } else {
-        setNotification({ message: res.error || "Failed to save resource", type: "error" });
+        notifyToast({
+          title: "Resource not saved",
+          message: res.error || "Failed to save resource.",
+          kind: "error",
+        });
       }
-      setTimeout(() => setNotification(null), 4000);
     });
   }
 
@@ -136,15 +175,21 @@ export function ResourcesClient({ initialResources }: ResourcesClientProps) {
       const res = await updateResourceAction(editingResource.id, formData);
       if (res.success && res.data) {
         setResources((prev) =>
-          prev.map((r) => (r.id === editingResource.id ? res.data! : r))
+          prev.map((r) => (r.id === editingResource.id ? res.data! : r)),
         );
         setEditingResource(null);
         resetForm();
-        setNotification({ message: "Resource updated successfully!", type: "success" });
+        notifyToast({
+          message: "Resource updated successfully.",
+          kind: "success",
+        });
       } else {
-        setNotification({ message: res.error || "Failed to update resource", type: "error" });
+        notifyToast({
+          title: "Resource not updated",
+          message: res.error || "Failed to update resource.",
+          kind: "error",
+        });
       }
-      setTimeout(() => setNotification(null), 4000);
     });
   }
 
@@ -156,18 +201,25 @@ export function ResourcesClient({ initialResources }: ResourcesClientProps) {
       const res = await deleteResourceAction(id);
       if (res.success) {
         setResources((prev) => prev.filter((r) => r.id !== id));
-        setNotification({ message: `Resource "${title}" deleted.`, type: "success" });
+        notifyToast({
+          message: `Resource "${title}" deleted.`,
+          kind: "success",
+        });
       } else {
-        setNotification({ message: res.error || "Failed to delete", type: "error" });
+        notifyToast({
+          title: "Resource not deleted",
+          message: res.error || "Failed to delete resource.",
+          kind: "error",
+        });
       }
-      setTimeout(() => setNotification(null), 4000);
     });
   }
 
   // Filtered resources
   const filtered = resources
     .filter((r) => {
-      if (selectedCategory !== "ALL" && r.category !== selectedCategory) return false;
+      if (selectedCategory !== "ALL" && r.category !== selectedCategory)
+        return false;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         return (
@@ -193,7 +245,8 @@ export function ResourcesClient({ initialResources }: ResourcesClientProps) {
             Resources & Links Hub
           </h1>
           <p className="mt-1 text-xs text-[#8E95A5]">
-            Central directory for official club links, social media channels, Google Drive folders, and district tools
+            Central directory for official club links, social media channels,
+            Google Drive folders, and district tools
           </p>
         </div>
 
@@ -208,22 +261,6 @@ export function ResourcesClient({ initialResources }: ResourcesClientProps) {
           <span>Add Resource Link</span>
         </button>
       </div>
-
-      {/* Notification Banner */}
-      {notification && (
-        <div
-          className={`p-3 rounded-xl border text-xs font-semibold flex items-center justify-between ${
-            notification.type === "success"
-              ? "bg-[#E7F8F0] text-[#17A863] border-[#17A863]/20"
-              : "bg-[#FEECEB] text-[#E54335] border-[#E54335]/20"
-          }`}
-        >
-          <span>{notification.message}</span>
-          <button onClick={() => setNotification(null)}>
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
 
       {/* 2. Search & Category Filters */}
       <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
@@ -271,7 +308,9 @@ export function ResourcesClient({ initialResources }: ResourcesClientProps) {
       {filtered.length === 0 ? (
         <div className="bg-white dark:bg-[#111622] border border-[#EDEDF2] dark:border-slate-800 rounded-2xl p-12 text-center">
           <Globe className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-          <h3 className="text-base font-bold text-[#111625] dark:text-white">No resources found</h3>
+          <h3 className="text-base font-bold text-[#111625] dark:text-white">
+            No resources found
+          </h3>
           <p className="mt-1 text-xs text-[#8E95A5]">
             {searchQuery
               ? `No resources match your search "${searchQuery}".`
@@ -292,8 +331,11 @@ export function ResourcesClient({ initialResources }: ResourcesClientProps) {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {filtered.map((item) => {
             const Icon = CATEGORY_ICONS[item.category] || ExternalLink;
-            const colors = CATEGORY_COLORS[item.category] || CATEGORY_COLORS.OTHER;
-            const categoryLabel = RESOURCE_CATEGORIES.find((c) => c.value === item.category)?.label || item.category;
+            const colors =
+              CATEGORY_COLORS[item.category] || CATEGORY_COLORS.OTHER;
+            const categoryLabel =
+              RESOURCE_CATEGORIES.find((c) => c.value === item.category)
+                ?.label || item.category;
 
             return (
               <div
@@ -312,14 +354,21 @@ export function ResourcesClient({ initialResources }: ResourcesClientProps) {
 
                     <div className="flex items-center gap-1">
                       {item.isPinned && (
-                        <span className="p-1 rounded-md text-amber-500 bg-amber-50 dark:bg-amber-950/40" title="Pinned Resource">
+                        <span
+                          className="p-1 rounded-md text-amber-500 bg-amber-50 dark:bg-amber-950/40"
+                          title="Pinned Resource"
+                        >
                           <Pin className="w-3 h-3 fill-amber-500" />
                         </span>
                       )}
 
                       <div className="relative">
                         <button
-                          onClick={() => setActiveMenuId(activeMenuId === item.id ? null : item.id)}
+                          onClick={() =>
+                            setActiveMenuId(
+                              activeMenuId === item.id ? null : item.id,
+                            )
+                          }
                           className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition"
                         >
                           <MoreHorizontal className="w-4 h-4" />
@@ -352,7 +401,8 @@ export function ResourcesClient({ initialResources }: ResourcesClientProps) {
                     {item.title}
                   </h3>
                   <p className="mt-1.5 text-xs text-[#6B7280] dark:text-slate-400 line-clamp-3 leading-relaxed">
-                    {item.description || "No description provided for this resource."}
+                    {item.description ||
+                      "No description provided for this resource."}
                   </p>
                 </div>
 
@@ -441,7 +491,9 @@ export function ResourcesClient({ initialResources }: ResourcesClientProps) {
                 </label>
                 <select
                   value={formCategory}
-                  onChange={(e) => setFormCategory(e.target.value as ResourceCategory)}
+                  onChange={(e) =>
+                    setFormCategory(e.target.value as ResourceCategory)
+                  }
                   className="w-full px-3 py-2 rounded-xl border border-[#EDEDF2] dark:border-slate-800 bg-white dark:bg-[#161B26] text-[#111625] dark:text-white focus:outline-hidden focus:ring-1 focus:ring-[#0D3594]"
                 >
                   {RESOURCE_CATEGORIES.map((cat) => (
@@ -473,7 +525,10 @@ export function ResourcesClient({ initialResources }: ResourcesClientProps) {
                   onChange={(e) => setFormIsPinned(e.target.checked)}
                   className="rounded border-[#EDEDF2] text-[#0D3594] focus:ring-[#0D3594]"
                 />
-                <label htmlFor="pinResource" className="text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
+                <label
+                  htmlFor="pinResource"
+                  className="text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer"
+                >
                   Pin this resource to the top of the hub
                 </label>
               </div>
@@ -552,7 +607,9 @@ export function ResourcesClient({ initialResources }: ResourcesClientProps) {
                 </label>
                 <select
                   value={formCategory}
-                  onChange={(e) => setFormCategory(e.target.value as ResourceCategory)}
+                  onChange={(e) =>
+                    setFormCategory(e.target.value as ResourceCategory)
+                  }
                   className="w-full px-3 py-2 rounded-xl border border-[#EDEDF2] dark:border-slate-800 bg-white dark:bg-[#161B26] text-[#111625] dark:text-white focus:outline-hidden focus:ring-1 focus:ring-[#0D3594]"
                 >
                   {RESOURCE_CATEGORIES.map((cat) => (
@@ -583,7 +640,10 @@ export function ResourcesClient({ initialResources }: ResourcesClientProps) {
                   onChange={(e) => setFormIsPinned(e.target.checked)}
                   className="rounded border-[#EDEDF2] text-[#0D3594] focus:ring-[#0D3594]"
                 />
-                <label htmlFor="pinResourceEdit" className="text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
+                <label
+                  htmlFor="pinResourceEdit"
+                  className="text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer"
+                >
                   Pin this resource to the top of the hub
                 </label>
               </div>

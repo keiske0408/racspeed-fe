@@ -2,7 +2,12 @@ import { daysBetween } from "@/lib/utils/dates";
 
 export interface AttendanceRecordLike {
   eventId: string;
-  eventType: "GENERAL_ASSEMBLY" | "SERVICE_PROJECT" | "FELLOWSHIP" | "DISTRICT" | "OTHER";
+  eventType:
+    | "GENERAL_ASSEMBLY"
+    | "SERVICE_PROJECT"
+    | "FELLOWSHIP"
+    | "DISTRICT"
+    | "OTHER";
   eventDate: Date;
   attended: boolean;
   isExcused?: boolean;
@@ -82,7 +87,9 @@ export function evaluateMemberEngagement(
     .sort((a, b) => b.eventDate.getTime() - a.eventDate.getTime());
 
   if (attendedServiceProjects.length === 0) {
-    const membershipDays = config.memberSince ? daysBetween(config.memberSince, referenceDate) : serviceThreshold;
+    const membershipDays = config.memberSince
+      ? daysBetween(config.memberSince, referenceDate)
+      : serviceThreshold;
     if (membershipDays >= serviceThreshold) {
       const desc = `No attended service projects recorded in the last ${membershipDays} days.`;
       reasons.push(desc);
@@ -107,13 +114,24 @@ export function evaluateMemberEngagement(
   }
 
   const missedRsvps = records
-    .filter((record) => record.eventType === "SERVICE_PROJECT" && record.rsvpResponse === "GOING" && !record.attended)
+    .filter(
+      (record) =>
+        record.eventType === "SERVICE_PROJECT" &&
+        record.rsvpResponse === "GOING" &&
+        !record.attended,
+    )
     .sort((a, b) => b.eventDate.getTime() - a.eventDate.getTime());
   if (missedRsvps.length >= noShowThreshold) {
-    const supportingDates = missedRsvps.slice(0, noShowThreshold).map((record) => record.eventDate.toISOString());
+    const supportingDates = missedRsvps
+      .slice(0, noShowThreshold)
+      .map((record) => record.eventDate.toISOString());
     const description = `Missed ${missedRsvps.length} service projects after RSVPing Going.`;
     reasons.push(description);
-    rulesTriggered.push({ rule: "RSVP_NO_SHOWS", description, supportingDates });
+    rulesTriggered.push({
+      rule: "RSVP_NO_SHOWS",
+      description,
+      supportingDates,
+    });
   }
 
   return {

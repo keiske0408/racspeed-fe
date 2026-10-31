@@ -4,11 +4,9 @@ import React, { useState } from "react";
 import {
   Settings,
   Save,
-  CheckCircle,
   Shield,
   Database,
   FileSpreadsheet,
-  AlertCircle,
   Sliders,
 } from "lucide-react";
 import { updateClubSettingsAction } from "@/features/settings/actions";
@@ -21,6 +19,7 @@ import {
 } from "@/lib/data/role-permissions-types";
 import { RoleKey } from "@/lib/permissions/keys";
 import { PushNotificationControl } from "@/components/settings/push-notification-control";
+import { notifyToast } from "@/components/shared/toast-viewport";
 
 interface SettingsClientProps {
   initialSettings: ClubSettingsDTO;
@@ -31,46 +30,69 @@ interface SettingsClientProps {
   };
 }
 
-export function SettingsClient({ initialSettings, initialPermissions }: SettingsClientProps) {
-  const [activeTab, setActiveTab] = useState<"SETTINGS" | "PERMISSIONS">("SETTINGS");
+export function SettingsClient({
+  initialSettings,
+  initialPermissions,
+}: SettingsClientProps) {
+  const [activeTab, setActiveTab] = useState<"SETTINGS" | "PERMISSIONS">(
+    "SETTINGS",
+  );
 
   const [clubName, setClubName] = useState(initialSettings.clubName);
-  const [districtCode, setDistrictCode] = useState(initialSettings.districtCode);
-  const [sponsorRotaryClub, setSponsorRotaryClub] = useState(initialSettings.sponsorRotaryClub);
-  const [currentRotaryYear, setCurrentRotaryYear] = useState(initialSettings.currentRotaryYear);
-  const [budgetApprovalPolicy, setBudgetApprovalPolicy] = useState(initialSettings.budgetApprovalPolicy);
-  const [requireRegistrationApproval, setRequireRegistrationApproval] = useState(initialSettings.requireRegistrationApproval);
-  const [retentionConsecutiveGasThreshold, setRetentionConsecutiveGasThreshold] = useState(initialSettings.retentionConsecutiveGasThreshold);
-  const [retentionServiceDaysThreshold, setRetentionServiceDaysThreshold] = useState(initialSettings.retentionServiceDaysThreshold);
+  const [districtCode, setDistrictCode] = useState(
+    initialSettings.districtCode,
+  );
+  const [sponsorRotaryClub, setSponsorRotaryClub] = useState(
+    initialSettings.sponsorRotaryClub,
+  );
+  const [currentRotaryYear, setCurrentRotaryYear] = useState(
+    initialSettings.currentRotaryYear,
+  );
+  const [budgetApprovalPolicy, setBudgetApprovalPolicy] = useState(
+    initialSettings.budgetApprovalPolicy,
+  );
+  const [requireRegistrationApproval, setRequireRegistrationApproval] =
+    useState(initialSettings.requireRegistrationApproval);
+  const [
+    retentionConsecutiveGasThreshold,
+    setRetentionConsecutiveGasThreshold,
+  ] = useState(initialSettings.retentionConsecutiveGasThreshold);
+  const [retentionServiceDaysThreshold, setRetentionServiceDaysThreshold] =
+    useState(initialSettings.retentionServiceDaysThreshold);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [notification, setNotification] = useState<string | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   async function handleSave(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setIsSubmitting(true);
-    setNotification(null);
-    setErrorMessage(null);
-
     const formData = new FormData(e.currentTarget);
-    formData.append("requireRegistrationApproval", requireRegistrationApproval ? "true" : "false");
+    formData.append(
+      "requireRegistrationApproval",
+      requireRegistrationApproval ? "true" : "false",
+    );
 
     try {
       const res = await updateClubSettingsAction(formData);
       if (res.success) {
-        setNotification(res.message || "Club settings saved successfully!");
+        notifyToast({
+          message: res.message || "Club settings saved successfully.",
+          kind: "success",
+        });
       } else {
-        setErrorMessage(res.error || "Failed to update club settings.");
+        notifyToast({
+          title: "Settings not saved",
+          message: res.error || "Failed to update club settings.",
+          kind: "error",
+        });
       }
     } catch (err: any) {
-      setErrorMessage(err?.message || "Failed to submit settings update.");
+      notifyToast({
+        title: "Settings not saved",
+        message: err?.message || "Failed to submit settings update.",
+        kind: "error",
+      });
     } finally {
       setIsSubmitting(false);
-      setTimeout(() => {
-        setNotification(null);
-        setErrorMessage(null);
-      }, 5000);
     }
   }
 
@@ -82,7 +104,8 @@ export function SettingsClient({ initialSettings, initialPermissions }: Settings
           Club Configuration & Governance Console
         </h1>
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          Live Supabase parameters, dual-approval policy, and customizable role authority · RY {currentRotaryYear}
+          Live Supabase parameters, dual-approval policy, and customizable role
+          authority · RY {currentRotaryYear}
         </p>
       </div>
 
@@ -123,20 +146,6 @@ export function SettingsClient({ initialSettings, initialPermissions }: Settings
         />
       ) : (
         <>
-          {notification && (
-            <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-medium flex items-center gap-2">
-              <CheckCircle className="w-4 h-4 shrink-0" />
-              <span>{notification}</span>
-            </div>
-          )}
-
-          {errorMessage && (
-            <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 text-xs font-medium flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{errorMessage}</span>
-            </div>
-          )}
-
           <PushNotificationControl />
 
           <form onSubmit={handleSave} className="space-y-6">
@@ -226,16 +235,21 @@ export function SettingsClient({ initialSettings, initialPermissions }: Settings
                   <select
                     name="budgetApprovalPolicy"
                     value={budgetApprovalPolicy}
-                    onChange={(e) => setBudgetApprovalPolicy(e.target.value as any)}
+                    onChange={(e) =>
+                      setBudgetApprovalPolicy(e.target.value as any)
+                    }
                     className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
                   >
-                    <option value="PRESIDENT_AND_TREASURER">President & Treasurer (Both required)</option>
+                    <option value="PRESIDENT_AND_TREASURER">
+                      President & Treasurer (Both required)
+                    </option>
                     <option value="PRESIDENT_ONLY">President Only</option>
                     <option value="TREASURER_ONLY">Treasurer Only</option>
                     <option value="EITHER">Either Officer</option>
                   </select>
                   <p className="text-[11px] text-slate-400 mt-1">
-                    Standard Rotary transparency policy requires both President and Treasurer authorization.
+                    Standard Rotary transparency policy requires both President
+                    and Treasurer authorization.
                   </p>
                 </div>
 
@@ -247,7 +261,9 @@ export function SettingsClient({ initialSettings, initialPermissions }: Settings
                     <input
                       type="checkbox"
                       checked={requireRegistrationApproval}
-                      onChange={(e) => setRequireRegistrationApproval(e.target.checked)}
+                      onChange={(e) =>
+                        setRequireRegistrationApproval(e.target.checked)
+                      }
                       className="w-4 h-4 text-rose-600 rounded border-slate-300 focus:ring-rose-500"
                     />
                     <span className="text-xs text-slate-700 dark:text-slate-300 font-medium">
@@ -255,7 +271,8 @@ export function SettingsClient({ initialSettings, initialPermissions }: Settings
                     </span>
                   </label>
                   <p className="text-[11px] text-slate-400 mt-1">
-                    When enabled, newly registered accounts enter APPLICANT status until approved in the Members directory.
+                    When enabled, newly registered accounts enter APPLICANT
+                    status until approved in the Members directory.
                   </p>
                 </div>
               </div>
@@ -279,11 +296,16 @@ export function SettingsClient({ initialSettings, initialPermissions }: Settings
                     min={1}
                     max={10}
                     value={retentionConsecutiveGasThreshold}
-                    onChange={(e) => setRetentionConsecutiveGasThreshold(Number(e.target.value))}
+                    onChange={(e) =>
+                      setRetentionConsecutiveGasThreshold(
+                        Number(e.target.value),
+                      )
+                    }
                     className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
                   />
                   <p className="text-[11px] text-slate-400 mt-1">
-                    Flags pastoral care alert when a member misses this many consecutive unexcused assemblies (default: 3).
+                    Flags pastoral care alert when a member misses this many
+                    consecutive unexcused assemblies (default: 3).
                   </p>
                 </div>
 
@@ -297,11 +319,15 @@ export function SettingsClient({ initialSettings, initialPermissions }: Settings
                     min={15}
                     max={365}
                     value={retentionServiceDaysThreshold}
-                    onChange={(e) => setRetentionServiceDaysThreshold(Number(e.target.value))}
+                    onChange={(e) =>
+                      setRetentionServiceDaysThreshold(Number(e.target.value))
+                    }
                     className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
                   />
                   <p className="text-[11px] text-slate-400 mt-1">
-                    Flags pastoral care alert when no qualifying service project attendance is recorded within this period (default: 60 days).
+                    Flags pastoral care alert when no qualifying service project
+                    attendance is recorded within this period (default: 60
+                    days).
                   </p>
                 </div>
               </div>

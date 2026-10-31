@@ -2,6 +2,7 @@
 
 import React, { useState, useTransition, useMemo } from "react";
 import Link from "next/link";
+import { notifyToast } from "@/components/shared/toast-viewport";
 import {
   CheckSquare,
   Plus,
@@ -68,7 +69,7 @@ interface TasksClientProps {
 
 export function isTaskAssignedToUser(
   task: GroupTaskDTO,
-  user?: CurrentUserContext | null
+  user?: CurrentUserContext | null,
 ): boolean {
   if (!user) return false;
   const userFull = (user.fullName || "").trim().toLowerCase();
@@ -173,7 +174,9 @@ const PRIORITY_BADGES: Record<
     label: "Urgent",
     color:
       "bg-[#FEECEC] text-[#EF4444] border-[#FCD2D2] dark:bg-red-950/40 dark:text-red-300 dark:border-red-800/60",
-    icon: <Flame className="w-3 h-3 animate-pulse text-[#EF4444] inline mr-1" />,
+    icon: (
+      <Flame className="w-3 h-3 animate-pulse text-[#EF4444] inline mr-1" />
+    ),
   },
   HIGH: {
     label: "High",
@@ -207,8 +210,7 @@ const STATUS_CONFIG: Record<
   },
   IN_PROGRESS: {
     label: "In Progress",
-    color:
-      "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-400",
+    color: "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-400",
     badge:
       "bg-[#EFF3FE] text-[#4F6BFF] border-[#DCE4FD] dark:bg-blue-950/40 dark:text-blue-300",
     step: 2,
@@ -289,8 +291,9 @@ export function TasksClient({
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
-  const [inlineNewItem, setInlineNewItem] = useState<Record<string, string>>({});
-  const [notice, setNotice] = useState<string | null>(null);
+  const [inlineNewItem, setInlineNewItem] = useState<Record<string, string>>(
+    {},
+  );
 
   // New task form state (PRESERVED)
   const [selectedProjectTitle, setSelectedProjectTitle] = useState("");
@@ -313,7 +316,7 @@ export function TasksClient({
   const [editProjectTitle, setEditProjectTitle] = useState("");
   const [editAssignees, setEditAssignees] = useState<string[]>([]);
   const [quickAssignTaskId, setQuickAssignTaskId] = useState<string | null>(
-    null
+    null,
   );
 
   // UI Enhanced States
@@ -371,16 +374,22 @@ export function TasksClient({
       const res = await updateGroupTaskAction(editingTask.id, formData);
       if (res.success && res.task) {
         setTasks((prev) =>
-          prev.map((t) => (t.id === editingTask.id ? res.task! : t))
+          prev.map((t) => (t.id === editingTask.id ? res.task! : t)),
         );
         if (viewingTask?.id === editingTask.id) {
           setViewingTask(res.task);
         }
         setEditingTask(null);
-        setNotice(res.message || "Task updated successfully!");
-        setTimeout(() => setNotice(null), 4000);
+        notifyToast({
+          message: res.message || "Task updated successfully.",
+          kind: "success",
+        });
       } else {
-        alert(res.error || "Failed to update task.");
+        notifyToast({
+          title: "Task not updated",
+          message: res.error || "Failed to update task.",
+          kind: "error",
+        });
       }
     });
   }
@@ -408,8 +417,8 @@ export function TasksClient({
               assignedMemberIds: nextIds,
               assignedMemberNames: nextNames,
             }
-          : t
-      )
+          : t,
+      ),
     );
 
     if (viewingTask?.id === taskId) {
@@ -420,7 +429,7 @@ export function TasksClient({
               assignedMemberIds: nextIds,
               assignedMemberNames: nextNames,
             }
-          : null
+          : null,
       );
     }
 
@@ -437,13 +446,13 @@ export function TasksClient({
 
   // Determine active pool of tasks based on RBAC and assignment
   const myAssignedTasks = tasks.filter((t) =>
-    isTaskAssignedToUser(t, currentUser)
+    isTaskAssignedToUser(t, currentUser),
   );
   const activeScopeTasks = !isAdmin
     ? myAssignedTasks
     : viewScope === "MINE"
-    ? myAssignedTasks
-    : tasks;
+      ? myAssignedTasks
+      : tasks;
 
   // Filter tasks with enhanced filters
   const filteredTasks = activeScopeTasks.filter((task) => {
@@ -453,7 +462,7 @@ export function TasksClient({
       (task.projectTitle &&
         task.projectTitle.toLowerCase().includes(searchQuery.toLowerCase())) ||
       task.assignedMemberNames.some((n) =>
-        n.toLowerCase().includes(searchQuery.toLowerCase())
+        n.toLowerCase().includes(searchQuery.toLowerCase()),
       );
 
     const matchesCommittee =
@@ -502,11 +511,12 @@ export function TasksClient({
   const currentStats = {
     total: activeScopeTasks.length,
     todo: activeScopeTasks.filter((t) => t.status === "TODO").length,
-    inProgress: activeScopeTasks.filter((t) => t.status === "IN_PROGRESS").length,
+    inProgress: activeScopeTasks.filter((t) => t.status === "IN_PROGRESS")
+      .length,
     inReview: activeScopeTasks.filter((t) => t.status === "IN_REVIEW").length,
     completed: activeScopeTasks.filter((t) => t.status === "COMPLETED").length,
     urgent: activeScopeTasks.filter(
-      (t) => t.priority === "URGENT" && t.status !== "COMPLETED"
+      (t) => t.priority === "URGENT" && t.status !== "COMPLETED",
     ).length,
   };
 
@@ -516,14 +526,14 @@ export function TasksClient({
       prev.map((t) => {
         if (t.id !== taskId) return t;
         const newChecklist = t.checklist.map((item) =>
-          item.id === itemId ? { ...item, completed: !item.completed } : item
+          item.id === itemId ? { ...item, completed: !item.completed } : item,
         );
         const allCompleted = newChecklist.every((i) => i.completed);
         const nextStatus: TaskStatus = allCompleted
           ? "COMPLETED"
           : t.status === "COMPLETED"
-          ? "IN_PROGRESS"
-          : t.status;
+            ? "IN_PROGRESS"
+            : t.status;
         const updatedTask: GroupTaskDTO = {
           ...t,
           checklist: newChecklist,
@@ -533,7 +543,7 @@ export function TasksClient({
           setViewingTask(updatedTask);
         }
         return updatedTask;
-      })
+      }),
     );
 
     startTransition(async () => {
@@ -550,13 +560,11 @@ export function TasksClient({
   // Update task status directly
   function handleStatusChange(taskId: string, newStatus: TaskStatus) {
     setTasks((prev) =>
-      prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t))
+      prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t)),
     );
 
     if (viewingTask?.id === taskId) {
-      setViewingTask((prev) =>
-        prev ? { ...prev, status: newStatus } : null
-      );
+      setViewingTask((prev) => (prev ? { ...prev, status: newStatus } : null));
     }
 
     startTransition(async () => {
@@ -566,8 +574,16 @@ export function TasksClient({
         if (viewingTask?.id === taskId) {
           setViewingTask(res.task);
         }
-        setNotice(`Task status updated to ${STATUS_CONFIG[newStatus].label}.`);
-        setTimeout(() => setNotice(null), 3000);
+        notifyToast({
+          message: `Task status updated to ${STATUS_CONFIG[newStatus].label}.`,
+          kind: "success",
+        });
+      } else {
+        notifyToast({
+          title: "Task status not updated",
+          message: res.error || "Could not update task status.",
+          kind: "error",
+        });
       }
     });
   }
@@ -611,8 +627,13 @@ export function TasksClient({
     startTransition(async () => {
       const res = await deleteTaskAction(taskId);
       if (res.success) {
-        setNotice("Task deleted successfully.");
-        setTimeout(() => setNotice(null), 3000);
+        notifyToast({ message: "Task deleted successfully.", kind: "success" });
+      } else {
+        notifyToast({
+          title: "Task not deleted",
+          message: res.error || "Could not delete task.",
+          kind: "error",
+        });
       }
     });
   }
@@ -657,10 +678,16 @@ export function TasksClient({
         "Coordinate with assigned committee members",
       ]);
       setSelectedAssignees([]);
-      setNotice(res.message || "Group task created!");
-      setTimeout(() => setNotice(null), 4000);
+      notifyToast({
+        message: res.message || "Group task created.",
+        kind: "success",
+      });
     } else {
-      alert(res.error || "Failed to create group task.");
+      notifyToast({
+        title: "Task not created",
+        message: res.error || "Failed to create group task.",
+        kind: "error",
+      });
     }
   }
 
@@ -834,7 +861,9 @@ export function TasksClient({
                 </span>
               </div>
               <p className="text-[11px] text-[#8E95A5] mt-0.5">
-                {currentStats.todo} to do · {currentStats.inProgress} in progress · {currentStats.completed} completed · {currentStats.urgent} urgent
+                {currentStats.todo} to do · {currentStats.inProgress} in
+                progress · {currentStats.completed} completed ·{" "}
+                {currentStats.urgent} urgent
               </p>
             </div>
           </div>
@@ -1133,14 +1162,6 @@ export function TasksClient({
         )}
       </div>
 
-      {/* Notice Banner */}
-      {notice && (
-        <div className="p-3.5 rounded-2xl bg-[#E9F9F0] border border-[#D1F2DF] text-[#10B981] text-xs font-semibold flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 shrink-0" />
-          <span>{notice}</span>
-        </div>
-      )}
-
       {/* =========================================================================
           Collapsible Connected Rotary Projects Section (Hidden by Default)
           ========================================================================= */}
@@ -1226,7 +1247,8 @@ export function TasksClient({
             No matching tasks found
           </h3>
           <p className="text-xs text-[#8E95A5] mt-1 max-w-sm mx-auto">
-            Try adjusting your search criteria, clearing active filters, or creating a new committee task deliverable.
+            Try adjusting your search criteria, clearing active filters, or
+            creating a new committee task deliverable.
           </p>
           {activeFilterCount > 0 && (
             <button
@@ -1242,7 +1264,7 @@ export function TasksClient({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
           {KANBAN_STAGES.map((stage) => {
             const stageTasks = filteredTasks.filter(
-              (t) => t.status === stage.status
+              (t) => t.status === stage.status,
             );
             return (
               <div
@@ -1252,9 +1274,7 @@ export function TasksClient({
                 {/* Column Header */}
                 <div className="flex items-center justify-between pb-2 border-b border-slate-200/70 dark:border-slate-800/80">
                   <div className="flex items-center gap-2">
-                    <span
-                      className={`w-2 h-2 rounded-full ${stage.dot}`}
-                    />
+                    <span className={`w-2 h-2 rounded-full ${stage.dot}`} />
                     <h3 className="text-xs sm:text-sm font-bold text-[#111625] dark:text-white">
                       {stage.label}
                     </h3>
@@ -1362,7 +1382,7 @@ export function TasksClient({
                     onChange={(e) =>
                       handleStatusChange(
                         viewingTask.id,
-                        e.target.value as TaskStatus
+                        e.target.value as TaskStatus,
                       )
                     }
                     className={`text-xs font-bold px-3 py-1.5 rounded-xl border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#4F6BFF] transition ${
@@ -1401,7 +1421,8 @@ export function TasksClient({
                   {viewingTask.title}
                 </h3>
                 <p className="text-xs text-[#58627A] dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
-                  {viewingTask.description || "No additional description provided."}
+                  {viewingTask.description ||
+                    "No additional description provided."}
                 </p>
               </div>
 
@@ -1723,8 +1744,8 @@ export function TasksClient({
                             } else {
                               setSelectedAssignees(
                                 selectedAssignees.filter(
-                                  (id) => id !== member.id
-                                )
+                                  (id) => id !== member.id,
+                                ),
                               );
                             }
                           }}
@@ -1831,7 +1852,8 @@ export function TasksClient({
                     Edit Task & Deliverables
                   </h2>
                   <p className="text-[11px] text-[#8E95A5]">
-                    Update deliverables, due date, committee, and member assignments
+                    Update deliverables, due date, committee, and member
+                    assignments
                   </p>
                 </div>
               </div>
@@ -1988,7 +2010,7 @@ export function TasksClient({
                             type="button"
                             onClick={() =>
                               setEditAssignees(
-                                editAssignees.filter((memId) => memId !== id)
+                                editAssignees.filter((memId) => memId !== id),
                               )
                             }
                             className="hover:text-red-600 transition cursor-pointer"
@@ -2017,7 +2039,7 @@ export function TasksClient({
                               setEditAssignees([...editAssignees, member.id]);
                             } else {
                               setEditAssignees(
-                                editAssignees.filter((id) => id !== member.id)
+                                editAssignees.filter((id) => id !== member.id),
                               );
                             }
                           }}

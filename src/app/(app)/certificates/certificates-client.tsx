@@ -26,6 +26,7 @@ import {
   issueCertificateAction,
 } from "@/features/certificates/actions";
 import { MemberDTO } from "@/features/members/queries";
+import { notifyToast } from "@/components/shared/toast-viewport";
 
 interface CertificatesClientProps {
   initialTemplates: CertificateTemplateDTO[];
@@ -39,32 +40,40 @@ export function CertificatesClient({
   members,
 }: CertificatesClientProps) {
   const [activeTab, setActiveTab] = useState<"ISSUED" | "TEMPLATES">("ISSUED");
-  const [templates, setTemplates] = useState<CertificateTemplateDTO[]>(initialTemplates);
-  const [issuedCerts, setIssuedCerts] = useState<IssuedCertificateDTO[]>(initialIssuedCerts);
+  const [templates, setTemplates] =
+    useState<CertificateTemplateDTO[]>(initialTemplates);
+  const [issuedCerts, setIssuedCerts] =
+    useState<IssuedCertificateDTO[]>(initialIssuedCerts);
   const [searchQuery, setSearchQuery] = useState("");
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
-  const [notification, setNotification] = useState<string | null>(null);
 
   // Modals
   const [showIssueModal, setShowIssueModal] = useState(false);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
-  const [editingTemplate, setEditingTemplate] = useState<CertificateTemplateDTO | null>(null);
+  const [editingTemplate, setEditingTemplate] =
+    useState<CertificateTemplateDTO | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Issue Form State
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>(
-    initialTemplates[0]?.id || "tmpl-appreciation"
+    initialTemplates[0]?.id || "tmpl-appreciation",
   );
-  const [selectedMemberProfileId, setSelectedMemberProfileId] = useState<string>("");
+  const [selectedMemberProfileId, setSelectedMemberProfileId] =
+    useState<string>("");
   const [customRecipientName, setCustomRecipientName] = useState("");
   const [customRecipientEmail, setCustomRecipientEmail] = useState("");
-  const [eventOrProjectTitle, setEventOrProjectTitle] = useState("Oplan Kalusugan Community Mission");
-  const [issueDate, setIssueDate] = useState(new Date().toISOString().split("T")[0]);
+  const [eventOrProjectTitle, setEventOrProjectTitle] = useState(
+    "Oplan Kalusugan Community Mission",
+  );
+  const [issueDate, setIssueDate] = useState(
+    new Date().toISOString().split("T")[0],
+  );
 
   // Download / Print Certificate
   function handleDownloadCert(cert: IssuedCertificateDTO) {
     setDownloadingId(cert.id);
-    const tmpl = templates.find((t) => t.id === cert.templateId) || templates[0];
+    const tmpl =
+      templates.find((t) => t.id === cert.templateId) || templates[0];
 
     const html = generatePrintableCertificateHTML({
       recipientName: cert.recipientName,
@@ -97,7 +106,9 @@ export function CertificatesClient({
     let recipientEmail = customRecipientEmail;
 
     if (selectedMemberProfileId) {
-      const selectedMember = members.find((m) => m.id === selectedMemberProfileId);
+      const selectedMember = members.find(
+        (m) => m.id === selectedMemberProfileId,
+      );
       if (selectedMember) {
         recipientName = selectedMember.name;
         recipientEmail = selectedMember.email;
@@ -120,7 +131,9 @@ export function CertificatesClient({
           recipientName,
           recipientEmail: recipientEmail || undefined,
           profileId: selectedMemberProfileId || undefined,
-          certificateNumber: res.certificateNumber || `CERT-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+          certificateNumber:
+            res.certificateNumber ||
+            `CERT-2026-${Math.floor(1000 + Math.random() * 9000)}`,
           templateId: selectedTemplateId,
           templateName: tmpl?.name || "Certificate of Appreciation",
           category: tmpl?.category || "Appreciation",
@@ -129,18 +142,28 @@ export function CertificatesClient({
         };
 
         setIssuedCerts((prev) => [newCert, ...prev]);
-        setNotification(res.message || `Certificate issued to ${recipientName}!`);
+        notifyToast({
+          message: res.message || `Certificate issued to ${recipientName}.`,
+          kind: "success",
+        });
         setShowIssueModal(false);
         setSelectedMemberProfileId("");
         setCustomRecipientName("");
       } else {
-        alert(res.error || "Failed to issue certificate");
+        notifyToast({
+          title: "Certificate not issued",
+          message: res.error || "Failed to issue certificate.",
+          kind: "error",
+        });
       }
     } catch (err: any) {
-      alert(err?.message || "Failed to issue certificate");
+      notifyToast({
+        title: "Certificate not issued",
+        message: err?.message || "Failed to issue certificate.",
+        kind: "error",
+      });
     } finally {
       setIsSubmitting(false);
-      setTimeout(() => setNotification(null), 4000);
     }
   }
 
@@ -160,33 +183,51 @@ export function CertificatesClient({
           id: editingTemplate?.id || `tmpl-${Date.now()}`,
           name: formData.get("name") as string,
           category: (formData.get("category") as any) || "APPRECIATION",
-          titleText: (formData.get("titleText") as string) || "Certificate of Appreciation",
+          titleText:
+            (formData.get("titleText") as string) ||
+            "Certificate of Appreciation",
           bodyTemplate: formData.get("bodyTemplate") as string,
           signatory1Name: formData.get("signatory1Name") as string,
           signatory1Title: formData.get("signatory1Title") as string,
-          signatory2Name: (formData.get("signatory2Name") as string) || "Maria Santos",
-          signatory2Title: (formData.get("signatory2Title") as string) || "Club Secretary",
-          createdAt: editingTemplate?.createdAt || new Date().toISOString().split("T")[0],
+          signatory2Name:
+            (formData.get("signatory2Name") as string) || "Maria Santos",
+          signatory2Title:
+            (formData.get("signatory2Title") as string) || "Club Secretary",
+          createdAt:
+            editingTemplate?.createdAt ||
+            new Date().toISOString().split("T")[0],
         };
 
         setTemplates((prev) => {
           if (editingTemplate) {
-            return prev.map((t) => (t.id === editingTemplate.id ? updatedDTO : t));
+            return prev.map((t) =>
+              t.id === editingTemplate.id ? updatedDTO : t,
+            );
           }
           return [updatedDTO, ...prev];
         });
 
-        setNotification(res.message || "Certificate template saved!");
+        notifyToast({
+          message: res.message || "Certificate template saved.",
+          kind: "success",
+        });
         setShowTemplateModal(false);
         setEditingTemplate(null);
       } else {
-        alert(res.error || "Failed to save template");
+        notifyToast({
+          title: "Template not saved",
+          message: res.error || "Failed to save template.",
+          kind: "error",
+        });
       }
     } catch (err: any) {
-      alert(err?.message || "Failed to save template");
+      notifyToast({
+        title: "Template not saved",
+        message: err?.message || "Failed to save template.",
+        kind: "error",
+      });
     } finally {
       setIsSubmitting(false);
-      setTimeout(() => setNotification(null), 4000);
     }
   }
 
@@ -194,7 +235,7 @@ export function CertificatesClient({
     (c) =>
       c.recipientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.certificateNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.eventOrProjectTitle.toLowerCase().includes(searchQuery.toLowerCase())
+      c.eventOrProjectTitle.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   return (
@@ -206,7 +247,8 @@ export function CertificatesClient({
             Certificates of Recognition & Templates
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Design customizable templates, issue verifiable citations to club members, and print official diplomas
+            Design customizable templates, issue verifiable citations to club
+            members, and print official diplomas
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -229,13 +271,6 @@ export function CertificatesClient({
           </button>
         </div>
       </div>
-
-      {notification && (
-        <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-medium flex items-center gap-2">
-          <CheckCircle className="w-4 h-4 shrink-0" />
-          <span>{notification}</span>
-        </div>
-      )}
 
       {/* Tabs */}
       <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-1">
@@ -305,7 +340,9 @@ export function CertificatesClient({
                           {cert.recipientName}
                         </p>
                         {cert.recipientEmail && (
-                          <p className="text-[11px] text-slate-400">{cert.recipientEmail}</p>
+                          <p className="text-[11px] text-slate-400">
+                            {cert.recipientEmail}
+                          </p>
                         )}
                       </td>
                       <td className="py-3.5 px-4">
@@ -316,7 +353,9 @@ export function CertificatesClient({
                       <td className="py-3.5 px-4 text-slate-600 dark:text-slate-300">
                         {cert.eventOrProjectTitle}
                       </td>
-                      <td className="py-3.5 px-4 text-slate-500">{cert.issueDate}</td>
+                      <td className="py-3.5 px-4 text-slate-500">
+                        {cert.issueDate}
+                      </td>
                       <td className="py-3.5 px-4 text-right">
                         <button
                           onClick={() => handleDownloadCert(cert)}
@@ -324,14 +363,19 @@ export function CertificatesClient({
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white font-medium text-xs transition cursor-pointer disabled:opacity-50"
                         >
                           <Printer className="w-3.5 h-3.5" />
-                          {downloadingId === cert.id ? "Preparing..." : "Print / PDF"}
+                          {downloadingId === cert.id
+                            ? "Preparing..."
+                            : "Print / PDF"}
                         </button>
                       </td>
                     </tr>
                   ))}
                   {filteredCerts.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-slate-400 text-xs">
+                      <td
+                        colSpan={6}
+                        className="py-8 text-center text-slate-400 text-xs"
+                      >
                         No certificates found matching your search.
                       </td>
                     </tr>
@@ -382,14 +426,26 @@ export function CertificatesClient({
                 {/* Signatories */}
                 <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 gap-2 text-xs">
                   <div>
-                    <p className="text-[10px] text-slate-400 uppercase font-semibold">Signatory 1</p>
-                    <p className="font-bold text-slate-800 dark:text-slate-200">{tmpl.signatory1Name}</p>
-                    <p className="text-[11px] text-slate-500">{tmpl.signatory1Title}</p>
+                    <p className="text-[10px] text-slate-400 uppercase font-semibold">
+                      Signatory 1
+                    </p>
+                    <p className="font-bold text-slate-800 dark:text-slate-200">
+                      {tmpl.signatory1Name}
+                    </p>
+                    <p className="text-[11px] text-slate-500">
+                      {tmpl.signatory1Title}
+                    </p>
                   </div>
                   <div>
-                    <p className="text-[10px] text-slate-400 uppercase font-semibold">Signatory 2</p>
-                    <p className="font-bold text-slate-800 dark:text-slate-200">{tmpl.signatory2Name}</p>
-                    <p className="text-[11px] text-slate-500">{tmpl.signatory2Title}</p>
+                    <p className="text-[10px] text-slate-400 uppercase font-semibold">
+                      Signatory 2
+                    </p>
+                    <p className="font-bold text-slate-800 dark:text-slate-200">
+                      {tmpl.signatory2Name}
+                    </p>
+                    <p className="text-[11px] text-slate-500">
+                      {tmpl.signatory2Title}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -428,7 +484,10 @@ export function CertificatesClient({
               </button>
             </div>
 
-            <form onSubmit={handleIssueCertificate} className="mt-4 space-y-3.5">
+            <form
+              onSubmit={handleIssueCertificate}
+              className="mt-4 space-y-3.5"
+            >
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Select Certificate Template *
@@ -469,7 +528,9 @@ export function CertificatesClient({
                   }}
                   className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
                 >
-                  <option value="">-- Or enter custom guest / speaker below --</option>
+                  <option value="">
+                    -- Or enter custom guest / speaker below --
+                  </option>
                   {members.map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.name} ({m.role}) · {m.status}
@@ -561,7 +622,9 @@ export function CertificatesClient({
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 <FileText className="w-4 h-4 text-rose-500" />
-                {editingTemplate ? "Edit Certificate Template" : "Create New Template"}
+                {editingTemplate
+                  ? "Edit Certificate Template"
+                  : "Create New Template"}
               </h3>
               <button
                 onClick={() => setShowTemplateModal(false)}
@@ -611,7 +674,10 @@ export function CertificatesClient({
                     type="text"
                     name="titleText"
                     required
-                    defaultValue={editingTemplate?.titleText || "Certificate of Appreciation"}
+                    defaultValue={
+                      editingTemplate?.titleText ||
+                      "Certificate of Appreciation"
+                    }
                     placeholder="e.g. Certificate of Appreciation"
                     className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
                   />
@@ -643,7 +709,9 @@ export function CertificatesClient({
                     type="text"
                     name="signatory1Name"
                     required
-                    defaultValue={editingTemplate?.signatory1Name || "John Carlos Reyes"}
+                    defaultValue={
+                      editingTemplate?.signatory1Name || "John Carlos Reyes"
+                    }
                     className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
                   />
                 </div>
@@ -655,7 +723,10 @@ export function CertificatesClient({
                     type="text"
                     name="signatory1Title"
                     required
-                    defaultValue={editingTemplate?.signatory1Title || "Club President, RY 2026-27"}
+                    defaultValue={
+                      editingTemplate?.signatory1Title ||
+                      "Club President, RY 2026-27"
+                    }
                     className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
                   />
                 </div>
@@ -669,7 +740,9 @@ export function CertificatesClient({
                   <input
                     type="text"
                     name="signatory2Name"
-                    defaultValue={editingTemplate?.signatory2Name || "Maria Santos"}
+                    defaultValue={
+                      editingTemplate?.signatory2Name || "Maria Santos"
+                    }
                     className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
                   />
                 </div>
@@ -680,7 +753,10 @@ export function CertificatesClient({
                   <input
                     type="text"
                     name="signatory2Title"
-                    defaultValue={editingTemplate?.signatory2Title || "Club Secretary, RY 2026-27"}
+                    defaultValue={
+                      editingTemplate?.signatory2Title ||
+                      "Club Secretary, RY 2026-27"
+                    }
                     className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
                   />
                 </div>

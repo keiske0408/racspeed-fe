@@ -7,7 +7,8 @@ export interface MemberDTO {
   email: string;
   role: string;
   roleKey: string;
-  status: "ACTIVE" | "ASPIRANT" | "PENDING" | "INACTIVE" | "PROBATIONARY" | "ALUMNI";
+  status:
+    "ACTIVE" | "ASPIRANT" | "PENDING" | "INACTIVE" | "PROBATIONARY" | "ALUMNI";
   joinedDate: string;
   classification: string;
   rotaryId?: string;
@@ -15,7 +16,9 @@ export interface MemberDTO {
   crmStage?: string;
 }
 
-export async function getClubMembersList(clubId = "00000000-0000-0000-0000-000000000001"): Promise<MemberDTO[]> {
+export async function getClubMembersList(
+  clubId = "00000000-0000-0000-0000-000000000001",
+): Promise<MemberDTO[]> {
   try {
     const adminClient = createAdminClient();
 
@@ -37,7 +40,10 @@ export async function getClubMembersList(clubId = "00000000-0000-0000-0000-00000
         const existingProfileIds = new Set(profiles.map((p) => p.id));
         for (const u of authUsersData.users) {
           if (!existingProfileIds.has(u.id)) {
-            const rawFullName = (u.user_metadata as any)?.full_name || u.email?.split("@")[0] || "Applicant";
+            const rawFullName =
+              (u.user_metadata as any)?.full_name ||
+              u.email?.split("@")[0] ||
+              "Applicant";
             const { data: newProfile } = await adminClient
               .from("profiles")
               .upsert({
@@ -47,7 +53,9 @@ export async function getClubMembersList(clubId = "00000000-0000-0000-0000-00000
                 status: "PENDING",
                 is_platform_admin: false,
               })
-              .select("id, email, full_name, status, is_platform_admin, avatar_url")
+              .select(
+                "id, email, full_name, status, is_platform_admin, avatar_url",
+              )
               .single();
 
             if (newProfile) {
@@ -58,13 +66,17 @@ export async function getClubMembersList(clubId = "00000000-0000-0000-0000-00000
         }
       }
     } catch (authSyncErr) {
-      console.warn("Could not auto-reconcile auth users to profiles:", authSyncErr);
+      console.warn(
+        "Could not auto-reconcile auth users to profiles:",
+        authSyncErr,
+      );
     }
 
     // 3. Fetch all club memberships with associated roles
     const { data: memberships } = await adminClient
       .from("club_memberships")
-      .select(`
+      .select(
+        `
         id,
         profile_id,
         membership_status,
@@ -78,10 +90,13 @@ export async function getClubMembersList(clubId = "00000000-0000-0000-0000-00000
             name
           )
         )
-      `)
+      `,
+      )
       .eq("club_id", clubId);
 
-    const membershipMap = new Map((memberships || []).map((m) => [m.profile_id, m]));
+    const membershipMap = new Map(
+      (memberships || []).map((m) => [m.profile_id, m]),
+    );
 
     // 4. Fetch prospects to bridge CRM milestones
     const { data: prospects } = await adminClient
@@ -92,21 +107,32 @@ export async function getClubMembersList(clubId = "00000000-0000-0000-0000-00000
     const prospectMap = new Map(
       (prospects || [])
         .filter((pr) => Boolean(pr.email))
-        .map((pr) => [pr.email!.toLowerCase(), pr.stage])
+        .map((pr) => [pr.email!.toLowerCase(), pr.stage]),
     );
 
     // Filter profiles belonging to this club, pending applicants, or platform admin
     const clubProfiles = profiles.filter(
-      (p) => membershipMap.has(p.id) || p.status === "PENDING" || Boolean(p.is_platform_admin)
+      (p) =>
+        membershipMap.has(p.id) ||
+        p.status === "PENDING" ||
+        Boolean(p.is_platform_admin),
     );
 
     return clubProfiles.map((p) => {
       const mem = membershipMap.get(p.id);
       const roleRecord = (mem?.membership_roles as any[])?.[0]?.roles;
-      const roleKey = roleRecord?.key || (p.is_platform_admin ? "PRESIDENT" : "GENERAL_MEMBER");
-      const roleName = roleRecord?.name || (p.is_platform_admin ? "Club President (Super Admin)" : "General Member");
+      const roleKey =
+        roleRecord?.key ||
+        (p.is_platform_admin ? "PRESIDENT" : "GENERAL_MEMBER");
+      const roleName =
+        roleRecord?.name ||
+        (p.is_platform_admin
+          ? "Club President (Super Admin)"
+          : "General Member");
 
-      let status = (mem?.membership_status || p.status || "ACTIVE") as MemberDTO["status"];
+      let status = (mem?.membership_status ||
+        p.status ||
+        "ACTIVE") as MemberDTO["status"];
       if (p.status === "PENDING" || (status as string) === "PROSPECTIVE") {
         status = "PENDING";
       }

@@ -1,4 +1,5 @@
-export type InitiativeStatus = "PROPOSED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+export type InitiativeStatus =
+  "PROPOSED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
 
 export type PartnershipType =
   | "SISTER_CLUB_MOA"
@@ -11,6 +12,9 @@ export type ClubPartnershipStatus = "ACTIVE" | "PENDING_MOA" | "INACTIVE";
 export interface StoredInitiative {
   id: string;
   sisterClubId: string;
+  source?: "LEGACY" | "ACTIVITY";
+  activityId?: string;
+  partnerName?: string;
   title: string;
   description: string;
   jointVolunteers: number;

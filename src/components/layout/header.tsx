@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import {
   Menu,
   LogOut,
@@ -14,6 +15,7 @@ import {
   Bookmark,
   Receipt,
   CheckSquare,
+  UserRound,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { isModuleAllowed } from "@/lib/data/role-permissions-types";
@@ -21,6 +23,7 @@ import { NotificationBell } from "@/components/layout/notification-bell";
 import { useRouter } from "next/navigation";
 
 export interface HeaderProps {
+  userId?: string;
   userEmail?: string;
   userFullName?: string;
   onMobileMenuToggle?: () => void;
@@ -32,6 +35,7 @@ export interface HeaderProps {
 }
 
 export function Header({
+  userId,
   userEmail,
   userFullName = "Member",
   onMobileMenuToggle,
@@ -51,14 +55,22 @@ export function Header({
   }, []);
 
   const permSet = new Set(permissions);
-  const hasPage = (page: string) => isPlatformAdmin || isModuleAllowed(allowedPages, page);
+  const hasPage = (page: string) =>
+    isPlatformAdmin || isModuleAllowed(allowedPages, page);
   const hasPerm = (perm: string) => isPlatformAdmin || permSet.has(perm);
 
   const canCreateEvent = hasPage("project-center") && hasPerm("EVENT_CREATE");
-  const canCreateProject = hasPage("project-center") && hasPerm("PROJECT_CREATE");
-  const canAddProspect = hasPage("recruitment") && (hasPerm("RECRUITMENT_MANAGE") || hasPerm("MEMBER_CREATE"));
+  const canCreateProject =
+    hasPage("project-center") && hasPerm("PROJECT_CREATE");
+  const canAddProspect =
+    hasPage("recruitment") &&
+    (hasPerm("RECRUITMENT_MANAGE") || hasPerm("MEMBER_CREATE"));
   const canAddResource = hasPage("resources") && hasPerm("SETTINGS_MANAGE");
-  const canRecordPayment = hasPage("treasury") && (hasPerm("PAYMENT_SUBMIT") || hasPerm("TREASURY_VIEW") || hasPerm("LEDGER_ADJUST"));
+  const canRecordPayment =
+    hasPage("treasury") &&
+    (hasPerm("PAYMENT_SUBMIT") ||
+      hasPerm("TREASURY_VIEW") ||
+      hasPerm("LEDGER_ADJUST"));
   const canAssignTask = hasPage("project-center") && hasPerm("ROLE_ASSIGN");
 
   const hasAnyCreateAction =
@@ -159,7 +171,9 @@ export function Header({
                 </p>
                 {canCreateEvent && (
                   <button
-                    onClick={() => handleNavigate("/project-center/new?kind=MEETING")}
+                    onClick={() =>
+                      handleNavigate("/project-center/new?kind=MEETING")
+                    }
                     className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-[#111625] dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition"
                   >
                     <Calendar className="w-4 h-4 text-[#0D3594] dark:text-blue-400" />
@@ -168,7 +182,9 @@ export function Header({
                 )}
                 {canCreateProject && (
                   <button
-                    onClick={() => handleNavigate("/project-center/new?kind=SERVICE_PROJECT")}
+                    onClick={() =>
+                      handleNavigate("/project-center/new?kind=SERVICE_PROJECT")
+                    }
                     className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-[#111625] dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition"
                   >
                     <FolderKanban className="w-4 h-4 text-[#17A863]" />
@@ -224,7 +240,11 @@ export function Header({
           className="p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
           aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
         >
-          {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-600" />}
+          {isDark ? (
+            <Sun className="w-4 h-4 text-amber-400" />
+          ) : (
+            <Moon className="w-4 h-4 text-slate-600" />
+          )}
         </button>
 
         <NotificationBell />
@@ -241,17 +261,35 @@ export function Header({
               {userFullName.charAt(0).toUpperCase()}
             </div>
             <div className="text-left hidden md:block pr-1">
-              <p className="text-xs font-semibold text-[#111625] dark:text-white leading-tight">{userFullName}</p>
-              <p className="text-[11px] text-[#8E95A5] leading-tight truncate max-w-[120px]">{userEmail}</p>
+              <p className="text-xs font-semibold text-[#111625] dark:text-white leading-tight">
+                {userFullName}
+              </p>
+              <p className="text-[11px] text-[#8E95A5] leading-tight truncate max-w-[120px]">
+                {userEmail}
+              </p>
             </div>
           </button>
 
           {dropdownOpen && (
             <div className="absolute right-0 mt-2 w-52 bg-white dark:bg-[#161B26] border border-[#EDEDF2] dark:border-slate-800 rounded-2xl elevation-popover py-1.5 z-50">
               <div className="px-4 py-2 border-b border-[#EDEDF2] dark:border-slate-800 md:hidden">
-                <p className="text-xs font-semibold text-[#111625] dark:text-white">{userFullName}</p>
-                <p className="text-[10px] text-[#8E95A5] truncate">{userEmail}</p>
+                <p className="text-xs font-semibold text-[#111625] dark:text-white">
+                  {userFullName}
+                </p>
+                <p className="text-[10px] text-[#8E95A5] truncate">
+                  {userEmail}
+                </p>
               </div>
+              {userId && (
+                <Link
+                  href={`/members/${encodeURIComponent(userId)}`}
+                  onClick={() => setDropdownOpen(false)}
+                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-medium text-[#111625] dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+                >
+                  <UserRound className="w-4 h-4" />
+                  My Profile
+                </Link>
+              )}
               <button
                 onClick={handleSignOut}
                 className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-medium text-[#E54335] hover:bg-[#FEECEB]/60 dark:hover:bg-rose-950/30 transition text-left cursor-pointer"
@@ -266,4 +304,3 @@ export function Header({
     </header>
   );
 }
-

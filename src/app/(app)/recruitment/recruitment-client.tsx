@@ -1,21 +1,41 @@
 "use client";
 
 import React, { useState, useTransition } from "react";
-import { ONBOARDING_STAGES, ONBOARDING_STAGE_LABELS, OnboardingStage } from "@/lib/services/workflows/onboarding";
+import {
+  ONBOARDING_STAGES,
+  ONBOARDING_STAGE_LABELS,
+  OnboardingStage,
+} from "@/lib/services/workflows/onboarding";
 import { StatusBadge } from "@/components/shared/badge";
-import { UserPlus, ArrowRight, CheckCircle2, Phone, Mail, Plus, X, UserCheck } from "lucide-react";
-import { createProspectAction, updateProspectStageAction, inductProspectToMemberAction } from "@/features/recruitment/actions";
+import {
+  UserPlus,
+  ArrowRight,
+  CheckCircle2,
+  Phone,
+  Mail,
+  Plus,
+  X,
+  UserCheck,
+} from "lucide-react";
+import {
+  createProspectAction,
+  updateProspectStageAction,
+  inductProspectToMemberAction,
+} from "@/features/recruitment/actions";
 import { ProspectDTO } from "@/features/recruitment/queries";
+import { notifyToast } from "@/components/shared/toast-viewport";
 
 interface RecruitmentClientProps {
   initialProspects: ProspectDTO[];
   canManage?: boolean;
 }
 
-export function RecruitmentClient({ initialProspects, canManage = false }: RecruitmentClientProps) {
+export function RecruitmentClient({
+  initialProspects,
+  canManage = false,
+}: RecruitmentClientProps) {
   const [prospects, setProspects] = useState<ProspectDTO[]>(initialProspects);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [notification, setNotification] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const [newName, setNewName] = useState("");
@@ -32,32 +52,58 @@ export function RecruitmentClient({ initialProspects, canManage = false }: Recru
       }
 
       setProspects((prev) =>
-        prev.map((p) => (p.id === id ? { ...p, stage: newStage } : p))
+        prev.map((p) => (p.id === id ? { ...p, stage: newStage } : p)),
       );
-      setNotification(`Prospect stage updated to: ${ONBOARDING_STAGE_LABELS[newStage]} in Supabase`);
-      setTimeout(() => setNotification(null), 3000);
+      notifyToast({
+        message: `Prospect stage updated to ${ONBOARDING_STAGE_LABELS[newStage]}.`,
+        kind: "success",
+      });
     });
   }
 
   function handleInduct(id: string, name: string) {
-    if (!confirm(`Are you ready to officially induct ${name} and activate their official Club Member account?`)) {
+    if (
+      !confirm(
+        `Are you ready to officially induct ${name} and activate their official Club Member account?`,
+      )
+    ) {
       return;
     }
-    const rotaryId = window.prompt(`Enter ${name}'s Rotary ID to complete induction:`);
+    const rotaryId = window.prompt(
+      `Enter ${name}'s Rotary ID to complete induction:`,
+    );
     if (!rotaryId?.trim()) return;
     startTransition(async () => {
       try {
-        const res = await inductProspectToMemberAction(id, undefined, rotaryId.trim());
+        const res = await inductProspectToMemberAction(
+          id,
+          undefined,
+          rotaryId.trim(),
+        );
         if (res.success) {
           setProspects((prev) =>
-            prev.map((p) => (p.id === id ? { ...p, stage: "INDUCTED" as any } : p))
+            prev.map((p) =>
+              p.id === id ? { ...p, stage: "INDUCTED" as any } : p,
+            ),
           );
-          setNotification(res.message || `${name} inducted and activated in Members!`);
-        } else alert(res.error || "Failed to induct member");
+          notifyToast({
+            message:
+              res.message || `${name} inducted and activated in Members.`,
+            kind: "success",
+          });
+        } else
+          notifyToast({
+            title: "Induction failed",
+            message: res.error || "Failed to induct member.",
+            kind: "error",
+          });
       } catch (err: any) {
-        alert(err?.message || "Failed to induct member");
+        notifyToast({
+          title: "Induction failed",
+          message: err?.message || "Failed to induct member.",
+          kind: "error",
+        });
       }
-      setTimeout(() => setNotification(null), 5000);
     });
   }
 
@@ -94,8 +140,10 @@ export function RecruitmentClient({ initialProspects, canManage = false }: Recru
       setNewPhone("");
       setNewNotes("");
       setShowAddModal(false);
-      setNotification(`Prospect ${newName} registered in Supabase recruitment pipeline.`);
-      setTimeout(() => setNotification(null), 4000);
+      notifyToast({
+        message: `Prospect ${newName} registered in the Recruitment CRM.`,
+        kind: "success",
+      });
     });
   }
 
@@ -122,16 +170,16 @@ export function RecruitmentClient({ initialProspects, canManage = false }: Recru
         )}
       </div>
 
-      {notification && (
-        <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-medium flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 shrink-0" />
-          <span>{notification}</span>
-        </div>
-      )}
-
       {/* Pipeline Board */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {(["PROSPECT", "ATTENDED_ORIENTATION", "ATTENDED_FIRST_SERVICE_PROJECT", "READY_FOR_INDUCTION"] as OnboardingStage[]).map((stage) => {
+        {(
+          [
+            "PROSPECT",
+            "ATTENDED_ORIENTATION",
+            "ATTENDED_FIRST_SERVICE_PROJECT",
+            "READY_FOR_INDUCTION",
+          ] as OnboardingStage[]
+        ).map((stage) => {
           const stageProspects = prospects.filter((p) => p.stage === stage);
           return (
             <div
@@ -178,11 +226,18 @@ export function RecruitmentClient({ initialProspects, canManage = false }: Recru
 
                     {/* Accessible Stage Change Dropdown */}
                     <div className="mt-3 pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between">
-                      <span className="text-[10px] text-slate-400 uppercase font-semibold">Move:</span>
+                      <span className="text-[10px] text-slate-400 uppercase font-semibold">
+                        Move:
+                      </span>
                       <select
                         value={prospect.stage}
                         disabled={isPending}
-                        onChange={(e) => handleStageChange(prospect.id, e.target.value as OnboardingStage)}
+                        onChange={(e) =>
+                          handleStageChange(
+                            prospect.id,
+                            e.target.value as OnboardingStage,
+                          )
+                        }
                         aria-label={`Move stage for ${prospect.name}`}
                         className="text-[11px] font-semibold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-1.5 py-1 text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-rose-500 cursor-pointer disabled:opacity-50"
                       >

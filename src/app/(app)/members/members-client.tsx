@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { StatusBadge } from "@/components/shared/badge";
 import {
   Users,
@@ -31,8 +32,12 @@ import {
 } from "@/features/members/actions";
 import { MemberDTO } from "@/features/members/queries";
 import { CurrentUserContext } from "@/lib/auth/session";
+import { notifyToast } from "@/components/shared/toast-viewport";
 
-export const ROLE_AUTHORITY_INFO: Record<string, { label: string; permissions: string[]; restrictions: string[] }> = {
+export const ROLE_AUTHORITY_INFO: Record<
+  string,
+  { label: string; permissions: string[]; restrictions: string[] }
+> = {
   PRESIDENT: {
     label: "Club President",
     permissions: [
@@ -83,7 +88,10 @@ export const ROLE_AUTHORITY_INFO: Record<string, { label: string; permissions: s
       "Submit project accomplishment reports & SDG logs",
       "Issue volunteer certificates",
     ],
-    restrictions: ["Cannot approve own budget proposal", "Cannot verify payment proofs"],
+    restrictions: [
+      "Cannot approve own budget proposal",
+      "Cannot verify payment proofs",
+    ],
   },
   MEMBERSHIP_CHAIR: {
     label: "Membership Chair",
@@ -143,11 +151,16 @@ interface MembersClientProps {
   permissions?: MemberPermissions;
 }
 
-export function MembersClient({ initialMembers, currentUser, permissions }: MembersClientProps) {
+export function MembersClient({
+  initialMembers,
+  currentUser,
+  permissions,
+}: MembersClientProps) {
   const [members, setMembers] = useState<MemberDTO[]>(initialMembers);
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"ALL" | "ACTIVE" | "ASPIRANT" | "PENDING">("ALL");
-  const [notification, setNotification] = useState<string | null>(null);
+  const [filter, setFilter] = useState<
+    "ALL" | "ACTIVE" | "ASPIRANT" | "PENDING"
+  >("ALL");
   const [showAddModal, setShowAddModal] = useState(false);
   const [showMatrixModal, setShowMatrixModal] = useState(false);
 
@@ -169,42 +182,83 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
   const canCreate = isSuperAdmin || (permissions?.canCreate ?? false);
   const canUpdate = isSuperAdmin || (permissions?.canUpdate ?? false);
   const canAssignRole = isSuperAdmin || (permissions?.canAssignRole ?? false);
-  const canManageSettings = isSuperAdmin || (permissions?.canManageSettings ?? false);
+  const canManageSettings =
+    isSuperAdmin || (permissions?.canManageSettings ?? false);
 
   async function handleApprove(id: string) {
-    const rotaryId = window.prompt("Enter the member's Rotary ID to approve full membership:");
+    const rotaryId = window.prompt(
+      "Enter the member's Rotary ID to approve full membership:",
+    );
     if (!rotaryId?.trim()) return;
     try {
       const res = await approveMemberAction(id, undefined, rotaryId.trim());
       if (!res.success) {
-        setNotification(res.error || "Could not approve this member.");
+        notifyToast({
+          title: "Approval failed",
+          message: res.error || "Could not approve this member.",
+          kind: "error",
+        });
         return;
       }
       setMembers((prev) =>
         prev.map((m) =>
-          m.id === id ? { ...m, status: "ACTIVE", rotaryId: rotaryId.trim(), role: "General Member" } : m
-        )
+          m.id === id
+            ? {
+                ...m,
+                status: "ACTIVE",
+                rotaryId: rotaryId.trim(),
+                role: "General Member",
+              }
+            : m,
+        ),
       );
-      setNotification(res.message || "Member account approved.");
+      notifyToast({
+        message: res.message || "Member account approved.",
+        kind: "success",
+      });
     } catch (error) {
-      setNotification(error instanceof Error ? error.message : "Could not approve this member.");
+      notifyToast({
+        title: "Approval failed",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Could not approve this member.",
+        kind: "error",
+      });
     }
-    setTimeout(() => setNotification(null), 4000);
   }
 
   async function handleApproveAspirant(id: string) {
     try {
       const res = await approveAspirantMemberAction(id);
       if (!res.success) {
-        setNotification(res.error || "Could not approve as an aspirant.");
+        notifyToast({
+          title: "Approval failed",
+          message: res.error || "Could not approve as an aspirant.",
+          kind: "error",
+        });
         return;
       }
-      setMembers((prev) => prev.map((m) => m.id === id ? { ...m, status: "ASPIRANT", rotaryId: undefined } : m));
-      setNotification(res.message || "Aspirant approved and linked to Recruitment CRM.");
+      setMembers((prev) =>
+        prev.map((m) =>
+          m.id === id ? { ...m, status: "ASPIRANT", rotaryId: undefined } : m,
+        ),
+      );
+      notifyToast({
+        message:
+          res.message || "Aspirant approved and linked to Recruitment CRM.",
+        kind: "success",
+      });
     } catch (error) {
-      setNotification(error instanceof Error ? error.message : "Could not approve as an aspirant.");
+      notifyToast({
+        title: "Approval failed",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Could not approve as an aspirant.",
+        kind: "error",
+      });
     }
-    setTimeout(() => setNotification(null), 4000);
   }
 
   async function handleReject(id: string) {
@@ -214,8 +268,7 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
       // Demo fallback
     }
     setMembers((prev) => prev.filter((m) => m.id !== id));
-    setNotification("Account request declined.");
-    setTimeout(() => setNotification(null), 4000);
+    notifyToast({ message: "Account request declined.", kind: "success" });
   }
 
   async function handleCreateMember(e: React.FormEvent<HTMLFormElement>) {
@@ -226,7 +279,10 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
     try {
       const res = await createMemberAction(formData);
       if (res.success) {
-        setNotification(res.message || "Member created successfully in database");
+        notifyToast({
+          message: res.message || "Member created successfully.",
+          kind: "success",
+        });
         const newMember: MemberDTO = {
           id: `m-${Date.now()}`,
           name: formData.get("fullName") as string,
@@ -242,13 +298,20 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
         setMembers((prev) => [newMember, ...prev]);
         setShowAddModal(false);
       } else {
-        alert(res.error || "Failed to create member");
+        notifyToast({
+          title: "Member not created",
+          message: res.error || "Failed to create member.",
+          kind: "error",
+        });
       }
     } catch (err: any) {
-      alert(err?.message || "Failed to create member");
+      notifyToast({
+        title: "Member not created",
+        message: err?.message || "Failed to create member.",
+        kind: "error",
+      });
     } finally {
       setIsSubmitting(false);
-      setTimeout(() => setNotification(null), 4000);
     }
   }
 
@@ -278,7 +341,10 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
 
     try {
       const res = await updateMemberRoleAction(formData);
-      setNotification(res.message || "Member record updated in backend successfully.");
+      notifyToast({
+        message: res.message || "Member record updated.",
+        kind: "success",
+      });
       setMembers((prev) =>
         prev.map((m) =>
           m.id === editingMember.id
@@ -287,26 +353,37 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
                 name: editFullName,
                 classification: editClassification,
                 rotaryId: editRotaryId || undefined,
-                role: ROLE_AUTHORITY_INFO[editRoleKey]?.label || editRoleKey.replace(/_/g, " "),
+                role:
+                  ROLE_AUTHORITY_INFO[editRoleKey]?.label ||
+                  editRoleKey.replace(/_/g, " "),
                 roleKey: editRoleKey,
                 status: editStatus as any,
                 isPlatformAdmin: editIsPlatformAdmin,
               }
-            : m
-        )
+            : m,
+        ),
       );
       setEditingMember(null);
     } catch (err: any) {
-      alert(err?.message || "Failed to update member in database");
+      notifyToast({
+        title: "Member not updated",
+        message: err?.message || "Failed to update member.",
+        kind: "error",
+      });
     } finally {
       setIsSubmitting(false);
-      setTimeout(() => setNotification(null), 4000);
     }
   }
 
   const filteredMembers = members.filter((m) => {
     const matchesFilter =
-      filter === "ALL" ? true : filter === "ACTIVE" ? m.status === "ACTIVE" : filter === "ASPIRANT" ? m.status === "ASPIRANT" : m.status === "PENDING";
+      filter === "ALL"
+        ? true
+        : filter === "ACTIVE"
+          ? m.status === "ACTIVE"
+          : filter === "ASPIRANT"
+            ? m.status === "ASPIRANT"
+            : m.status === "PENDING";
     const matchesSearch =
       m.name.toLowerCase().includes(search.toLowerCase()) ||
       m.classification.toLowerCase().includes(search.toLowerCase()) ||
@@ -316,7 +393,10 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
   });
 
   const totalPages = Math.ceil(filteredMembers.length / pageSize) || 1;
-  const paginatedMembers = filteredMembers.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const paginatedMembers = filteredMembers.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize,
+  );
 
   const pendingApprovals = members.filter((m) => m.status === "PENDING");
   const activeCount = members.filter((m) => m.status === "ACTIVE").length;
@@ -338,7 +418,8 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
             )}
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Real Supabase roster management, membership classifications & RBAC permission controls
+            Real Supabase roster management, membership classifications & RBAC
+            permission controls
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -363,26 +444,29 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
         </div>
       </div>
 
-      {notification && (
-        <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-medium flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 shrink-0" />
-          <span>{notification}</span>
-        </div>
-      )}
-
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs">
-          <p className="text-xs font-semibold text-slate-400">Total Inducted Members</p>
-          <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-2">{activeCount}</h3>
+          <p className="text-xs font-semibold text-slate-400">
+            Total Inducted Members
+          </p>
+          <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-2">
+            {activeCount}
+          </h3>
           <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1 font-medium">
             Active in Supabase database
           </p>
         </div>
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs">
-          <p className="text-xs font-semibold text-amber-500">Pending Registrations</p>
-          <h3 className="text-2xl font-bold text-amber-500 mt-2">{pendingApprovals.length}</h3>
-          <p className="text-[11px] text-slate-400 mt-1">Awaiting Super Admin / Officer approval</p>
+          <p className="text-xs font-semibold text-amber-500">
+            Pending Registrations
+          </p>
+          <h3 className="text-2xl font-bold text-amber-500 mt-2">
+            {pendingApprovals.length}
+          </h3>
+          <p className="text-[11px] text-slate-400 mt-1">
+            Awaiting Super Admin / Officer approval
+          </p>
         </div>
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs">
           <p className="text-xs font-semibold text-slate-400">Your Account</p>
@@ -390,7 +474,9 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
             {currentUser?.fullName || currentUser?.email || "Super Admin"}
           </h3>
           <p className="text-[11px] text-rose-600 dark:text-rose-400 mt-1 font-medium">
-            {currentUser?.isPlatformAdmin ? "Super Admin (Full Edit Access)" : "Club Officer"}
+            {currentUser?.isPlatformAdmin
+              ? "Super Admin (Full Edit Access)"
+              : "Club Officer"}
           </p>
         </div>
       </div>
@@ -401,7 +487,8 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
           <div className="flex items-center gap-2 mb-3">
             <Clock className="w-4 h-4 text-amber-500" />
             <h3 className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
-              Pending Registrations Awaiting Verification ({pendingApprovals.length})
+              Pending Registrations Awaiting Verification (
+              {pendingApprovals.length})
             </h3>
           </div>
           <div className="space-y-2">
@@ -412,7 +499,9 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
               >
                 <div>
                   <div className="flex items-center gap-2">
-                    <p className="text-xs font-bold text-slate-900 dark:text-slate-100">{pending.name}</p>
+                    <p className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                      {pending.name}
+                    </p>
                     <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
                       PENDING APPROVAL
                     </span>
@@ -424,7 +513,9 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
                     )}
                   </div>
                   <p className="text-xs text-slate-500">{pending.email}</p>
-                  <p className="text-[11px] text-slate-400 mt-0.5">Classification: {pending.classification}</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Classification: {pending.classification}
+                  </p>
                 </div>
                 <div className="flex items-center gap-2">
                   {canAssignRole && (
@@ -498,7 +589,13 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
                     : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
                 }`}
               >
-                {tab === "ALL" ? "All" : tab === "ACTIVE" ? "Active" : tab === "ASPIRANT" ? "Aspirants" : "Pending"}
+                {tab === "ALL"
+                  ? "All"
+                  : tab === "ACTIVE"
+                    ? "Active"
+                    : tab === "ASPIRANT"
+                      ? "Aspirants"
+                      : "Pending"}
               </button>
             ))}
           </div>
@@ -520,10 +617,18 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
               {paginatedMembers.map((member) => (
-                <tr key={member.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition">
+                <tr
+                  key={member.id}
+                  className="hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition"
+                >
                   <td className="py-3.5 px-4">
                     <div className="flex items-center gap-2">
-                      <p className="font-semibold text-slate-900 dark:text-slate-100">{member.name}</p>
+                      <Link
+                        href={`/members/${member.id}`}
+                        className="font-semibold text-slate-900 hover:text-[#0D3594] dark:text-slate-100 dark:hover:text-blue-300"
+                      >
+                        {member.name}
+                      </Link>
                       {member.isPlatformAdmin && (
                         <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300">
                           <Crown className="w-2.5 h-2.5" />
@@ -557,7 +662,7 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
                     {member.joinedDate}
                   </td>
                   <td className="py-3.5 px-4 text-right">
-                    {(canUpdate || canAssignRole) ? (
+                    {canUpdate || canAssignRole ? (
                       <button
                         onClick={() => openEditModal(member)}
                         className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 transition cursor-pointer"
@@ -573,7 +678,10 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
               ))}
               {paginatedMembers.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="text-center py-8 text-slate-400 italic">
+                  <td
+                    colSpan={7}
+                    className="text-center py-8 text-slate-400 italic"
+                  >
                     No members match the current filter or search criteria.
                   </td>
                 </tr>
@@ -587,7 +695,8 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
           <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
             <span>
               Showing {(currentPage - 1) * pageSize + 1} to{" "}
-              {Math.min(currentPage * pageSize, filteredMembers.length)} of {filteredMembers.length} members
+              {Math.min(currentPage * pageSize, filteredMembers.length)} of{" "}
+              {filteredMembers.length} members
             </span>
             <div className="flex items-center gap-1">
               <button
@@ -625,7 +734,10 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
                   Edit Member & Authority Permissions
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Account: <span className="font-semibold text-slate-900 dark:text-slate-100">{editingMember.email}</span>
+                  Account:{" "}
+                  <span className="font-semibold text-slate-900 dark:text-slate-100">
+                    {editingMember.email}
+                  </span>
                 </p>
               </div>
               <button
@@ -687,14 +799,24 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
                     onChange={(e) => setEditRoleKey(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500 font-medium cursor-pointer"
                   >
-                    <option value="PRESIDENT">Club President (Executive)</option>
+                    <option value="PRESIDENT">
+                      Club President (Executive)
+                    </option>
                     <option value="VICE_PRESIDENT">Vice President</option>
                     <option value="SECRETARY">Secretary (Records & QR)</option>
-                    <option value="TREASURER">Treasurer (Dues & Ledgers)</option>
-                    <option value="PROJECT_CHAIR">Project Chair (Service & Budgets)</option>
-                    <option value="MEMBERSHIP_CHAIR">Membership Chair (CRM)</option>
+                    <option value="TREASURER">
+                      Treasurer (Dues & Ledgers)
+                    </option>
+                    <option value="PROJECT_CHAIR">
+                      Project Chair (Service & Budgets)
+                    </option>
+                    <option value="MEMBERSHIP_CHAIR">
+                      Membership Chair (CRM)
+                    </option>
                     <option value="BOARD_OFFICER">Board Officer</option>
-                    <option value="GENERAL_MEMBER">General Member (Voting/Volunteer)</option>
+                    <option value="GENERAL_MEMBER">
+                      General Member (Voting/Volunteer)
+                    </option>
                     <option value="AUDITOR">Auditor (Inspection Only)</option>
                   </select>
                 </div>
@@ -710,7 +832,9 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
                   >
                     <option value="ACTIVE">ACTIVE (Full Member)</option>
                     <option value="PENDING">PENDING (Awaiting Review)</option>
-                    <option value="PROBATIONARY">PROBATIONARY (Inductee)</option>
+                    <option value="PROBATIONARY">
+                      PROBATIONARY (Inductee)
+                    </option>
                     <option value="INACTIVE">INACTIVE / SUSPENDED</option>
                     <option value="ALUMNI">ALUMNI / HONORARY</option>
                   </select>
@@ -726,7 +850,8 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
                       Platform Administrator (Super Admin)
                     </p>
                     <p className="text-[11px] text-rose-600/80 dark:text-rose-400">
-                      Grants cross-club platform administration & root authority.
+                      Grants cross-club platform administration & root
+                      authority.
                     </p>
                   </div>
                   <input
@@ -743,9 +868,12 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
                 <div className="flex items-center justify-between pb-2 border-b border-slate-200/60 dark:border-slate-700">
                   <span className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
                     <Key className="w-3.5 h-3.5 text-rose-500" />
-                    Role Privileges: {ROLE_AUTHORITY_INFO[editRoleKey]?.label || editRoleKey}
+                    Role Privileges:{" "}
+                    {ROLE_AUTHORITY_INFO[editRoleKey]?.label || editRoleKey}
                   </span>
-                  <span className="text-[10px] uppercase font-bold text-slate-400">Rotary RBAC</span>
+                  <span className="text-[10px] uppercase font-bold text-slate-400">
+                    Rotary RBAC
+                  </span>
                 </div>
 
                 <div className="space-y-1">
@@ -753,12 +881,14 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
                     Granted Capabilities:
                   </p>
                   <ul className="space-y-1 text-[11px] text-slate-600 dark:text-slate-300">
-                    {ROLE_AUTHORITY_INFO[editRoleKey]?.permissions.map((p, idx) => (
-                      <li key={idx} className="flex items-center gap-1.5">
-                        <Check className="w-3 h-3 text-emerald-500 shrink-0" />
-                        <span>{p}</span>
-                      </li>
-                    ))}
+                    {ROLE_AUTHORITY_INFO[editRoleKey]?.permissions.map(
+                      (p, idx) => (
+                        <li key={idx} className="flex items-center gap-1.5">
+                          <Check className="w-3 h-3 text-emerald-500 shrink-0" />
+                          <span>{p}</span>
+                        </li>
+                      ),
+                    )}
                   </ul>
                 </div>
 
@@ -767,12 +897,14 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
                     Strict Authority Restrictions:
                   </p>
                   <ul className="space-y-1 text-[11px] text-slate-500 dark:text-slate-400">
-                    {ROLE_AUTHORITY_INFO[editRoleKey]?.restrictions.map((r, idx) => (
-                      <li key={idx} className="flex items-center gap-1.5">
-                        <AlertTriangle className="w-3 h-3 text-rose-500 shrink-0" />
-                        <span>{r}</span>
-                      </li>
-                    ))}
+                    {ROLE_AUTHORITY_INFO[editRoleKey]?.restrictions.map(
+                      (r, idx) => (
+                        <li key={idx} className="flex items-center gap-1.5">
+                          <AlertTriangle className="w-3 h-3 text-rose-500 shrink-0" />
+                          <span>{r}</span>
+                        </li>
+                      ),
+                    )}
                   </ul>
                 </div>
               </div>
@@ -790,7 +922,9 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
                   disabled={isSubmitting}
                   className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs shadow-xs disabled:opacity-50 cursor-pointer"
                 >
-                  {isSubmitting ? "Saving Changes..." : "Save Member & Authority"}
+                  {isSubmitting
+                    ? "Saving Changes..."
+                    : "Save Member & Authority"}
                 </button>
               </div>
             </form>
@@ -809,7 +943,8 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
                   Rotary Club Authority Matrix & Separation of Duties
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Internal control policy: Members cannot approve budgets, decline registrations, or verify payments.
+                  Internal control policy: Members cannot approve budgets,
+                  decline registrations, or verify payments.
                 </p>
               </div>
               <button
@@ -827,8 +962,12 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
                   className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40"
                 >
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="font-bold text-xs text-slate-900 dark:text-slate-100">{info.label}</span>
-                    <span className="font-mono text-[10px] text-slate-400 font-semibold">{key}</span>
+                    <span className="font-bold text-xs text-slate-900 dark:text-slate-100">
+                      {info.label}
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-400 font-semibold">
+                      {key}
+                    </span>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] mt-2">
                     <div className="text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 p-2 rounded-lg">

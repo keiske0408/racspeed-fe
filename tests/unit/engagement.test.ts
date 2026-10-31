@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { evaluateMemberEngagement, AttendanceRecordLike } from "@/lib/services/engagement";
+import {
+  evaluateMemberEngagement,
+  AttendanceRecordLike,
+} from "@/lib/services/engagement";
 
 describe("Engagement Scoring and Retention Rules", () => {
   const refDate = new Date("2026-10-20T12:00:00Z");
@@ -40,8 +43,13 @@ describe("Engagement Scoring and Retention Rules", () => {
 
     const result = evaluateMemberEngagement(records, refDate);
     expect(result.isFlagged).toBe(true);
-    expect(result.rulesTriggered.some((r) => r.rule === "MISSED_CONSECUTIVE_GAS")).toBe(true);
-    expect(result.rulesTriggered.find((r) => r.rule === "MISSED_CONSECUTIVE_GAS")?.supportingDates).toHaveLength(3);
+    expect(
+      result.rulesTriggered.some((r) => r.rule === "MISSED_CONSECUTIVE_GAS"),
+    ).toBe(true);
+    expect(
+      result.rulesTriggered.find((r) => r.rule === "MISSED_CONSECUTIVE_GAS")
+        ?.supportingDates,
+    ).toHaveLength(3);
   });
 
   it("does not count excused absences as missed GAs", () => {
@@ -81,7 +89,9 @@ describe("Engagement Scoring and Retention Rules", () => {
 
     const result = evaluateMemberEngagement(records, refDate);
     // Only 2 unexcused misses, so not flagged for consecutive misses
-    expect(result.rulesTriggered.some((r) => r.rule === "MISSED_CONSECUTIVE_GAS")).toBe(false);
+    expect(
+      result.rulesTriggered.some((r) => r.rule === "MISSED_CONSECUTIVE_GAS"),
+    ).toBe(false);
   });
 
   it("flags member with no qualifying service project in >60 days", () => {
@@ -102,7 +112,9 @@ describe("Engagement Scoring and Retention Rules", () => {
 
     const result = evaluateMemberEngagement(records, refDate);
     expect(result.isFlagged).toBe(true);
-    expect(result.rulesTriggered.some((r) => r.rule === "SERVICE_INACTIVITY")).toBe(true);
+    expect(
+      result.rulesTriggered.some((r) => r.rule === "SERVICE_INACTIVITY"),
+    ).toBe(true);
   });
 
   it("flags repeated service project no-shows after an RSVP marked Going", () => {
@@ -124,6 +136,8 @@ describe("Engagement Scoring and Retention Rules", () => {
     ];
 
     const result = evaluateMemberEngagement(records, refDate);
-    expect(result.rulesTriggered.some((rule) => rule.rule === "RSVP_NO_SHOWS")).toBe(true);
+    expect(
+      result.rulesTriggered.some((rule) => rule.rule === "RSVP_NO_SHOWS"),
+    ).toBe(true);
   });
 });

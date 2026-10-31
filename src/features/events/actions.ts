@@ -4,16 +4,22 @@ import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireUser, assertPermission } from "@/lib/auth/session";
 
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DEFAULT_CLUB_ID = "00000000-0000-0000-0000-000000000001";
 
 export async function startQrAttendanceSessionAction(eventId: string) {
   const user = await requireUser();
   if (eventId && UUID_REGEX.test(eventId)) {
     const admin = createAdminClient();
-    const { data: activity } = await admin.from("activities").select("id").eq("id", eventId).maybeSingle();
+    const { data: activity } = await admin
+      .from("activities")
+      .select("id")
+      .eq("id", eventId)
+      .maybeSingle();
     if (activity) {
-      const { startActivityQrSessionAction } = await import("@/features/activities/actions");
+      const { startActivityQrSessionAction } =
+        await import("@/features/activities/actions");
       return startActivityQrSessionAction(eventId);
     }
   }
@@ -31,13 +37,24 @@ export async function startQrAttendanceSessionAction(eventId: string) {
 
   const { data: eventData } = await adminClient
     .from("events")
-    .select("host_club_id")
+    .select("host_club_id, end_time")
     .eq("id", eventId)
     .maybeSingle();
 
+  if (
+    eventData?.end_time &&
+    new Date(eventData.end_time).getTime() < Date.now()
+  ) {
+    return {
+      success: false,
+      error: "This event has ended and is now archived.",
+    };
+  }
+
   const clubId =
     eventData?.host_club_id ||
-    (process.env.NEXT_PUBLIC_DEFAULT_CLUB_ID && UUID_REGEX.test(process.env.NEXT_PUBLIC_DEFAULT_CLUB_ID)
+    (process.env.NEXT_PUBLIC_DEFAULT_CLUB_ID &&
+    UUID_REGEX.test(process.env.NEXT_PUBLIC_DEFAULT_CLUB_ID)
       ? process.env.NEXT_PUBLIC_DEFAULT_CLUB_ID
       : DEFAULT_CLUB_ID);
   await assertPermission(clubId, "ATTENDANCE_MANAGE");
@@ -89,7 +106,10 @@ export async function startQrAttendanceSessionAction(eventId: string) {
     .single();
 
   if (error) {
-    return { success: false, error: `Failed to generate QR session: ${error.message}` };
+    return {
+      success: false,
+      error: `Failed to generate QR session: ${error.message}`,
+    };
   }
 
   revalidatePath("/events");
@@ -105,4 +125,3 @@ export async function getEventAttendeesAction(eventId: string) {
   const attendees = await getEventAttendees(eventId);
   return { success: true, attendees };
 }
-

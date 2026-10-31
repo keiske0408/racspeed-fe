@@ -3,10 +3,12 @@
 import React, { useState, useEffect } from "react";
 import { Sidebar } from "./sidebar";
 import { Header } from "./header";
+import { ToastViewport } from "@/components/shared/toast-viewport";
 import { X } from "lucide-react";
 
 export interface AppShellProps {
   children: React.ReactNode;
+  userId?: string;
   userEmail?: string;
   userFullName?: string;
   roleLabel?: string;
@@ -17,6 +19,7 @@ export interface AppShellProps {
 
 export function AppShell({
   children,
+  userId,
   userEmail,
   userFullName,
   roleLabel,
@@ -60,7 +63,6 @@ export function AppShell({
         roleLabel={roleLabel}
         allowedPages={allowedPages}
         collapsed={isSidebarCollapsed}
-        onToggleCollapse={toggleSidebarCollapse}
       />
 
       {/* Mobile Drawer */}
@@ -84,7 +86,6 @@ export function AppShell({
             <Sidebar
               className="w-full flex-1 border-r-0"
               onNavigate={() => setMobileMenuOpen(false)}
-              onToggleCollapse={() => setMobileMenuOpen(false)}
               userFullName={userFullName}
               userEmail={userEmail}
               roleLabel={roleLabel}
@@ -98,6 +99,7 @@ export function AppShell({
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <Header
+          userId={userId}
           userEmail={userEmail}
           userFullName={userFullName}
           allowedPages={allowedPages}
@@ -117,6 +119,7 @@ export function AppShell({
           <div className="max-w-7xl mx-auto">{children}</div>
         </main>
       </div>
+      <ToastViewport />
     </div>
   );
 }

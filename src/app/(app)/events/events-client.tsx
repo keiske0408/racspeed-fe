@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import {
+  Calendar,
   QrCode,
   Clock,
   MapPin,
@@ -24,9 +25,13 @@ import {
   Search,
   Award,
   Sparkles,
+  Archive,
+  LayoutGrid,
+  List,
 } from "lucide-react";
 import { formatManilaDate, formatManila } from "@/lib/utils/dates";
 import { createClient } from "@/lib/supabase/client";
+import { notifyToast } from "@/components/shared/toast-viewport";
 import {
   startQrAttendanceSessionAction,
   getEventAttendeesAction,
@@ -49,14 +54,19 @@ export function extractSessionToken(raw: string): string {
   if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
     try {
       const obj = JSON.parse(trimmed);
-      const val = obj.token || obj.sessionToken || obj.session_token || obj.checkInToken;
+      const val =
+        obj.token || obj.sessionToken || obj.session_token || obj.checkInToken;
       if (val) return String(val).trim();
     } catch {}
   }
 
   // 2. If full URL or URL path with query params
   try {
-    if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.includes("?")) {
+    if (
+      trimmed.startsWith("http://") ||
+      trimmed.startsWith("https://") ||
+      trimmed.includes("?")
+    ) {
       const parsed = trimmed.startsWith("http")
         ? new URL(trimmed)
         : new URL(trimmed, "http://localhost");
@@ -69,7 +79,9 @@ export function extractSessionToken(raw: string): string {
   } catch {}
 
   // 3. Query param regex match
-  const match = trimmed.match(/[?&](?:token|sessionToken|checkInToken)=([^&#\s]+)/i);
+  const match = trimmed.match(
+    /[?&](?:token|sessionToken|checkInToken)=([^&#\s]+)/i,
+  );
   if (match) {
     return decodeURIComponent(match[1]).trim();
   }
@@ -103,16 +115,24 @@ export function EventsClient({
   canManageAttendance = false,
 }: EventsClientProps) {
   const [events, setEvents] = useState<EventDTO[]>(initialEvents);
-  const [checkedInEventIds, setCheckedInEventIds] = useState<string[]>(initialCheckedInEventIds);
+  const [eventScope, setEventScope] = useState<"UPCOMING" | "ARCHIVE">(
+    "UPCOMING",
+  );
+  const [eventLayout, setEventLayout] = useState<"GRID" | "TABLE">("GRID");
+  const [checkedInEventIds, setCheckedInEventIds] = useState<string[]>(
+    initialCheckedInEventIds,
+  );
   const [selectedEvent, setSelectedEvent] = useState<EventDTO | null>(null);
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
   const [sessionToken, setSessionToken] = useState<string>("");
   const [secondsRemaining, setSecondsRemaining] = useState<number>(60);
   const [checkInTokenInput, setCheckInTokenInput] = useState(
-    initialToken ? extractSessionToken(initialToken) : ""
+    initialToken ? extractSessionToken(initialToken) : "",
   );
-  const [notification, setNotification] = useState<NotificationState | null>(null);
+  const [notification, setNotification] = useState<NotificationState | null>(
+    null,
+  );
   const [copiedLink, setCopiedLink] = useState(false);
   const hasAutoCheckedInRef = useRef(false);
 
@@ -124,13 +144,22 @@ export function EventsClient({
   const [attendeesSearch, setAttendeesSearch] = useState("");
 
   // Live session attendee feed for Active QR modal
-  const [liveSessionAttendees, setLiveSessionAttendees] = useState<EventAttendeeDTO[]>([]);
+  const [liveSessionAttendees, setLiveSessionAttendees] = useState<
+    EventAttendeeDTO[]
+  >([]);
 
   // Refs for tracking active modal events in realtime
   const selectedEventRef = useRef<EventDTO | null>(null);
   selectedEventRef.current = selectedEvent;
   const inspectingEventRef = useRef<EventDTO | null>(null);
   inspectingEventRef.current = inspectingEvent;
+
+  const nowMs = Date.now();
+  const isArchived = (event: EventDTO) =>
+    new Date(event.endTime).getTime() < nowMs;
+  const visibleEvents = events.filter((event) =>
+    eventScope === "ARCHIVE" ? isArchived(event) : !isArchived(event),
+  );
 
   // In-Browser Camera Scanner States
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -145,6 +174,11 @@ export function EventsClient({
   // Auto-dismiss top floating toast notification after 6 seconds
   useEffect(() => {
     if (!notification) return;
+    notifyToast({
+      title: notification.title,
+      message: notification.message,
+      kind: notification.type,
+    });
     const timer = setTimeout(() => {
       setNotification(null);
     }, 6000);
@@ -168,13 +202,15 @@ export function EventsClient({
                 prev.map((ev) =>
                   ev.id === newRec.event_id
                     ? { ...ev, attendeesCount: (ev.attendeesCount || 0) + 1 }
-                    : ev
-                )
+                    : ev,
+                ),
               );
 
               // If current user was the attendee who checked in
               if (currentUserId && newRec.profile_id === currentUserId) {
-                setCheckedInEventIds((prev) => Array.from(new Set([...prev, newRec.event_id])));
+                setCheckedInEventIds((prev) =>
+                  Array.from(new Set([...prev, newRec.event_id])),
+                );
               }
 
               // If the attendee roster modal or active QR modal is open for this event, refresh attendees
@@ -195,11 +231,12 @@ export function EventsClient({
 
               setNotification({
                 title: "Live Attendance Update",
-                message: "A verified attendee just scanned into the event in real time!",
+                message:
+                  "A verified attendee just scanned into the event in real time!",
                 type: "success",
               });
             }
-          }
+          },
         )
         .subscribe((status: string) => {
           if (status === "SUBSCRIBED") {
@@ -259,7 +296,10 @@ export function EventsClient({
       const { BrowserQRCodeReader } = await import("@zxing/browser");
       const codeReader = new BrowserQRCodeReader();
 
-      if (typeof navigator !== "undefined" && navigator.mediaDevices?.enumerateDevices) {
+      if (
+        typeof navigator !== "undefined" &&
+        navigator.mediaDevices?.enumerateDevices
+      ) {
         try {
           const devices = await navigator.mediaDevices.enumerateDevices();
           const videoInputs = devices.filter((d) => d.kind === "videoinput");
@@ -269,7 +309,7 @@ export function EventsClient({
               (d) =>
                 d.label.toLowerCase().includes("back") ||
                 d.label.toLowerCase().includes("rear") ||
-                d.label.toLowerCase().includes("environment")
+                d.label.toLowerCase().includes("environment"),
             );
             deviceId = backCam ? backCam.deviceId : videoInputs[0].deviceId;
             setSelectedCameraId(deviceId);
@@ -309,7 +349,7 @@ export function EventsClient({
 
                 submitScannedToken(scannedText);
               }
-            }
+            },
           );
           controlsRef.current = controls;
         } catch (videoErr: any) {
@@ -319,11 +359,17 @@ export function EventsClient({
       }, 250);
     } catch (err: any) {
       setIsScanning(false);
-      if (err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError") {
+      if (
+        err?.name === "NotAllowedError" ||
+        err?.name === "PermissionDeniedError"
+      ) {
         setScannerError(
-          "Camera permission denied. Please allow camera access in your browser settings to scan QR codes."
+          "Camera permission denied. Please allow camera access in your browser settings to scan QR codes.",
         );
-      } else if (err?.name === "NotFoundError" || err?.name === "DevicesNotFoundError") {
+      } else if (
+        err?.name === "NotFoundError" ||
+        err?.name === "DevicesNotFoundError"
+      ) {
         setScannerError("No camera device found on this system.");
       } else {
         setScannerError(err?.message || "Failed to initialize camera scanner.");
@@ -373,13 +419,15 @@ export function EventsClient({
       if (response.ok && result.success) {
         const matchedEventId = result.eventId || selectedEvent?.id;
         if (matchedEventId) {
-          setCheckedInEventIds((prev) => Array.from(new Set([...prev, matchedEventId])));
+          setCheckedInEventIds((prev) =>
+            Array.from(new Set([...prev, matchedEventId])),
+          );
           setEvents((prev) =>
             prev.map((ev) =>
               ev.id === matchedEventId
                 ? { ...ev, attendeesCount: (ev.attendeesCount || 0) + 1 }
-                : ev
-            )
+                : ev,
+            ),
           );
         }
 
@@ -396,7 +444,9 @@ export function EventsClient({
       } else if (result.alreadyCheckedIn) {
         const matchedEventId = result.eventId || selectedEvent?.id;
         if (matchedEventId) {
-          setCheckedInEventIds((prev) => Array.from(new Set([...prev, matchedEventId])));
+          setCheckedInEventIds((prev) =>
+            Array.from(new Set([...prev, matchedEventId])),
+          );
         }
 
         setNotification({
@@ -418,7 +468,8 @@ export function EventsClient({
     } catch {
       setNotification({
         title: "Network Notice",
-        message: "Could not reach check-in server. Please verify connection and retry.",
+        message:
+          "Could not reach check-in server. Please verify connection and retry.",
         type: "error",
       });
     }
@@ -467,7 +518,8 @@ export function EventsClient({
       }
 
       // Encode universal check-in URL so standard camera apps navigate to check-in directly
-      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      const origin =
+        typeof window !== "undefined" ? window.location.origin : "";
       const checkInUrl = `${origin}/events?token=${encodeURIComponent(activeToken)}`;
 
       const dataUrl = await QRCode.toDataURL(checkInUrl, {
@@ -481,7 +533,8 @@ export function EventsClient({
         const QRCode = (await import("qrcode")).default;
         const fallbackToken = `racspeed-${event.id.slice(0, 8)}-${Date.now().toString(36)}`;
         setSessionToken(fallbackToken);
-        const origin = typeof window !== "undefined" ? window.location.origin : "";
+        const origin =
+          typeof window !== "undefined" ? window.location.origin : "";
         const checkInUrl = `${origin}/events?token=${encodeURIComponent(fallbackToken)}`;
         const dataUrl = await QRCode.toDataURL(checkInUrl, {
           width: 320,
@@ -530,80 +583,6 @@ export function EventsClient({
   return (
     <div className="space-y-6 relative pb-16">
       {/* ========================================================================= */}
-      {/* FLOATING TOP STICKER / TOAST NOTIFICATION BANNER (STICKY & VISIBLE ALWAYS) */}
-      {/* ========================================================================= */}
-      {notification && (
-        <div
-          role="alert"
-          className="fixed top-5 left-1/2 -translate-x-1/2 z-[200] max-w-lg w-[calc(100%-2rem)] animate-in fade-in slide-in-from-top-4 duration-300 pointer-events-auto"
-        >
-          <div
-            className={`p-4 rounded-2xl border shadow-2xl backdrop-blur-xl flex items-start gap-3.5 text-xs transition ${
-              notification.type === "success"
-                ? "bg-slate-900/95 text-white border-emerald-500/50 shadow-emerald-950/40"
-                : notification.type === "info"
-                ? "bg-slate-900/95 text-white border-sky-500/50 shadow-sky-950/40"
-                : "bg-slate-900/95 text-white border-rose-500/50 shadow-rose-950/40"
-            }`}
-          >
-            <div
-              className={`p-2.5 rounded-xl shrink-0 ${
-                notification.type === "success"
-                  ? "bg-emerald-500/20 text-emerald-400"
-                  : notification.type === "info"
-                  ? "bg-sky-500/20 text-sky-400"
-                  : "bg-rose-500/20 text-rose-400"
-              }`}
-            >
-              {notification.type === "success" ? (
-                <CheckCircle className="w-5 h-5" />
-              ) : notification.type === "info" ? (
-                <ShieldCheck className="w-5 h-5" />
-              ) : (
-                <AlertCircle className="w-5 h-5" />
-              )}
-            </div>
-
-            <div className="flex-1 min-w-0 pt-0.5">
-              <div className="flex items-center justify-between gap-2">
-                <h4
-                  className={`font-bold text-sm tracking-tight ${
-                    notification.type === "success"
-                      ? "text-emerald-400"
-                      : notification.type === "info"
-                      ? "text-sky-400"
-                      : "text-rose-400"
-                  }`}
-                >
-                  {notification.title ||
-                    (notification.type === "success"
-                      ? "Attendance Confirmed!"
-                      : notification.type === "info"
-                      ? "Already Registered"
-                      : "Check-in Status")}
-                </h4>
-                <span className="text-[10px] text-slate-400 uppercase font-mono tracking-wider">
-                  Live Status
-                </span>
-              </div>
-              <p className="mt-1 text-slate-200 leading-relaxed font-medium">
-                {notification.message}
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setNotification(null)}
-              className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer shrink-0"
-              aria-label="Close notification"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
       {/* FLOATING ACTION BUTTON (FAB) FOR SCAN VIA CAMERA (ACCESSIBLE FROM ANYWHERE) */}
       {/* ========================================================================= */}
       <div className="fixed bottom-6 right-6 z-40">
@@ -618,7 +597,9 @@ export function EventsClient({
             <span className="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
           </span>
           <ScanLine className="w-4 h-4 text-white animate-pulse" />
-          <span className="font-semibold text-white drop-shadow-xs">Scan via Camera</span>
+          <span className="font-semibold text-white drop-shadow-xs">
+            Scan via Camera
+          </span>
         </button>
       </div>
 
@@ -631,7 +612,8 @@ export function EventsClient({
             Events & QR Attendance
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Dynamic rolling-code sessions & real-time attendance verification (District 3820)
+            Dynamic rolling-code sessions & real-time attendance verification
+            (District 3820)
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -655,139 +637,311 @@ export function EventsClient({
         </div>
       </div>
 
-      {/* ========================================================================= */}
-      {/* EVENTS GRID */}
-      {/* ========================================================================= */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {events.map((event) => {
-          const isCheckedIn = checkedInEventIds.includes(event.id);
-
-          return (
-            <div
-              key={event.id}
-              className={`bg-white dark:bg-slate-900 border rounded-2xl p-5 flex flex-col justify-between shadow-xs transition hover:shadow-md ${
-                isCheckedIn
-                  ? "border-emerald-300 dark:border-emerald-800/80 ring-1 ring-emerald-500/20"
-                  : "border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700"
-              }`}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div
+          className="inline-flex w-fit rounded-lg border border-slate-200 bg-white p-0.5 dark:border-slate-700 dark:bg-slate-900"
+          role="group"
+          aria-label="Event period"
+        >
+          {(
+            [
+              ["UPCOMING", "Upcoming", Calendar],
+              ["ARCHIVE", "Archive", Archive],
+            ] as const
+          ).map(([scope, label, Icon]) => (
+            <button
+              key={scope}
+              type="button"
+              onClick={() => setEventScope(scope)}
+              aria-pressed={eventScope === scope}
+              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold ${eventScope === scope ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900" : "text-slate-600 dark:text-slate-300"}`}
             >
-              <div>
-                <div className="flex items-center justify-between gap-2 mb-2.5">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-900">
-                      {event.category}
-                    </span>
-                    {isCheckedIn && (
-                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 flex items-center gap-1 shadow-2xs">
-                        <CheckCircle className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                        <span>Registered & Scanned</span>
+              <Icon className="h-3.5 w-3.5" /> {label}
+              <span className="text-[10px] opacity-70">
+                {scope === "ARCHIVE"
+                  ? events.filter(isArchived).length
+                  : events.filter((event) => !isArchived(event)).length}
+              </span>
+            </button>
+          ))}
+        </div>
+        <div
+          className="inline-flex w-fit rounded-lg border border-slate-200 bg-white p-0.5 dark:border-slate-700 dark:bg-slate-900"
+          role="group"
+          aria-label="Attendance list layout"
+        >
+          {(
+            [
+              ["GRID", "Grid", LayoutGrid],
+              ["TABLE", "Table", List],
+            ] as const
+          ).map(([layout, label, Icon]) => (
+            <button
+              key={layout}
+              type="button"
+              onClick={() => setEventLayout(layout)}
+              aria-pressed={eventLayout === layout}
+              title={`${label} view`}
+              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold ${eventLayout === layout ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900" : "text-slate-600 dark:text-slate-300"}`}
+            >
+              <Icon className="h-3.5 w-3.5" /> {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* EVENT BROWSER */}
+      {/* ========================================================================= */}
+      {eventLayout === "GRID" ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {visibleEvents.map((event) => {
+            const isCheckedIn = checkedInEventIds.includes(event.id);
+            const archived = isArchived(event);
+
+            return (
+              <div
+                key={event.id}
+                className={`bg-white dark:bg-slate-900 border rounded-2xl p-5 flex flex-col justify-between shadow-xs transition hover:shadow-md ${
+                  isCheckedIn
+                    ? "border-emerald-300 dark:border-emerald-800/80 ring-1 ring-emerald-500/20"
+                    : "border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700"
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-2.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-900">
+                        {event.category}
                       </span>
-                    )}
+                      {isCheckedIn && (
+                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 flex items-center gap-1 shadow-2xs">
+                          <CheckCircle className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                          <span>Registered & Scanned</span>
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      {event.volunteerHours} hrs
+                    </span>
                   </div>
-                  <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    {event.volunteerHours} hrs
-                  </span>
+
+                  <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 line-clamp-2">
+                    {event.title}
+                  </h3>
+
+                  {isCheckedIn && (
+                    <div className="mt-3 p-2.5 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 flex items-center justify-between text-xs text-emerald-800 dark:text-emerald-300">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                        <span className="font-semibold">
+                          You are registered for this event!
+                        </span>
+                      </div>
+                      <span className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 font-bold">
+                        +{event.volunteerHours} hrs
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="mt-3 space-y-1.5 text-xs text-slate-500 dark:text-slate-400">
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span>{formatManilaDate(event.startTime)}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span className="truncate">{event.location}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs pt-0.5">
+                      <div className="flex items-center gap-2">
+                        <Users className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span className="font-medium">
+                          {event.attendeesCount} Verified Attendees
+                        </span>
+                      </div>
+                      {canManageAttendance && (
+                        <button
+                          type="button"
+                          onClick={() => openAttendeesModal(event)}
+                          className="text-[11px] font-bold text-rose-600 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-300 transition hover:underline cursor-pointer flex items-center gap-1"
+                        >
+                          <span>View Scanned Users</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
-                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 line-clamp-2">
-                  {event.title}
-                </h3>
-
-                {isCheckedIn && (
-                  <div className="mt-3 p-2.5 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 flex items-center justify-between text-xs text-emerald-800 dark:text-emerald-300">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                      <span className="font-semibold">You are registered for this event!</span>
-                    </div>
-                    <span className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 font-bold">
-                      +{event.volunteerHours} hrs
-                    </span>
-                  </div>
-                )}
-
-                <div className="mt-3 space-y-1.5 text-xs text-slate-500 dark:text-slate-400">
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    <span>{formatManilaDate(event.startTime)}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    <span className="truncate">{event.location}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs pt-0.5">
-                    <div className="flex items-center gap-2">
-                      <Users className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span className="font-medium">
-                        {event.attendeesCount} Verified Attendees
-                      </span>
-                    </div>
-                    {canManageAttendance && (
+                {/* Card Action Footer */}
+                <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800">
+                  {canManageAttendance ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      {archived ? (
+                        <span className="inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 font-semibold text-xs">
+                          <Archive className="w-3.5 h-3.5" /> Archived
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenQr(event)}
+                          className="inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 font-semibold text-xs transition cursor-pointer shadow-xs"
+                        >
+                          <QrCode className="w-3.5 h-3.5" />
+                          QR Session
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => openAttendeesModal(event)}
-                        className="text-[11px] font-bold text-rose-600 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-300 transition hover:underline cursor-pointer flex items-center gap-1"
+                        className="inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold text-xs transition shadow-2xs cursor-pointer"
                       >
-                        <span>View Scanned Users</span>
-                        <ExternalLink className="w-3 h-3" />
+                        <Users className="w-3.5 h-3.5 text-rose-600" />
+                        Scanned ({event.attendeesCount})
                       </button>
-                    )}
-                  </div>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      {archived ? (
+                        <div className="flex-1 inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 font-semibold text-xs">
+                          <Archive className="w-3.5 h-3.5" /> Check-in closed
+                        </div>
+                      ) : isCheckedIn ? (
+                        <div className="flex-1 inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 font-semibold text-xs">
+                          <CheckCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                          Attendance Verified
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            startCameraScanner(selectedCameraId || undefined)
+                          }
+                          className="flex-1 inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition shadow-xs cursor-pointer"
+                        >
+                          <Camera className="w-3.5 h-3.5" />
+                          Check In Now
+                        </button>
+                      )}
+                      <Link
+                        href={`/broadcasts?eventId=${event.id}`}
+                        className="inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 font-semibold text-xs transition shadow-2xs"
+                      >
+                        <Megaphone className="w-3.5 h-3.5" />
+                        Share
+                      </Link>
+                    </div>
+                  )}
                 </div>
               </div>
-
-              {/* Card Action Footer */}
-              <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800">
-                {canManageAttendance ? (
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleOpenQr(event)}
-                      className="inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 font-semibold text-xs transition cursor-pointer shadow-xs"
-                    >
-                      <QrCode className="w-3.5 h-3.5" />
-                      QR Session
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openAttendeesModal(event)}
-                      className="inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold text-xs transition shadow-2xs cursor-pointer"
-                    >
-                      <Users className="w-3.5 h-3.5 text-rose-600" />
-                      Scanned ({event.attendeesCount})
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex gap-2">
-                    {isCheckedIn ? (
-                      <div className="flex-1 inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 font-semibold text-xs">
-                        <CheckCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                        Attendance Verified
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => startCameraScanner(selectedCameraId || undefined)}
-                        className="flex-1 inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition shadow-xs cursor-pointer"
-                      >
-                        <Camera className="w-3.5 h-3.5" />
-                        Check In Now
-                      </button>
-                    )}
-                    <Link
-                      href={`/broadcasts?eventId=${event.id}`}
-                      className="inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 font-semibold text-xs transition shadow-2xs"
-                    >
-                      <Megaphone className="w-3.5 h-3.5" />
-                      Share
-                    </Link>
-                  </div>
-                )}
-              </div>
+            );
+          })}
+          {visibleEvents.length === 0 && (
+            <div className="col-span-full rounded-xl border border-dashed border-slate-300 py-12 text-center text-xs text-slate-500 dark:border-slate-700">
+              No {eventScope.toLowerCase()} events.
             </div>
-          );
-        })}
-      </div>
+          )}
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+          <table className="w-full min-w-[760px] text-left text-xs">
+            <thead className="border-b border-slate-200 bg-slate-50 text-[10px] uppercase text-slate-500 dark:border-slate-800 dark:bg-slate-800/60">
+              <tr>
+                <th className="px-4 py-3 font-semibold">Activity</th>
+                <th className="px-4 py-3 font-semibold">Date</th>
+                <th className="px-4 py-3 font-semibold">Location</th>
+                <th className="px-4 py-3 font-semibold">Attendance</th>
+                <th className="px-4 py-3 text-right font-semibold">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {visibleEvents.map((event) => {
+                const archived = isArchived(event);
+                const isCheckedIn = checkedInEventIds.includes(event.id);
+                return (
+                  <tr
+                    key={event.id}
+                    className="hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                  >
+                    <td className="px-4 py-3">
+                      <p className="font-semibold text-slate-900 dark:text-slate-100">
+                        {event.title}
+                      </p>
+                      <p className="mt-0.5 text-[10px] text-slate-500">
+                        {event.category}
+                      </p>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-slate-600 dark:text-slate-300">
+                      {formatManilaDate(event.startTime)}
+                    </td>
+                    <td className="max-w-56 truncate px-4 py-3 text-slate-600 dark:text-slate-300">
+                      {event.location}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-slate-600 dark:text-slate-300">
+                      {event.attendeesCount} scanned
+                      {isCheckedIn ? " · You checked in" : ""}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-2">
+                        {canManageAttendance ? (
+                          <>
+                            {!archived && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenQr(event)}
+                                className="rounded-md bg-slate-900 px-2.5 py-1.5 text-[11px] font-semibold text-white dark:bg-slate-100 dark:text-slate-900"
+                              >
+                                QR Session
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => openAttendeesModal(event)}
+                              className="rounded-md border border-slate-200 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200"
+                            >
+                              Roster
+                            </button>
+                          </>
+                        ) : archived ? (
+                          <span className="text-[11px] text-slate-500">
+                            Archived
+                          </span>
+                        ) : isCheckedIn ? (
+                          <span className="text-[11px] font-semibold text-emerald-700">
+                            Verified
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              startCameraScanner(selectedCameraId || undefined)
+                            }
+                            className="rounded-md bg-rose-600 px-2.5 py-1.5 text-[11px] font-semibold text-white"
+                          >
+                            Check In
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {visibleEvents.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="px-4 py-12 text-center text-slate-500"
+                  >
+                    No {eventScope.toLowerCase()} events.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* ATTENDANCE CHECK-IN SECTION: MANUAL TOKEN & CAMERA TRIGGER */}
@@ -799,7 +953,8 @@ export function EventsClient({
               Event Attendance Check-In
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Scan the event rolling QR code using your device camera or enter the session token:
+              Scan the event rolling QR code using your device camera or enter
+              the session token:
             </p>
           </div>
           <button
@@ -851,7 +1006,8 @@ export function EventsClient({
                   Scanned Users & Attendance Roster
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {inspectingEvent.title} &bull; {formatManilaDate(inspectingEvent.startTime)}
+                  {inspectingEvent.title} &bull;{" "}
+                  {formatManilaDate(inspectingEvent.startTime)}
                 </p>
               </div>
               <button
@@ -867,19 +1023,28 @@ export function EventsClient({
             <div className="pt-4 pb-3 space-y-3">
               <div className="grid grid-cols-3 gap-3">
                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
-                  <span className="text-[11px] text-slate-500 font-medium">Scanned Attendees</span>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    Scanned Attendees
+                  </span>
                   <p className="text-lg font-bold text-slate-900 dark:text-slate-100">
                     {attendeesList.length}
                   </p>
                 </div>
                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
-                  <span className="text-[11px] text-slate-500 font-medium">Total Hours Logged</span>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    Total Hours Logged
+                  </span>
                   <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
-                    {attendeesList.reduce((acc, a) => acc + a.volunteerHours, 0).toFixed(1)} hrs
+                    {attendeesList
+                      .reduce((acc, a) => acc + a.volunteerHours, 0)
+                      .toFixed(1)}{" "}
+                    hrs
                   </p>
                 </div>
                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
-                  <span className="text-[11px] text-slate-500 font-medium">Status</span>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    Status
+                  </span>
                   <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 mt-1">
                     <Radio className="w-3 h-3 animate-pulse text-emerald-500" />
                     Verified Live
@@ -951,10 +1116,15 @@ export function EventsClient({
                         <div>
                           <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
                             <CheckCircle className="w-3 h-3" />
-                            {attendee.checkInMethod === "QR" ? "QR Scanned" : attendee.checkInMethod}
+                            {attendee.checkInMethod === "QR"
+                              ? "QR Scanned"
+                              : attendee.checkInMethod}
                           </span>
                           <p className="text-[10px] text-slate-400 font-mono">
-                            {formatManila(attendee.checkInTime, "MMM d, h:mm a")}
+                            {formatManila(
+                              attendee.checkInTime,
+                              "MMM d, h:mm a",
+                            )}
                           </p>
                         </div>
                         <span className="px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-mono text-xs font-bold border border-emerald-200 dark:border-emerald-800">
@@ -1047,13 +1217,17 @@ export function EventsClient({
                 <button
                   type="button"
                   onClick={() => {
-                    const origin = typeof window !== "undefined" ? window.location.origin : "";
+                    const origin =
+                      typeof window !== "undefined"
+                        ? window.location.origin
+                        : "";
                     const checkInUrl = `${origin}/events?token=${encodeURIComponent(sessionToken)}`;
                     navigator.clipboard.writeText(checkInUrl);
                     setCopiedLink(true);
                     setNotification({
                       title: "Direct Link Copied",
-                      message: "Direct check-in link copied to clipboard! Share with attendees.",
+                      message:
+                        "Direct check-in link copied to clipboard! Share with attendees.",
                       type: "success",
                     });
                     setTimeout(() => setCopiedLink(false), 3000);
@@ -1214,7 +1388,9 @@ export function EventsClient({
                 <p>{scannerError}</p>
                 <button
                   type="button"
-                  onClick={() => startCameraScanner(selectedCameraId || undefined)}
+                  onClick={() =>
+                    startCameraScanner(selectedCameraId || undefined)
+                  }
                   className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-rose-600 hover:underline cursor-pointer"
                 >
                   <RefreshCw className="w-3 h-3" /> Retry Camera

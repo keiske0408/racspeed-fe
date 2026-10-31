@@ -6,12 +6,7 @@
 const CACHE_NAME = "racspeed-cache-v1";
 const OFFLINE_URL = "/";
 
-const STATIC_ASSETS = [
-  "/",
-  "/manifest.json",
-  "/favicon.ico",
-  "/globals.css"
-];
+const STATIC_ASSETS = ["/", "/manifest.json", "/favicon.ico", "/globals.css"];
 
 // Install event: Pre-cache static shell assets
 self.addEventListener("install", (event) => {
@@ -20,7 +15,7 @@ self.addEventListener("install", (event) => {
       return cache.addAll(STATIC_ASSETS).catch((err) => {
         console.warn("Service worker precache skipped missing asset:", err);
       });
-    })
+    }),
   );
   self.skipWaiting();
 });
@@ -34,9 +29,9 @@ self.addEventListener("activate", (event) => {
           if (name !== CACHE_NAME) {
             return caches.delete(name);
           }
-        })
+        }),
       );
-    })
+    }),
   );
   self.clients.claim();
 });
@@ -48,32 +43,48 @@ self.addEventListener("push", (event) => {
   } catch {
     payload = { body: event.data?.text() || "You have a new RacSpeed update." };
   }
-  const requestedTarget = new URL(payload.url || "/dashboard", self.location.origin);
-  const target = requestedTarget.origin === self.location.origin
-    ? requestedTarget.toString()
-    : new URL("/dashboard", self.location.origin).toString();
-  event.waitUntil(self.registration.showNotification(payload.title || "RacSpeed", {
-    body: payload.body || "You have a new club update.",
-    icon: "/icons/icon-192.png",
-    badge: "/icons/icon-192.png",
-    data: { target },
-  }));
+  const requestedTarget = new URL(
+    payload.url || "/dashboard",
+    self.location.origin,
+  );
+  const target =
+    requestedTarget.origin === self.location.origin
+      ? requestedTarget.toString()
+      : new URL("/dashboard", self.location.origin).toString();
+  event.waitUntil(
+    self.registration.showNotification(payload.title || "RacSpeed", {
+      body: payload.body || "You have a new club update.",
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      data: { target },
+    }),
+  );
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const target = event.notification.data?.target || new URL("/dashboard", self.location.origin).toString();
-  event.waitUntil((async () => {
-    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-    for (const windowClient of windows) {
-      if ("focus" in windowClient && new URL(windowClient.url).origin === self.location.origin) {
-        await windowClient.focus();
-        if ("navigate" in windowClient) await windowClient.navigate(target);
-        return;
+  const target =
+    event.notification.data?.target ||
+    new URL("/dashboard", self.location.origin).toString();
+  event.waitUntil(
+    (async () => {
+      const windows = await self.clients.matchAll({
+        type: "window",
+        includeUncontrolled: true,
+      });
+      for (const windowClient of windows) {
+        if (
+          "focus" in windowClient &&
+          new URL(windowClient.url).origin === self.location.origin
+        ) {
+          await windowClient.focus();
+          if ("navigate" in windowClient) await windowClient.navigate(target);
+          return;
+        }
       }
-    }
-    if (self.clients.openWindow) await self.clients.openWindow(target);
-  })());
+      if (self.clients.openWindow) await self.clients.openWindow(target);
+    })(),
+  );
 });
 
 // Fetch event: Network-first with cache fallback for navigation & static files
@@ -92,7 +103,11 @@ self.addEventListener("fetch", (event) => {
     fetch(event.request)
       .then((networkResponse) => {
         // Cache successful responses for offline access
-        if (networkResponse && networkResponse.status === 200 && networkResponse.type === "basic") {
+        if (
+          networkResponse &&
+          networkResponse.status === 200 &&
+          networkResponse.type === "basic"
+        ) {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then((cache) => {
             cache.put(event.request, responseToCache);
@@ -111,6 +126,6 @@ self.addEventListener("fetch", (event) => {
             return caches.match(OFFLINE_URL);
           }
         });
-      })
+      }),
   );
 });

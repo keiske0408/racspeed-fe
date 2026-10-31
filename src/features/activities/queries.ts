@@ -139,7 +139,10 @@ interface ActivityProjectDetailsRow {
   completed_at: string | null;
 }
 
-export async function isClubParticipant(clubId: string, profileId: string): Promise<boolean> {
+export async function isClubParticipant(
+  clubId: string,
+  profileId: string,
+): Promise<boolean> {
   if (!UUID_PATTERN.test(profileId)) return false;
   const admin = createAdminClient();
   const { data } = await admin
@@ -149,11 +152,19 @@ export async function isClubParticipant(clubId: string, profileId: string): Prom
     .eq("profile_id", profileId)
     .maybeSingle();
   if (!data) {
-    const { data: profile } = await admin.from("profiles").select("is_platform_admin, status").eq("id", profileId).maybeSingle();
+    const { data: profile } = await admin
+      .from("profiles")
+      .select("is_platform_admin, status")
+      .eq("id", profileId)
+      .maybeSingle();
     return Boolean(profile?.is_platform_admin && profile.status === "ACTIVE");
   }
-  const profile = (data as unknown as { profiles: { status: string } | null }).profiles;
-  return ["ACTIVE", "ASPIRANT"].includes(data.membership_status) && profile?.status === "ACTIVE";
+  const profile = (data as unknown as { profiles: { status: string } | null })
+    .profiles;
+  return (
+    ["ACTIVE", "ASPIRANT"].includes(data.membership_status) &&
+    profile?.status === "ACTIVE"
+  );
 }
 
 async function signPaths(paths: string[]): Promise<Map<string, string>> {
@@ -161,15 +172,22 @@ async function signPaths(paths: string[]): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   if (unique.length === 0) return out;
   const admin = createAdminClient();
-  const { data } = await admin.storage.from(MEDIA_BUCKET).createSignedUrls(unique, SIGNED_URL_TTL_SECONDS);
+  const { data } = await admin.storage
+    .from(MEDIA_BUCKET)
+    .createSignedUrls(unique, SIGNED_URL_TTL_SECONDS);
   for (const item of data || []) {
     if (item.path && item.signedUrl) out.set(item.path, item.signedUrl);
   }
   return out;
 }
 
-function mapSummary(row: ActivitySummaryRow, userId: string, coverUrls: Map<string, string>): ActivitySummaryDTO {
-  const rsvps: { profile_id: string; response: RsvpResponse }[] = row.activity_rsvps || [];
+function mapSummary(
+  row: ActivitySummaryRow,
+  userId: string,
+  coverUrls: Map<string, string>,
+): ActivitySummaryDTO {
+  const rsvps: { profile_id: string; response: RsvpResponse }[] =
+    row.activity_rsvps || [];
   const attendance: { profile_id: string }[] = row.attendance_records || [];
   const tasks: { status: string }[] = row.tasks || [];
   return {
@@ -205,14 +223,21 @@ function mapSummary(row: ActivitySummaryRow, userId: string, coverUrls: Map<stri
     tasksTotal: tasks.length,
     tasksDone: tasks.filter((t) => t.status === "COMPLETED").length,
     commentsCount: row.activity_comments?.[0]?.count ?? 0,
-    coverUrl: row.cover_storage_path ? coverUrls.get(row.cover_storage_path) || null : null,
+    coverUrl: row.cover_storage_path
+      ? coverUrls.get(row.cover_storage_path) || null
+      : null,
   };
 }
 
 export async function listActivities(
   clubId: string,
   userId: string,
-  options: { from?: string; to?: string; limit?: number; includeDrafts?: boolean } = {}
+  options: {
+    from?: string;
+    to?: string;
+    limit?: number;
+    includeDrafts?: boolean;
+  } = {},
 ): Promise<ActivitySummaryDTO[]> {
   try {
     const admin = createAdminClient();
@@ -234,7 +259,11 @@ export async function listActivities(
       return [];
     }
     const rows = data as unknown as ActivitySummaryRow[];
-    const coverUrls = await signPaths(rows.map((row) => row.cover_storage_path).filter((path): path is string => Boolean(path)));
+    const coverUrls = await signPaths(
+      rows
+        .map((row) => row.cover_storage_path)
+        .filter((path): path is string => Boolean(path)),
+    );
     return rows.map((row) => mapSummary(row, userId, coverUrls));
   } catch (err) {
     console.warn("Could not load activities:", err);
@@ -253,7 +282,7 @@ function person(p: ProfileRow | null, fallbackId: string) {
 export async function getActivityDetail(
   activityId: string,
   userId: string,
-  access: { canManageClub: boolean; canManageAttendance: boolean }
+  access: { canManageClub: boolean; canManageAttendance: boolean },
 ): Promise<ActivityDetailDTO | null> {
   if (!UUID_PATTERN.test(activityId)) return null;
   const admin = createAdminClient();
@@ -265,20 +294,53 @@ export async function getActivityDetail(
     .maybeSingle();
   if (error || !row) return null;
 
-  const [details, aof, sdgs, partners, team, rsvps, attendance, media, comments, log, follow] = await Promise.all([
-    admin.from("activity_project_details").select("*").eq("activity_id", activityId).maybeSingle(),
-    admin.from("activity_areas_of_focus").select("areas_of_focus(code)").eq("activity_id", activityId),
-    admin.from("activity_sdgs").select("sdgs(number)").eq("activity_id", activityId),
-    admin.from("activity_partners").select("id, name, partner_role").eq("activity_id", activityId).order("created_at"),
-    admin.from("activity_team").select("profile_id, team_role, profiles(id, full_name, avatar_url)").eq("activity_id", activityId),
+  const [
+    details,
+    aof,
+    sdgs,
+    partners,
+    team,
+    rsvps,
+    attendance,
+    media,
+    comments,
+    log,
+    follow,
+  ] = await Promise.all([
+    admin
+      .from("activity_project_details")
+      .select("*")
+      .eq("activity_id", activityId)
+      .maybeSingle(),
+    admin
+      .from("activity_areas_of_focus")
+      .select("areas_of_focus(code)")
+      .eq("activity_id", activityId),
+    admin
+      .from("activity_sdgs")
+      .select("sdgs(number)")
+      .eq("activity_id", activityId),
+    admin
+      .from("activity_partners")
+      .select("id, name, partner_role")
+      .eq("activity_id", activityId)
+      .order("created_at"),
+    admin
+      .from("activity_team")
+      .select("profile_id, team_role, profiles(id, full_name, avatar_url)")
+      .eq("activity_id", activityId),
     admin
       .from("activity_rsvps")
-      .select("profile_id, response, note, responded_at, profiles(id, full_name, avatar_url)")
+      .select(
+        "profile_id, response, note, responded_at, profiles(id, full_name, avatar_url)",
+      )
       .eq("activity_id", activityId)
       .order("responded_at", { ascending: false }),
     admin
       .from("attendance_records")
-      .select("id, profile_id, check_in_time, check_in_method, volunteer_hours, profiles:profile_id(id, full_name, avatar_url)")
+      .select(
+        "id, profile_id, check_in_time, check_in_method, volunteer_hours, profiles:profile_id(id, full_name, avatar_url)",
+      )
       .eq("activity_id", activityId)
       .order("check_in_time", { ascending: false }),
     admin
@@ -290,7 +352,9 @@ export async function getActivityDetail(
       .order("created_at"),
     admin
       .from("activity_comments")
-      .select("id, parent_id, body, created_at, edited_at, deleted_at, author_id, profiles:author_id(id, full_name, avatar_url), activity_comment_reactions(emoji, profile_id)")
+      .select(
+        "id, parent_id, body, created_at, edited_at, deleted_at, author_id, profiles:author_id(id, full_name, avatar_url), activity_comment_reactions(emoji, profile_id)",
+      )
       .eq("activity_id", activityId)
       .order("created_at"),
     admin
@@ -299,18 +363,32 @@ export async function getActivityDetail(
       .eq("activity_id", activityId)
       .order("created_at", { ascending: false })
       .limit(50),
-    admin.from("activity_followers").select("profile_id").eq("activity_id", activityId).eq("profile_id", userId).maybeSingle(),
+    admin
+      .from("activity_followers")
+      .select("profile_id")
+      .eq("activity_id", activityId)
+      .eq("profile_id", userId)
+      .maybeSingle(),
   ]);
 
   const activityRow = row as unknown as ActivitySummaryRow;
   const mediaRows = (media.data || []) as unknown as ActivityMediaRow[];
-  const urls = await signPaths([...mediaRows.map((m) => m.storage_path), activityRow.cover_storage_path || ""]);
+  const urls = await signPaths([
+    ...mediaRows.map((m) => m.storage_path),
+    activityRow.cover_storage_path || "",
+  ]);
   const summary = mapSummary(activityRow, userId, urls);
   const r = activityRow;
 
   const teamRows = (team.data || []) as unknown as ActivityTeamRow[];
-  const teamList = teamRows.map((t) => ({ ...person(t.profiles, t.profile_id), role: t.team_role }));
-  const isChair = teamList.some((t) => t.profileId === userId && (t.role === "CHAIR" || t.role === "CO_CHAIR"));
+  const teamList = teamRows.map((t) => ({
+    ...person(t.profiles, t.profile_id),
+    role: t.team_role,
+  }));
+  const isChair = teamList.some(
+    (t) =>
+      t.profileId === userId && (t.role === "CHAIR" || t.role === "CO_CHAIR"),
+  );
   const canManage = access.canManageClub || r.owner_id === userId || isChair;
 
   let projectDetails: ActivityProjectDetailsDTO | null = null;
@@ -334,18 +412,36 @@ export async function getActivityDetail(
       relatedLinks: Array.isArray(d.related_links) ? d.related_links : [],
       spcInitiativeId: d.spc_initiative_id || "",
       completedAt: d.completed_at,
-      areasOfFocus: ((aof.data || []) as unknown as { areas_of_focus: { code: string } | null }[])
-        .map((area) => area.areas_of_focus?.code).filter((code): code is string => Boolean(code)),
-      sdgs: ((sdgs.data || []) as unknown as { sdgs: { number: number } | null }[])
-        .map((goal) => goal.sdgs?.number).filter((number): number is number => typeof number === "number"),
-      partners: ((partners.data || []) as unknown as { id: string; name: string; partner_role: PartnerRole }[])
-        .map((partner) => ({ id: partner.id, name: partner.name, role: partner.partner_role })),
+      areasOfFocus: (
+        (aof.data || []) as unknown as {
+          areas_of_focus: { code: string } | null;
+        }[]
+      )
+        .map((area) => area.areas_of_focus?.code)
+        .filter((code): code is string => Boolean(code)),
+      sdgs: (
+        (sdgs.data || []) as unknown as { sdgs: { number: number } | null }[]
+      )
+        .map((goal) => goal.sdgs?.number)
+        .filter((number): number is number => typeof number === "number"),
+      partners: (
+        (partners.data || []) as unknown as {
+          id: string;
+          name: string;
+          partner_role: PartnerRole;
+        }[]
+      ).map((partner) => ({
+        id: partner.id,
+        name: partner.name,
+        role: partner.partner_role,
+      })),
     };
   }
 
   const commentRows = (comments.data || []) as unknown as ActivityCommentRow[];
   const commentList: ActivityCommentDTO[] = commentRows.map((c) => {
-    const reactionRows: { emoji: string; profile_id: string }[] = c.activity_comment_reactions || [];
+    const reactionRows: { emoji: string; profile_id: string }[] =
+      c.activity_comment_reactions || [];
     const grouped = new Map<string, { count: number; mine: boolean }>();
     for (const rr of reactionRows) {
       const g = grouped.get(rr.emoji) || { count: 0, mine: false };
@@ -362,7 +458,10 @@ export async function getActivityDetail(
       createdAt: c.created_at,
       editedAt: c.edited_at,
       isDeleted,
-      reactions: Array.from(grouped.entries()).map(([emoji, g]) => ({ emoji, ...g })),
+      reactions: Array.from(grouped.entries()).map(([emoji, g]) => ({
+        emoji,
+        ...g,
+      })),
     };
   });
 
@@ -379,7 +478,9 @@ export async function getActivityDetail(
       note: x.note,
       respondedAt: x.responded_at,
     })),
-    attendees: ((attendance.data || []) as unknown as ActivityAttendanceRow[]).map((a) => ({
+    attendees: (
+      (attendance.data || []) as unknown as ActivityAttendanceRow[]
+    ).map((a) => ({
       ...person(a.profiles, a.profile_id),
       id: a.id,
       checkInTime: a.check_in_time,

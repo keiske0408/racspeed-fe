@@ -3,16 +3,19 @@
 ## 1. Local Development Setup
 
 ### Prerequisites
+
 - Node.js >= 20.9.0 (v22.21 LTS verified)
 - Docker Desktop (for local Supabase instance)
 
 ### Installation
+
 ```bash
 cd d:\RACSPEED\racspeed-fe
 npm install
 ```
 
 ### Local Database Setup (via Supabase CLI)
+
 ```bash
 # Start local Supabase containers (requires Docker)
 npx supabase start
@@ -27,23 +30,29 @@ npx supabase status
 Copy the generated API URL and keys into `.env.local`.
 
 ### Run Development Server
+
 ```bash
 npm run dev
 ```
+
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ### Run Unit Tests
+
 ```bash
 npm test
 ```
 
 ## 2. Bootstrapping the First Administrator
+
 Because initial registration produces `PENDING` accounts, bootstrap the first Platform Administrator safely:
+
 ```bash
 npx tsx scripts/bootstrap-admin.ts admin@rotaract.local
 ```
 
 ## 3. Cloud Deployment (Vercel & Supabase)
+
 1. **Supabase Cloud Project**:
    - Create a project on [supabase.com](https://supabase.com).
    - In Database settings, link project via `npx supabase link --project-ref <ref>`.
@@ -58,7 +67,7 @@ npx tsx scripts/bootstrap-admin.ts admin@rotaract.local
 
 ## 4. Project Center Database Setup
 
-The Project Center depends on migrations `0008_project_center.sql` and `0009_engagement_and_notifications.sql`. If activity creation returns `Could not find the table 'public.activities' in the schema cache`, the database connected by this app has not applied migration 0008, or the API schema cache has not refreshed.
+The Project Center depends on migrations `0008_project_center.sql` through `0010_activity_sister_clubs.sql`. If activity creation returns `Could not find the table 'public.activities' in the schema cache`, the database connected by this app has not applied migration 0008, or the API schema cache has not refreshed.
 
 **Apply migrations through the Supabase CLI as the normal workflow.** Opening a `.sql` file in the editor does not run it, while pasting it into the Supabase SQL Editor changes the database without recording its migration version. A `policy "..." already exists` error means that policy is already present in the target database, usually because the SQL was run once before or partially applied. Migration 0009 now drops and recreates its named policies so that section can be safely rerun.
 
@@ -113,18 +122,18 @@ CRON_SECRET=<long-random-secret>
 
 ## 6. End-to-End Operations Checklist
 
-Run this against a disposable local Supabase database after applying migrations 0001–0009. Confirm the application points to the same local Supabase URL and keys.
+Run this against a disposable local Supabase database after applying migrations 0001–0010. Confirm the application points to the same local Supabase URL and keys.
 
-| Workflow | Check |
-|---|---|
-| Create activity | Create a Meeting and a Fellowship; verify each appears in List, Board, and Calendar. |
-| Create service project | Create a Service Project; verify project-specific details exist and the chair can open its Report tab. |
-| Minimum members | Toggle the minimum off and confirm no threshold is stored; toggle on and confirm the RSVP progress/shortfall appears. |
-| RSVP and capacity | RSVP Going, update the response, and verify duplicate/capacity rules. |
-| Check-in | Verify disabled self check-in is rejected; enable it and test both “Check in as me” and QR scanning, including duplicate and out-of-window attempts. |
-| Tasks and collaboration | Create a task on an activity, update its status, post/delete a comment, react, and upload/remove a photo. |
-| Accomplishment report | Complete the project, add required report fields and a photo, publish, and verify the saved snapshot and Accomplished status. |
-| Aspirant approval | Approve without a Rotary ID; verify active login, ASPIRANT membership, null Rotary ID, and CRM link. Then induct with a Rotary ID. |
-| Notifications | Run the cron with the secret; verify in-app notices, Resend delivery (or preview log), and push on an opted-in browser. |
+| Workflow                | Check                                                                                                                                                |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Create activity         | Create a Meeting and a Fellowship; verify each appears in List, Board, and Calendar.                                                                 |
+| Create service project  | Create a Service Project; verify project-specific details exist and the chair can open its Report tab.                                               |
+| Minimum members         | Toggle the minimum off and confirm no threshold is stored; toggle on and confirm the RSVP progress/shortfall appears.                                |
+| RSVP and capacity       | RSVP Going, update the response, and verify duplicate/capacity rules.                                                                                |
+| Check-in                | Verify disabled self check-in is rejected; enable it and test both “Check in as me” and QR scanning, including duplicate and out-of-window attempts. |
+| Tasks and collaboration | Create a task on an activity, update its status, post/delete a comment, react, and upload/remove a photo.                                            |
+| Accomplishment report   | Complete the project, add required report fields and a photo, publish, and verify the saved snapshot and Accomplished status.                        |
+| Aspirant approval       | Approve without a Rotary ID; verify active login, ASPIRANT membership, null Rotary ID, and CRM link. Then induct with a Rotary ID.                   |
+| Notifications           | Run the cron with the secret; verify in-app notices, Resend delivery (or preview log), and push on an opted-in browser.                              |
 
 This repository environment did not have Docker/local Postgres running, so migrations and database-backed workflows were not executed here. Typecheck, unit tests, focused lint, and the production build are separate checks and do not replace this checklist.

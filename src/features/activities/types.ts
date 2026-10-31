@@ -1,5 +1,6 @@
 export const DEFAULT_CLUB_ID =
-  process.env.NEXT_PUBLIC_DEFAULT_CLUB_ID || "00000000-0000-0000-0000-000000000001";
+  process.env.NEXT_PUBLIC_DEFAULT_CLUB_ID ||
+  "00000000-0000-0000-0000-000000000001";
 
 export const ACTIVITY_KINDS = [
   "MEETING",
@@ -16,7 +17,11 @@ export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
 export const PROJECT_KINDS = ["SERVICE_PROJECT", "JOINT_PROJECT"] as const;
 export type ProjectKind = (typeof PROJECT_KINDS)[number];
 
-export const MEETING_TYPES = ["GENERAL_ASSEMBLY", "BOARD_MEETING", "COMMITTEE_MEETING"] as const;
+export const MEETING_TYPES = [
+  "GENERAL_ASSEMBLY",
+  "BOARD_MEETING",
+  "COMMITTEE_MEETING",
+] as const;
 export type MeetingType = (typeof MEETING_TYPES)[number];
 
 export const ACTIVITY_STATUSES = [
@@ -33,7 +38,12 @@ export type ActivityStatus = (typeof ACTIVITY_STATUSES)[number];
 export const RSVP_RESPONSES = ["GOING", "MAYBE", "NOT_GOING"] as const;
 export type RsvpResponse = (typeof RSVP_RESPONSES)[number];
 
-export const TEAM_ROLES = ["CHAIR", "CO_CHAIR", "COMMITTEE", "VOLUNTEER"] as const;
+export const TEAM_ROLES = [
+  "CHAIR",
+  "CO_CHAIR",
+  "COMMITTEE",
+  "VOLUNTEER",
+] as const;
 export type TeamRole = (typeof TEAM_ROLES)[number];
 
 export const PARTNER_ROLES = [
@@ -78,59 +88,69 @@ export interface ActivityKindMeta {
 export const ACTIVITY_KIND_META: Record<ActivityKind, ActivityKindMeta> = {
   MEETING: {
     label: "Meeting",
-    description: "General Assembly, board or committee meeting with agenda and attendance.",
+    description:
+      "General Assembly, board or committee meeting with agenda and attendance.",
     isProject: false,
     dotClass: "bg-sky-500",
-    chipClass: "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-500/10 dark:text-sky-300 dark:border-sky-500/20",
+    chipClass:
+      "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-500/10 dark:text-sky-300 dark:border-sky-500/20",
   },
   SERVICE_PROJECT: {
     label: "Service Project",
-    description: "Community service with beneficiaries, Areas of Focus and a Showcase report.",
+    description:
+      "Community service with beneficiaries, Areas of Focus and a Showcase report.",
     isProject: true,
     dotClass: "bg-emerald-500",
-    chipClass: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/20",
+    chipClass:
+      "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/20",
   },
   JOINT_PROJECT: {
     label: "Joint Project",
     description: "Service project co-implemented with partner or sister clubs.",
     isProject: true,
     dotClass: "bg-teal-500",
-    chipClass: "bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-500/10 dark:text-teal-300 dark:border-teal-500/20",
+    chipClass:
+      "bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-500/10 dark:text-teal-300 dark:border-teal-500/20",
   },
   FELLOWSHIP: {
     label: "Fellowship",
     description: "Social gathering, team building or celebration.",
     isProject: false,
     dotClass: "bg-pink-500",
-    chipClass: "bg-pink-50 text-pink-700 border-pink-200 dark:bg-pink-500/10 dark:text-pink-300 dark:border-pink-500/20",
+    chipClass:
+      "bg-pink-50 text-pink-700 border-pink-200 dark:bg-pink-500/10 dark:text-pink-300 dark:border-pink-500/20",
   },
   DISTRICT_EVENT: {
     label: "District Event",
     description: "District conference, assembly or official visit.",
     isProject: false,
     dotClass: "bg-indigo-500",
-    chipClass: "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-500/10 dark:text-indigo-300 dark:border-indigo-500/20",
+    chipClass:
+      "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-500/10 dark:text-indigo-300 dark:border-indigo-500/20",
   },
   PROFESSIONAL_DEVELOPMENT: {
     label: "Professional Development",
     description: "Workshop, seminar or vocational training.",
     isProject: false,
     dotClass: "bg-violet-500",
-    chipClass: "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-500/10 dark:text-violet-300 dark:border-violet-500/20",
+    chipClass:
+      "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-500/10 dark:text-violet-300 dark:border-violet-500/20",
   },
   FUNDRAISER: {
     label: "Fundraiser",
     description: "Fund-raising activity with funding targets.",
     isProject: false,
     dotClass: "bg-amber-500",
-    chipClass: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20",
+    chipClass:
+      "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20",
   },
   OTHER: {
     label: "Other",
     description: "Any other club activity.",
     isProject: false,
     dotClass: "bg-slate-400",
-    chipClass: "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-500/10 dark:text-slate-300 dark:border-slate-500/20",
+    chipClass:
+      "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-500/10 dark:text-slate-300 dark:border-slate-500/20",
   },
 };
 
