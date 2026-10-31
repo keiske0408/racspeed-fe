@@ -41,6 +41,41 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch {
+    payload = { body: event.data?.text() || "You have a new RacSpeed update." };
+  }
+  const requestedTarget = new URL(payload.url || "/dashboard", self.location.origin);
+  const target = requestedTarget.origin === self.location.origin
+    ? requestedTarget.toString()
+    : new URL("/dashboard", self.location.origin).toString();
+  event.waitUntil(self.registration.showNotification(payload.title || "RacSpeed", {
+    body: payload.body || "You have a new club update.",
+    icon: "/icons/icon-192.png",
+    badge: "/icons/icon-192.png",
+    data: { target },
+  }));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = event.notification.data?.target || new URL("/dashboard", self.location.origin).toString();
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const windowClient of windows) {
+      if ("focus" in windowClient && new URL(windowClient.url).origin === self.location.origin) {
+        await windowClient.focus();
+        if ("navigate" in windowClient) await windowClient.navigate(target);
+        return;
+      }
+    }
+    if (self.clients.openWindow) await self.clients.openWindow(target);
+  })());
+});
+
 // Fetch event: Network-first with cache fallback for navigation & static files
 self.addEventListener("fetch", (event) => {
   // Only handle GET requests (skip mutations, APIs, and auth tokens)

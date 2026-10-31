@@ -65,10 +65,13 @@ export async function updateProspectStageAction(
 
 export async function inductProspectToMemberAction(
   prospectId: string,
-  clubId = "00000000-0000-0000-0000-000000000001"
+  clubId = "00000000-0000-0000-0000-000000000001",
+  rotaryId?: string
 ) {
   const user = await requireUser();
   await assertPermission(clubId, "MEMBER_APPROVE");
+  const validRotaryId = rotaryId?.trim();
+  if (!validRotaryId) return { success: false, error: "A Rotary ID is required before induction to full membership." };
 
   const adminClient = createAdminClient();
 
@@ -133,6 +136,7 @@ export async function inductProspectToMemberAction(
         club_id: clubId,
         profile_id: profileId,
         membership_status: "ACTIVE",
+        rotary_id: validRotaryId,
         joined_date: new Date().toISOString().split("T")[0],
         classification: "Rotaract General",
       },

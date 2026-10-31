@@ -104,4 +104,26 @@ describe("Engagement Scoring and Retention Rules", () => {
     expect(result.isFlagged).toBe(true);
     expect(result.rulesTriggered.some((r) => r.rule === "SERVICE_INACTIVITY")).toBe(true);
   });
+
+  it("flags repeated service project no-shows after an RSVP marked Going", () => {
+    const records: AttendanceRecordLike[] = [
+      {
+        eventId: "sp-1",
+        eventType: "SERVICE_PROJECT",
+        eventDate: new Date("2026-10-10T00:00:00Z"),
+        attended: false,
+        rsvpResponse: "GOING",
+      },
+      {
+        eventId: "sp-2",
+        eventType: "SERVICE_PROJECT",
+        eventDate: new Date("2026-10-01T00:00:00Z"),
+        attended: false,
+        rsvpResponse: "GOING",
+      },
+    ];
+
+    const result = evaluateMemberEngagement(records, refDate);
+    expect(result.rulesTriggered.some((rule) => rule.rule === "RSVP_NO_SHOWS")).toBe(true);
+  });
 });

@@ -19,11 +19,9 @@ export const APP_MODULES: PageModuleDef[] = [
   { key: "members", name: "Members Directory & Approval", path: "/members", description: "Club roster, membership cards, and registration gate", category: "CORE" },
   { key: "recruitment", name: "Recruitment CRM", path: "/recruitment", description: "Prospect pipeline from lead to inducted Rotaractor", category: "CORE" },
   { key: "retention", name: "Retention & Pastoral Alerts", path: "/retention-alerts", description: "Member disengagement prevention and outreach", category: "CORE" },
-  { key: "calendar", name: "Master Calendar", path: "/calendar", description: "Unified operational calendar, committee timeline, and milestones", category: "SERVICE" },
-  { key: "events", name: "Events & Attendance", path: "/events", description: "General Assemblies, fellowship, and QR check-in", category: "SERVICE" },
-  { key: "tasks", name: "Committee Task Center", path: "/tasks", description: "Group tasks, checklists, and assignee tracking", category: "SERVICE" },
+  { key: "project-center", name: "Project Center", path: "/project-center", description: "Meetings, service projects, calendar, tasks, attendance and collaboration in one place", category: "SERVICE" },
+  { key: "events", name: "QR Check-in Scanner", path: "/events", description: "Scan activity QR codes and record attendance", category: "SERVICE" },
   { key: "broadcasts", name: "GC Broadcasts", path: "/broadcasts", description: "AI-generated announcements, Messenger group chat drafts, and push broadcasts", category: "SERVICE" },
-  { key: "projects", name: "Projects & Reports", path: "/projects", description: "Community service initiatives and completion reports", category: "SERVICE" },
   { key: "treasury", name: "Treasury & Dues", path: "/treasury", description: "Invoicing, member payment tracking, and ledger", category: "FINANCE" },
   { key: "budgets", name: "Budget & Liquidation", path: "/budgets", description: "Dual-sign budget approvals and receipt liquidations", category: "FINANCE" },
   { key: "partnerships", name: "Sister Clubs & Partners", path: "/partnerships", description: "Domestic & international twin clubs and MOAs", category: "FINANCE" },
@@ -40,41 +38,51 @@ export interface RoleConfigDTO {
   allowedPermissions: Permission[];
 }
 
+// Saved role configs predate Project Center; any of the merged modules grants access to it.
+const MODULE_ALIASES: Record<string, string[]> = {
+  "project-center": ["calendar", "events", "projects", "tasks"],
+};
+
+export function isModuleAllowed(allowedPages: string[], moduleKey: string): boolean {
+  if (allowedPages.includes(moduleKey)) return true;
+  return (MODULE_ALIASES[moduleKey] || []).some((alias) => allowedPages.includes(alias));
+}
+
 export const DEFAULT_ROLE_PAGES: Record<RoleKey, string[]> = {
   PRESIDENT: [
-    "dashboard", "members", "recruitment", "retention", "calendar", "events",
-    "tasks", "broadcasts", "projects", "treasury", "budgets", "partnerships",
+    "dashboard", "members", "recruitment", "retention", "project-center", "events",
+    "broadcasts", "treasury", "budgets", "partnerships",
     "resources", "certificates", "settings",
   ],
   VICE_PRESIDENT: [
-    "dashboard", "members", "recruitment", "retention", "calendar", "events",
-    "tasks", "broadcasts", "projects", "partnerships", "resources", "certificates",
+    "dashboard", "members", "recruitment", "retention", "project-center", "events",
+    "broadcasts", "partnerships", "resources", "certificates",
   ],
   SECRETARY: [
-    "dashboard", "recruitment", "retention", "calendar", "events",
-    "tasks", "broadcasts", "projects", "partnerships", "resources", "certificates",
+    "dashboard", "recruitment", "retention", "project-center", "events",
+    "broadcasts", "partnerships", "resources", "certificates",
   ],
   TREASURER: [
-    "dashboard", "members", "calendar", "events", "tasks", "projects",
+    "dashboard", "members", "project-center", "events",
     "treasury", "budgets", "partnerships", "resources",
   ],
   PROJECT_CHAIR: [
-    "dashboard", "members", "calendar", "events", "tasks", "broadcasts",
-    "projects", "budgets", "resources", "certificates",
+    "dashboard", "members", "project-center", "events", "broadcasts",
+    "budgets", "resources", "certificates",
   ],
   MEMBERSHIP_CHAIR: [
-    "dashboard", "members", "recruitment", "retention", "calendar", "events",
-    "tasks", "broadcasts", "resources",
+    "dashboard", "members", "recruitment", "retention", "project-center", "events",
+    "broadcasts", "resources",
   ],
   BOARD_OFFICER: [
-    "dashboard", "members", "calendar", "events", "tasks", "broadcasts",
-    "projects", "budgets", "partnerships", "resources", "retention",
+    "dashboard", "members", "project-center", "events", "broadcasts",
+    "budgets", "partnerships", "resources", "retention",
   ],
   GENERAL_MEMBER: [
-    "dashboard", "calendar", "events", "tasks", "projects", "resources", "certificates",
+    "dashboard", "project-center", "events", "resources", "certificates",
   ],
   AUDITOR: [
-    "dashboard", "members", "calendar", "treasury", "budgets", "resources", "retention",
+    "dashboard", "members", "project-center", "treasury", "budgets", "resources", "retention",
   ],
 };
 

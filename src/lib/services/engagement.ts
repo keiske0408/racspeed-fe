@@ -6,18 +6,21 @@ export interface AttendanceRecordLike {
   eventDate: Date;
   attended: boolean;
   isExcused?: boolean;
+  rsvpResponse?: "GOING" | "MAYBE" | "NOT_GOING" | null;
 }
 
 export interface EngagementCheckConfig {
   consecutiveGaThreshold?: number; // default 3
   serviceDaysThreshold?: number; // default 60
+  rsvpNoShowThreshold?: number;
+  memberSince?: Date;
 }
 
 export interface EngagementResult {
   isFlagged: boolean;
   reasons: string[];
   rulesTriggered: {
-    rule: "MISSED_CONSECUTIVE_GAS" | "SERVICE_INACTIVITY";
+    rule: "MISSED_CONSECUTIVE_GAS" | "SERVICE_INACTIVITY" | "RSVP_NO_SHOWS";
     description: string;
     supportingDates: string[];
   }[];
@@ -38,6 +41,7 @@ export function evaluateMemberEngagement(
 ): EngagementResult {
   const gaThreshold = config.consecutiveGaThreshold ?? 3;
   const serviceThreshold = config.serviceDaysThreshold ?? 60;
+  const noShowThreshold = config.rsvpNoShowThreshold ?? 2;
 
   const reasons: string[] = [];
   const rulesTriggered: EngagementResult["rulesTriggered"] = [];
@@ -78,13 +82,16 @@ export function evaluateMemberEngagement(
     .sort((a, b) => b.eventDate.getTime() - a.eventDate.getTime());
 
   if (attendedServiceProjects.length === 0) {
-    const desc = `No attended service projects recorded.`;
-    reasons.push(desc);
-    rulesTriggered.push({
-      rule: "SERVICE_INACTIVITY",
-      description: desc,
-      supportingDates: [],
-    });
+    const membershipDays = config.memberSince ? daysBetween(config.memberSince, referenceDate) : serviceThreshold;
+    if (membershipDays >= serviceThreshold) {
+      const desc = `No attended service projects recorded in the last ${membershipDays} days.`;
+      reasons.push(desc);
+      rulesTriggered.push({
+        rule: "SERVICE_INACTIVITY",
+        description: desc,
+        supportingDates: [],
+      });
+    }
   } else {
     const lastProject = attendedServiceProjects[0];
     const daysSince = daysBetween(lastProject.eventDate, referenceDate);
@@ -97,6 +104,16 @@ export function evaluateMemberEngagement(
         supportingDates: [lastProject.eventDate.toISOString()],
       });
     }
+  }
+
+  const missedRsvps = records
+    .filter((record) => record.eventType === "SERVICE_PROJECT" && record.rsvpResponse === "GOING" && !record.attended)
+    .sort((a, b) => b.eventDate.getTime() - a.eventDate.getTime());
+  if (missedRsvps.length >= noShowThreshold) {
+    const supportingDates = missedRsvps.slice(0, noShowThreshold).map((record) => record.eventDate.toISOString());
+    const description = `Missed ${missedRsvps.length} service projects after RSVPing Going.`;
+    reasons.push(description);
+    rulesTriggered.push({ rule: "RSVP_NO_SHOWS", description, supportingDates });
   }
 
   return {

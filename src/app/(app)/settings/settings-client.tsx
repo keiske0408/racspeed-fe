@@ -20,6 +20,7 @@ import {
   PermissionDefinition,
 } from "@/lib/data/role-permissions-types";
 import { RoleKey } from "@/lib/permissions/keys";
+import { PushNotificationControl } from "@/components/settings/push-notification-control";
 
 interface SettingsClientProps {
   initialSettings: ClubSettingsDTO;
@@ -135,6 +136,8 @@ export function SettingsClient({ initialSettings, initialPermissions }: Settings
               <span>{errorMessage}</span>
             </div>
           )}
+
+          <PushNotificationControl />
 
           <form onSubmit={handleSave} className="space-y-6">
             <input type="hidden" name="clubId" value={initialSettings.clubId} />

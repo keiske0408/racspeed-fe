@@ -42,7 +42,7 @@ export async function getGroupTasksList(
         createdAt: r.created_at,
         updatedAt: r.updated_at,
         createdBy: r.created_by,
-        projectId: r.project_id || r.projectId,
+        projectId: r.activity_id || r.project_id || r.projectId,
         projectTitle: r.project_title || r.projectTitle,
       }));
     }

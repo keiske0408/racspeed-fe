@@ -1,4 +1,5 @@
 import React from "react";
+import { redirect } from "next/navigation";
 import { assertPageAccess } from "@/lib/auth/session";
 import { getEventsList, getUserCheckedInEventIds } from "@/features/events/queries";
 import { EventsClient } from "./events-client";
@@ -16,15 +17,17 @@ interface EventsPageProps {
 
 export default async function EventsPage({ searchParams }: EventsPageProps) {
   const context = await assertPageAccess("events");
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+  if (resolvedSearchParams.action === "new") {
+    redirect("/project-center/new");
+  }
   const initialEvents = await getEventsList();
   const initialCheckedInEventIds = await getUserCheckedInEventIds(context.user.id);
-  const resolvedSearchParams = searchParams ? await searchParams : {};
   const initialToken =
     resolvedSearchParams.token ||
     resolvedSearchParams.sessionToken ||
     resolvedSearchParams.checkInToken;
 
-  const canCreate = context.isPlatformAdmin || context.permissions.has("EVENT_CREATE");
   const canManageAttendance =
     context.isPlatformAdmin || context.permissions.has("ATTENDANCE_MANAGE");
 
@@ -34,9 +37,7 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
       initialToken={initialToken}
       initialCheckedInEventIds={initialCheckedInEventIds}
       currentUserId={context.user.id}
-      canCreate={canCreate}
       canManageAttendance={canManageAttendance}
-      initialAction={resolvedSearchParams.action}
     />
   );
 }

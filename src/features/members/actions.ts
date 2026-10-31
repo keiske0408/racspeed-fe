@@ -115,11 +115,28 @@ export async function createMemberAction(formData: FormData) {
   return { success: true, message: `Member account created for ${fullName} (${email}).` };
 }
 
-export async function approveMemberAction(profileId: string, clubId = "00000000-0000-0000-0000-000000000001") {
+export async function approveMemberAction(
+  profileId: string,
+  clubId = "00000000-0000-0000-0000-000000000001",
+  rotaryId?: string
+) {
   await requireUser();
   await assertPermission(clubId, "MEMBER_APPROVE");
+  const validRotaryId = rotaryId?.trim();
+  if (!validRotaryId) return { success: false, error: "A Rotary ID is required for full member approval." };
 
   const adminClient = createAdminClient();
+
+  const { data: profile } = await adminClient.from("profiles").select("email").eq("id", profileId).maybeSingle();
+  if (!profile) return { success: false, error: "Applicant profile not found." };
+
+  const { error: membershipError } = await adminClient.from("club_memberships").upsert({
+    club_id: clubId,
+    profile_id: profileId,
+    membership_status: "ACTIVE",
+    rotary_id: validRotaryId,
+  }, { onConflict: "club_id,profile_id" });
+  if (membershipError) return { success: false, error: membershipError.message };
 
   // Activate profile
   const { error: profileError } = await adminClient
@@ -131,23 +148,74 @@ export async function approveMemberAction(profileId: string, clubId = "00000000-
     return { success: false, error: profileError.message };
   }
 
-  // Ensure active club membership exists
-  await adminClient.from("club_memberships").upsert({
-    club_id: clubId,
-    profile_id: profileId,
-    membership_status: "ACTIVE",
-  }, { onConflict: "club_id,profile_id" });
-
   // Sync with Recruitment CRM: automatically advance matching prospect to INDUCTED
-  const { data: prof } = await adminClient.from("profiles").select("email").eq("id", profileId).single();
-  if (prof?.email) {
-    await adminClient.from("prospects").update({ stage: "INDUCTED" }).eq("email", prof.email);
+  if (profile.email) {
+    await adminClient.from("prospects").update({ stage: "INDUCTED", converted_profile_id: profileId }).eq("club_id", clubId).eq("email", profile.email);
   }
 
   revalidatePath("/members");
   revalidatePath("/recruitment");
   revalidatePath("/dashboard");
   return { success: true, message: "Member account approved, activated, and linked to Recruitment CRM!" };
+}
+
+export async function approveAspirantMemberAction(
+  profileId: string,
+  clubId = "00000000-0000-0000-0000-000000000001"
+) {
+  await requireUser();
+  await assertPermission(clubId, "MEMBER_APPROVE");
+  const adminClient = createAdminClient();
+
+  const { data: profile } = await adminClient
+    .from("profiles")
+    .select("id, email, full_name, status")
+    .eq("id", profileId)
+    .maybeSingle();
+  if (!profile) return { success: false, error: "Applicant profile not found." };
+
+  const { error: membershipError } = await adminClient.from("club_memberships").upsert({
+    club_id: clubId,
+    profile_id: profileId,
+    membership_status: "ASPIRANT",
+    rotary_id: null,
+  }, { onConflict: "club_id,profile_id" });
+  if (membershipError) return { success: false, error: membershipError.message };
+
+  const { error: profileError } = await adminClient.from("profiles").update({ status: "ACTIVE" }).eq("id", profileId);
+  if (profileError) return { success: false, error: profileError.message };
+
+  if (profile.email) {
+    const { data: prospect } = await adminClient
+      .from("prospects")
+      .select("id")
+      .eq("club_id", clubId)
+      .eq("email", profile.email)
+      .limit(1)
+      .maybeSingle();
+
+    if (prospect) {
+      await adminClient
+        .from("prospects")
+        .update({ stage: "READY_FOR_INDUCTION", converted_profile_id: profileId })
+        .eq("id", prospect.id);
+    } else {
+      await adminClient.from("prospects").insert({
+        club_id: clubId,
+        full_name: profile.full_name,
+        email: profile.email,
+        stage: "READY_FOR_INDUCTION",
+        converted_profile_id: profileId,
+        has_privacy_consent: true,
+        notes: "Approved as an aspirant member; Rotary ID is pending induction.",
+      });
+    }
+  }
+
+  revalidatePath("/members");
+  revalidatePath("/recruitment");
+  revalidatePath("/dashboard");
+  return { success: true, message: "Aspirant activated with no Rotary ID and linked to Recruitment CRM." };
 }
 
 export async function rejectMemberAction(profileId: string, clubId = "00000000-0000-0000-0000-000000000001") {

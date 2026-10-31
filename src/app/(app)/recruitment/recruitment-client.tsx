@@ -43,17 +43,17 @@ export function RecruitmentClient({ initialProspects, canManage = false }: Recru
     if (!confirm(`Are you ready to officially induct ${name} and activate their official Club Member account?`)) {
       return;
     }
+    const rotaryId = window.prompt(`Enter ${name}'s Rotary ID to complete induction:`);
+    if (!rotaryId?.trim()) return;
     startTransition(async () => {
       try {
-        const res = await inductProspectToMemberAction(id);
+        const res = await inductProspectToMemberAction(id, undefined, rotaryId.trim());
         if (res.success) {
           setProspects((prev) =>
             prev.map((p) => (p.id === id ? { ...p, stage: "INDUCTED" as any } : p))
           );
           setNotification(res.message || `${name} inducted and activated in Members!`);
-        } else {
-          alert(res.error || "Failed to induct member");
-        }
+        } else alert(res.error || "Failed to induct member");
       } catch (err: any) {
         alert(err?.message || "Failed to induct member");
       }

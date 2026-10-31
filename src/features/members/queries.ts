@@ -7,7 +7,7 @@ export interface MemberDTO {
   email: string;
   role: string;
   roleKey: string;
-  status: "ACTIVE" | "PENDING" | "INACTIVE" | "PROBATIONARY" | "ALUMNI";
+  status: "ACTIVE" | "ASPIRANT" | "PENDING" | "INACTIVE" | "PROBATIONARY" | "ALUMNI";
   joinedDate: string;
   classification: string;
   rotaryId?: string;

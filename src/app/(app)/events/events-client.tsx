@@ -3,12 +3,10 @@
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import {
-  Calendar,
   QrCode,
   Clock,
   MapPin,
   Users,
-  Plus,
   CheckCircle,
   X,
   ShieldCheck,
@@ -30,7 +28,6 @@ import {
 import { formatManilaDate, formatManila } from "@/lib/utils/dates";
 import { createClient } from "@/lib/supabase/client";
 import {
-  createEventAction,
   startQrAttendanceSessionAction,
   getEventAttendeesAction,
 } from "@/features/events/actions";
@@ -95,9 +92,7 @@ interface EventsClientProps {
   initialToken?: string;
   initialCheckedInEventIds?: string[];
   currentUserId?: string;
-  canCreate?: boolean;
   canManageAttendance?: boolean;
-  initialAction?: string;
 }
 
 export function EventsClient({
@@ -105,19 +100,15 @@ export function EventsClient({
   initialToken,
   initialCheckedInEventIds = [],
   currentUserId,
-  canCreate = false,
   canManageAttendance = false,
-  initialAction,
 }: EventsClientProps) {
   const [events, setEvents] = useState<EventDTO[]>(initialEvents);
   const [checkedInEventIds, setCheckedInEventIds] = useState<string[]>(initialCheckedInEventIds);
   const [selectedEvent, setSelectedEvent] = useState<EventDTO | null>(null);
   const [qrModalOpen, setQrModalOpen] = useState(false);
-  const [showAddModal, setShowAddModal] = useState(canCreate && initialAction === "new");
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
   const [sessionToken, setSessionToken] = useState<string>("");
   const [secondsRemaining, setSecondsRemaining] = useState<number>(60);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [checkInTokenInput, setCheckInTokenInput] = useState(
     initialToken ? extractSessionToken(initialToken) : ""
   );
@@ -525,49 +516,6 @@ export function EventsClient({
     setCheckInTokenInput("");
   }
 
-  async function handleCreateEvent(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!canCreate) {
-      setNotification({
-        title: "Access Restricted",
-        message: "You do not have permission to create club events.",
-        type: "error",
-      });
-      return;
-    }
-    setIsSubmitting(true);
-    const formData = new FormData(e.currentTarget);
-
-    try {
-      const res = await createEventAction(formData);
-      if (res.success) {
-        setNotification({
-          title: "Event Registered",
-          message: res.message || "Event created successfully!",
-          type: "success",
-        });
-        const newEvt: EventDTO = {
-          id: res.eventId || `evt-${Date.now()}`,
-          title: formData.get("title") as string,
-          category: (formData.get("category") as string).replace(/_/g, " "),
-          location: formData.get("location") as string,
-          startTime: (formData.get("startTime") as string) + ":00Z",
-          endTime: (formData.get("endTime") as string) + ":00Z",
-          volunteerHours: Number(formData.get("volunteerHoursDefault") || 3.0),
-          attendeesCount: 0,
-        };
-        setEvents((prev) => [newEvt, ...prev]);
-        setShowAddModal(false);
-      } else {
-        alert(res.error || "Failed to create event");
-      }
-    } catch (err: any) {
-      alert(err?.message || "Failed to register event");
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
   // Filter attendees for Roster Modal
   const filteredAttendees = attendeesList.filter((a) => {
     if (!attendeesSearch) return true;
@@ -698,15 +646,12 @@ export function EventsClient({
             <Megaphone className="w-3.5 h-3.5 text-rose-600" />
             GC Broadcast Studio
           </Link>
-          {canCreate && (
-            <button
-              onClick={() => setShowAddModal(true)}
-              className="inline-flex items-center gap-2 py-2 px-3.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition shadow-xs cursor-pointer shrink-0"
-            >
-              <Plus className="w-4 h-4" />
-              Create New Event
-            </button>
-          )}
+          <Link
+            href="/project-center"
+            className="inline-flex items-center gap-2 py-2 px-3.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition shadow-xs shrink-0"
+          >
+            Project Center
+          </Link>
         </div>
       </div>
 
@@ -1177,130 +1122,6 @@ export function EventsClient({
                 )}
               </div>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* MODAL: CREATE EVENT */}
-      {/* ========================================================================= */}
-      {canCreate && showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-2xl">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                Create Club Event / Activity
-              </h3>
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="p-1 rounded-md text-slate-400 hover:text-slate-600"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateEvent} className="mt-4 space-y-3.5">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Event Title *
-                </label>
-                <input
-                  type="text"
-                  name="title"
-                  required
-                  placeholder="e.g. Tree Planting & Clean-up Drive"
-                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Category *
-                  </label>
-                  <select
-                    name="category"
-                    defaultValue="SERVICE_PROJECT"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500 font-medium"
-                  >
-                    <option value="SERVICE_PROJECT">Service Project</option>
-                    <option value="GENERAL_ASSEMBLY">General Assembly</option>
-                    <option value="FELLOWSHIP">Fellowship</option>
-                    <option value="PROFESSIONAL_DEVELOPMENT">Training & Leadership</option>
-                    <option value="BOARD_MEETING">Board Meeting</option>
-                    <option value="DISTRICT_EVENT">District Event</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Volunteer Hours *
-                  </label>
-                  <input
-                    type="number"
-                    name="volunteerHoursDefault"
-                    defaultValue="3.0"
-                    step="0.5"
-                    min="0"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Venue / Location *
-                </label>
-                <input
-                  type="text"
-                  name="location"
-                  required
-                  placeholder="e.g. San Pedro City Hall / Hybrid Zoom"
-                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Start Time *
-                  </label>
-                  <input
-                    type="datetime-local"
-                    name="startTime"
-                    required
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    End Time *
-                  </label>
-                  <input
-                    type="datetime-local"
-                    name="endTime"
-                    required
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                  />
-                </div>
-              </div>
-
-              <div className="pt-2 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs shadow-xs disabled:opacity-50 cursor-pointer"
-                >
-                  {isSubmitting ? "Creating..." : "Create Event"}
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}

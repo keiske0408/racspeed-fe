@@ -15,6 +15,7 @@ import {
   readRolePermissionsStore,
   DEFAULT_ROLE_PAGES,
   APP_MODULES,
+  isModuleAllowed,
 } from "@/lib/data/role-permissions-storage";
 
 export interface CurrentUserContext {
@@ -171,7 +172,7 @@ export async function assertPageAccess(
   if (context.isPlatformAdmin) {
     return context;
   }
-  if (!context.allowedPages.includes(moduleKey)) {
+  if (!isModuleAllowed(context.allowedPages, moduleKey)) {
     redirect("/access-denied");
   }
   return context;

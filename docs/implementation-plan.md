@@ -4,6 +4,31 @@
 **Status**: Production-Ready Architectural Monolith Completed  
 **Framework**: Next.js 16 (App Router + Turbopack) & Supabase PostgreSQL with Strict RLS
 
+## Project Center Refactor — Implementation Checklist (2026-10-31)
+
+| Area | Checklist | Status / next gate |
+|---|---|---|
+| Unified activity model | Add activities, project-only detail, RSVP, media, comments, team, logs, and legacy backfills | Implemented in migrations 0008–0009; apply and validate against Supabase before deployment |
+| Project Center | Create by activity type; List, Board, Month/Agenda calendar, detail sections, tasks, reports, media, discussion | Implemented; existing Events/Projects/Calendar/Tasks routes route into Project Center views |
+| Events and QR check-in | Keep QR scanning/session management separate from event creation | Implemented; QR page now links to Project Center and no longer creates events |
+| RSVP and minimum members | Member RSVP; optional minimum-member field; alert chair if threshold is unmet near start | Implemented; requires migration 0008 and scheduled retention job |
+| Personal check-in | “Check in as me” within activity window; QR remains available; member/aspirant-only server validation | Implemented; enable per activity |
+| Service project reporting | Rotary Showcase-inspired completion fields, photo requirement, immutable submission snapshot, accomplished status | Implemented; requires a report template row and `activity-media` storage bucket from migration 0008 |
+| Project collaboration | Comments, reactions, follows, activity history, private photo uploads | Implemented; @mention notifications and threaded reply UI remain follow-up work |
+| Member retention | Detect missed consecutive GAs, repeated Going RSVP no-shows, and service inactivity; send member nudge and chair digest | Implemented in cron/dispatcher; configure cron, Resend, and VAPID to deliver externally |
+| Membership approval | Aspirant can be active with null Rotary ID and a Recruitment CRM link; full induction requires Rotary ID | Implemented |
+| Rewards | Idempotent points for attendance and completed tasks, threshold badges, Rotary Year leaderboard | Initial version implemented; RSVP-honored/no-show point awards and GA streak badge calculation remain follow-up work |
+| Dashboard | Personalized greeting, upcoming activities, accomplished projects, personal dues, engagement points | Implemented with live Supabase data |
+| Verification | Typecheck, unit tests, focused lint, production build | Passed: 44 unit tests; SQL lint needs local Postgres/Docker, which was unavailable in the implementation environment |
+
+### Deployment checklist
+
+- [ ] Apply migrations 0008–0009 to a database copy and verify backfilled activity, attendance, and photo rows.
+- [ ] Configure `RESEND_API_KEY`, `EMAIL_FROM`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT`.
+- [ ] Configure the daily `/api/cron/retention-check` job with `Authorization: Bearer $CRON_SECRET`.
+- [ ] Verify Storage bucket access, RLS policies, email preview mode, and push delivery on a real browser subscription.
+- [ ] Run the Project Center create → RSVP → check-in → report publish workflow against the migrated database.
+
 ---
 
 ## 1. Executive Summary & Delivery Scope

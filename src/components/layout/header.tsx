@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from "react";
 import {
-  Bell,
   Menu,
   LogOut,
   Sun,
@@ -17,6 +16,8 @@ import {
   CheckSquare,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { isModuleAllowed } from "@/lib/data/role-permissions-types";
+import { NotificationBell } from "@/components/layout/notification-bell";
 import { useRouter } from "next/navigation";
 
 export interface HeaderProps {
@@ -50,15 +51,15 @@ export function Header({
   }, []);
 
   const permSet = new Set(permissions);
-  const hasPage = (page: string) => isPlatformAdmin || allowedPages.includes(page);
+  const hasPage = (page: string) => isPlatformAdmin || isModuleAllowed(allowedPages, page);
   const hasPerm = (perm: string) => isPlatformAdmin || permSet.has(perm);
 
-  const canCreateEvent = hasPage("events") && hasPerm("EVENT_CREATE");
-  const canCreateProject = hasPage("projects") && hasPerm("PROJECT_CREATE");
+  const canCreateEvent = hasPage("project-center") && hasPerm("EVENT_CREATE");
+  const canCreateProject = hasPage("project-center") && hasPerm("PROJECT_CREATE");
   const canAddProspect = hasPage("recruitment") && (hasPerm("RECRUITMENT_MANAGE") || hasPerm("MEMBER_CREATE"));
   const canAddResource = hasPage("resources") && hasPerm("SETTINGS_MANAGE");
   const canRecordPayment = hasPage("treasury") && (hasPerm("PAYMENT_SUBMIT") || hasPerm("TREASURY_VIEW") || hasPerm("LEDGER_ADJUST"));
-  const canAssignTask = hasPage("tasks") && hasPerm("ROLE_ASSIGN");
+  const canAssignTask = hasPage("project-center") && hasPerm("ROLE_ASSIGN");
 
   const hasAnyCreateAction =
     canCreateEvent ||
@@ -158,20 +159,20 @@ export function Header({
                 </p>
                 {canCreateEvent && (
                   <button
-                    onClick={() => handleNavigate("/events?action=new")}
+                    onClick={() => handleNavigate("/project-center/new?kind=MEETING")}
                     className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-[#111625] dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition"
                   >
                     <Calendar className="w-4 h-4 text-[#0D3594] dark:text-blue-400" />
-                    <span>New Event / QR Session</span>
+                    <span>New Meeting / Event</span>
                   </button>
                 )}
                 {canCreateProject && (
                   <button
-                    onClick={() => handleNavigate("/projects?action=new")}
+                    onClick={() => handleNavigate("/project-center/new?kind=SERVICE_PROJECT")}
                     className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-[#111625] dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition"
                   >
                     <FolderKanban className="w-4 h-4 text-[#17A863]" />
-                    <span>Register Service Project</span>
+                    <span>New Service Project</span>
                   </button>
                 )}
                 {canAddProspect && (
@@ -203,7 +204,7 @@ export function Header({
                 )}
                 {canAssignTask && (
                   <button
-                    onClick={() => handleNavigate("/tasks")}
+                    onClick={() => handleNavigate("/project-center?view=tasks")}
                     className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-[#111625] dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition"
                   >
                     <CheckSquare className="w-4 h-4 text-sky-600" />
@@ -226,14 +227,7 @@ export function Header({
           {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-600" />}
         </button>
 
-        {/* Notifications */}
-        <button
-          className="relative p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-          aria-label="View notifications"
-        >
-          <Bell className="w-4 h-4 text-[#8E95A5]" />
-          <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#E54335]" />
-        </button>
+        <NotificationBell />
 
         {/* User Profile Dropdown */}
         <div className="relative">

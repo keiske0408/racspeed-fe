@@ -3,12 +3,12 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { isModuleAllowed } from "@/lib/data/role-permissions-types";
 import {
   LayoutDashboard,
   Users,
   UserPlus,
-  Calendar,
-  CalendarDays,
+  ScanLine,
   FolderKanban,
   Receipt,
   FileSpreadsheet,
@@ -16,7 +16,6 @@ import {
   Settings,
   ShieldAlert,
   Globe,
-  CheckSquare,
   Megaphone,
   HelpCircle,
   ChevronDown,
@@ -53,11 +52,9 @@ const NAV_SECTIONS: NavSection[] = [
   {
     title: "Activities",
     items: [
-      { label: "Master Calendar", href: "/calendar", icon: CalendarDays },
-      { label: "Events & Check-in", href: "/events", icon: Calendar },
-      { label: "Task Center", href: "/tasks", icon: CheckSquare },
+      { label: "Project Center", href: "/project-center", icon: FolderKanban },
+      { label: "QR Check-in", href: "/events", icon: ScanLine },
       { label: "GC Broadcasts", href: "/broadcasts", icon: Megaphone, badge: "AI" },
-      { label: "Projects & Reports", href: "/projects", icon: FolderKanban },
     ],
   },
   {
@@ -83,11 +80,9 @@ const NAV_ITEM_MODULE_MAP: Record<string, string> = {
   "/members": "members",
   "/recruitment": "recruitment",
   "/retention-alerts": "retention",
-  "/calendar": "calendar",
+  "/project-center": "project-center",
   "/events": "events",
-  "/tasks": "tasks",
   "/broadcasts": "broadcasts",
-  "/projects": "projects",
   "/treasury": "treasury",
   "/budgets": "budgets",
   "/partnerships": "partnerships",
@@ -124,7 +119,7 @@ export function Sidebar({
       if (!allowedPages) return true;
       const mod = NAV_ITEM_MODULE_MAP[item.href];
       if (!mod) return true;
-      return allowedPages.includes(mod);
+      return isModuleAllowed(allowedPages, mod);
     });
     return { ...section, items };
   }).filter((section) => section.items.length > 0);

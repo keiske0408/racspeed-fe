@@ -12,9 +12,11 @@ export interface EventDTO {
   description?: string;
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const DEFAULT_EVENTS: EventDTO[] = [
   {
-    id: "evt-001",
+    id: "00000000-0000-0000-0001-000000000001",
     title: "Youth Leadership & Public Speaking Boot Camp",
     category: "PROFESSIONAL DEVELOPMENT",
     location: "San Pedro City Hall Auditorium",
@@ -25,7 +27,7 @@ const DEFAULT_EVENTS: EventDTO[] = [
     description: "Interactive workshop for high school and collegiate youth leaders on parliamentary procedure and community mobilization.",
   },
   {
-    id: "evt-002",
+    id: "00000000-0000-0000-0001-000000000002",
     title: "Executive Board Strategic Planning Session",
     category: "BOARD MEETING",
     location: "Club Secretariat HQ / Google Meet",
@@ -36,7 +38,7 @@ const DEFAULT_EVENTS: EventDTO[] = [
     description: "Monthly board review evaluating Q2 project liquidations and membership retention intervention plans.",
   },
   {
-    id: "evt-003",
+    id: "00000000-0000-0000-0001-000000000003",
     title: "District 3820 Coastal Clean-Up & Mangrove Planting",
     category: "SERVICE PROJECT",
     location: "Brgy. San Antonio Coast, Laguna Bay Area",
@@ -47,7 +49,7 @@ const DEFAULT_EVENTS: EventDTO[] = [
     description: "Joint environmental stewardship action planting 500 mangrove saplings and conducting shoreline waste auditing.",
   },
   {
-    id: "evt-004",
+    id: "00000000-0000-0000-0001-000000000004",
     title: "November General Assembly & Fellowship Night",
     category: "GENERAL ASSEMBLY",
     location: "Pacita Complex Activity Hall",
@@ -58,7 +60,7 @@ const DEFAULT_EVENTS: EventDTO[] = [
     description: "Regular club assembly featuring committee reports, induction of 5 new members, and guest speaker on maternal health.",
   },
   {
-    id: "evt-005",
+    id: "00000000-0000-0000-0001-000000000005",
     title: "RY 2026-27 Grand Induction & Handover Ball",
     category: "FELLOWSHIP",
     location: "The Monochrome Events Place, Nuvali",
@@ -69,7 +71,7 @@ const DEFAULT_EVENTS: EventDTO[] = [
     description: "Formal gala ceremony charging newly inducted officers and honoring sponsor Rotary Club of San Pedro East partners.",
   },
   {
-    id: "evt-006",
+    id: "00000000-0000-0000-0001-000000000006",
     title: "Community Blood Letting Drive (Red Cross San Pedro)",
     category: "SERVICE PROJECT",
     location: "Pacita Complex 1 Covered Court",
@@ -80,7 +82,7 @@ const DEFAULT_EVENTS: EventDTO[] = [
     description: "Annual blood donation campaign in partnership with Philippine Red Cross Laguna Chapter targeting 100 bags.",
   },
   {
-    id: "evt-007",
+    id: "00000000-0000-0000-0001-000000000007",
     title: "District Governor Official Club Visit & Citation Review",
     category: "BOARD MEETING",
     location: "San Pedro East Rotary Clubhouse",
@@ -92,9 +94,46 @@ const DEFAULT_EVENTS: EventDTO[] = [
   },
 ];
 
+// Legacy adapter: events are now rows in `activities` (ids preserved by migration 0008).
 export async function getEventsList(clubId = "00000000-0000-0000-0000-000000000001"): Promise<EventDTO[]> {
   try {
     const adminClient = createAdminClient();
+    const { data: activities, error: activitiesError } = await adminClient
+      .from("activities")
+      .select(`
+        id,
+        title,
+        short_description,
+        description,
+        kind,
+        meeting_type,
+        location,
+        start_at,
+        end_at,
+        volunteer_hours_default,
+        attendance_records (count)
+      `)
+      .eq("club_id", clubId)
+      .neq("status", "CANCELLED")
+      .order("start_at", { ascending: true });
+
+    if (!activitiesError && activities) {
+      return activities.map((a) => {
+        const records = (a.attendance_records as any[]) || [];
+        return {
+          id: a.id,
+          title: a.title,
+          category: (a.meeting_type || a.kind).replace(/_/g, " "),
+          location: a.location || "Venue TBA",
+          startTime: a.start_at,
+          endTime: a.end_at,
+          volunteerHours: Number(a.volunteer_hours_default || 0),
+          attendeesCount: records[0]?.count ?? 0,
+          description: a.short_description || a.description || undefined,
+        };
+      });
+    }
+
     const { data: events, error } = await adminClient
       .from("events")
       .select(`
@@ -150,12 +189,12 @@ export interface EventAttendeeDTO {
 }
 
 export async function getUserCheckedInEventIds(userId: string): Promise<string[]> {
-  if (!userId) return [];
+  if (!userId || !UUID_REGEX.test(userId)) return [];
   try {
     const adminClient = createAdminClient();
     const { data, error } = await adminClient
       .from("attendance_records")
-      .select("event_id")
+      .select("event_id, activity_id")
       .eq("profile_id", userId)
       .eq("attended", true);
 
@@ -163,7 +202,7 @@ export async function getUserCheckedInEventIds(userId: string): Promise<string[]
       return [];
     }
 
-    return Array.from(new Set(data.map((r) => r.event_id)));
+    return Array.from(new Set(data.map((r) => r.activity_id || r.event_id).filter(Boolean)));
   } catch (err) {
     console.warn("Could not query user checked in event IDs:", err);
     return [];
@@ -171,7 +210,7 @@ export async function getUserCheckedInEventIds(userId: string): Promise<string[]
 }
 
 export async function getEventAttendees(eventId: string): Promise<EventAttendeeDTO[]> {
-  if (!eventId) return [];
+  if (!eventId || !UUID_REGEX.test(eventId)) return [];
   try {
     const adminClient = createAdminClient();
     const { data, error } = await adminClient
@@ -186,7 +225,7 @@ export async function getEventAttendees(eventId: string): Promise<EventAttendeeD
         attended,
         profile:profile_id(id, full_name, email, avatar_url)
       `)
-      .eq("event_id", eventId)
+      .or(`activity_id.eq.${eventId},event_id.eq.${eventId}`)
       .order("check_in_time", { ascending: false });
 
     if (error || !data) {

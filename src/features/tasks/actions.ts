@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireUser, getUserAccessContext } from "@/lib/auth/session";
+import { getGroupTasksList } from "./queries";
+import { awardEngagementPoints } from "@/lib/services/rewards";
 
 async function assertTaskAdmin() {
   const user = await requireUser();
@@ -66,8 +68,25 @@ export async function createGroupTaskAction(formData: FormData) {
   const priority = (formData.get("priority") as TaskPriority) || "MEDIUM";
   const dueDate = formData.get("dueDate") as string;
   const clubId = (formData.get("clubId") as string) || "00000000-0000-0000-0000-000000000001";
-  const projectId = (formData.get("projectId") as string)?.trim() || undefined;
+  let projectId = (formData.get("projectId") as string)?.trim() || undefined;
   const projectTitle = (formData.get("projectTitle") as string)?.trim() || undefined;
+
+  // The task board links by title; resolve it to the Project Center activity id.
+  if (!projectId && projectTitle) {
+    try {
+      const { data: activity } = await createAdminClient()
+        .from("activities")
+        .select("id")
+        .eq("club_id", clubId)
+        .eq("title", projectTitle)
+        .order("start_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      projectId = activity?.id;
+    } catch {
+      // activities table not migrated yet
+    }
+  }
 
   // Parse multi-assignees and checklist items
   const assignedMemberIds = formData.getAll("assignedMemberIds") as string[];
@@ -124,6 +143,7 @@ export async function createGroupTaskAction(formData: FormData) {
       await admin.from("tasks").insert({
         id: created.id,
         club_id: created.clubId,
+        activity_id: created.projectId && /^[0-9a-f-]{36}$/i.test(created.projectId) ? created.projectId : null,
         title: created.title,
         description: created.description,
         committee: created.committee,
@@ -143,7 +163,7 @@ export async function createGroupTaskAction(formData: FormData) {
 
     revalidatePath("/tasks");
     revalidatePath("/dashboard");
-    revalidatePath("/projects");
+    revalidatePath("/project-center");
 
     return {
       success: true,
@@ -159,7 +179,17 @@ export async function createGroupTaskAction(formData: FormData) {
 }
 
 export async function updateTaskStatusAction(taskId: string, status: TaskStatus) {
-  await requireUser();
+  const user = await requireUser();
+  const taskBefore = (await getGroupTasksList()).find((task) => task.id === taskId);
+  if (!taskBefore) return { success: false, error: "Task not found." };
+
+  const context = await getUserAccessContext(taskBefore.clubId);
+  const isAssigned =
+    taskBefore.assignedMemberIds.includes(user.id) ||
+    taskBefore.assignedMemberNames.some((name) => name.toLowerCase() === user.fullName.toLowerCase());
+  const canManage =
+    context.isPlatformAdmin || context.permissions.has("ROLE_ASSIGN") || context.permissions.has("SETTINGS_MANAGE");
+  if (!isAssigned && !canManage) return { success: false, error: "Only an assignee or task manager can update this task." };
 
   try {
     const updated = updateTaskStatus(taskId, status);
@@ -172,6 +202,16 @@ export async function updateTaskStatusAction(taskId: string, status: TaskStatus)
       await admin.from("tasks").update({ status, updated_at: new Date().toISOString() }).eq("id", taskId);
     } catch (dbErr) {
       console.warn("Could not sync task status to Supabase:", dbErr);
+    }
+
+    if (status === "COMPLETED" && taskBefore.status !== "COMPLETED") {
+      await awardEngagementPoints({
+        clubId: taskBefore.clubId,
+        profileId: user.id,
+        sourceType: "TASK_COMPLETED",
+        sourceId: taskId,
+        reason: `Completed task: ${taskBefore.title}`,
+      });
     }
 
     revalidatePath("/tasks");

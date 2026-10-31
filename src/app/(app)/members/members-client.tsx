@@ -25,6 +25,7 @@ import {
 import {
   createMemberAction,
   approveMemberAction,
+  approveAspirantMemberAction,
   rejectMemberAction,
   updateMemberRoleAction,
 } from "@/features/members/actions";
@@ -145,7 +146,7 @@ interface MembersClientProps {
 export function MembersClient({ initialMembers, currentUser, permissions }: MembersClientProps) {
   const [members, setMembers] = useState<MemberDTO[]>(initialMembers);
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"ALL" | "ACTIVE" | "PENDING">("ALL");
+  const [filter, setFilter] = useState<"ALL" | "ACTIVE" | "ASPIRANT" | "PENDING">("ALL");
   const [notification, setNotification] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showMatrixModal, setShowMatrixModal] = useState(false);
@@ -171,21 +172,37 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
   const canManageSettings = isSuperAdmin || (permissions?.canManageSettings ?? false);
 
   async function handleApprove(id: string) {
+    const rotaryId = window.prompt("Enter the member's Rotary ID to approve full membership:");
+    if (!rotaryId?.trim()) return;
     try {
-      const res = await approveMemberAction(id);
+      const res = await approveMemberAction(id, undefined, rotaryId.trim());
+      if (!res.success) {
+        setNotification(res.error || "Could not approve this member.");
+        return;
+      }
       setMembers((prev) =>
         prev.map((m) =>
-          m.id === id ? { ...m, status: "ACTIVE", role: "General Member" } : m
+          m.id === id ? { ...m, status: "ACTIVE", rotaryId: rotaryId.trim(), role: "General Member" } : m
         )
       );
-      setNotification(res.message || "Member account approved and activated in Supabase.");
-    } catch {
-      setMembers((prev) =>
-        prev.map((m) =>
-          m.id === id ? { ...m, status: "ACTIVE", role: "General Member" } : m
-        )
-      );
-      setNotification("Member account approved and activated successfully.");
+      setNotification(res.message || "Member account approved.");
+    } catch (error) {
+      setNotification(error instanceof Error ? error.message : "Could not approve this member.");
+    }
+    setTimeout(() => setNotification(null), 4000);
+  }
+
+  async function handleApproveAspirant(id: string) {
+    try {
+      const res = await approveAspirantMemberAction(id);
+      if (!res.success) {
+        setNotification(res.error || "Could not approve as an aspirant.");
+        return;
+      }
+      setMembers((prev) => prev.map((m) => m.id === id ? { ...m, status: "ASPIRANT", rotaryId: undefined } : m));
+      setNotification(res.message || "Aspirant approved and linked to Recruitment CRM.");
+    } catch (error) {
+      setNotification(error instanceof Error ? error.message : "Could not approve as an aspirant.");
     }
     setTimeout(() => setNotification(null), 4000);
   }
@@ -289,7 +306,7 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
 
   const filteredMembers = members.filter((m) => {
     const matchesFilter =
-      filter === "ALL" ? true : filter === "ACTIVE" ? m.status === "ACTIVE" : m.status === "PENDING";
+      filter === "ALL" ? true : filter === "ACTIVE" ? m.status === "ACTIVE" : filter === "ASPIRANT" ? m.status === "ASPIRANT" : m.status === "PENDING";
     const matchesSearch =
       m.name.toLowerCase().includes(search.toLowerCase()) ||
       m.classification.toLowerCase().includes(search.toLowerCase()) ||
@@ -423,7 +440,15 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
                       onClick={() => handleApprove(pending.id)}
                       className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-xs cursor-pointer"
                     >
-                      Approve
+                      Full member
+                    </button>
+                  )}
+                  {canApprove && (
+                    <button
+                      onClick={() => handleApproveAspirant(pending.id)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-500/30 dark:text-emerald-300 dark:hover:bg-emerald-500/10 transition cursor-pointer"
+                    >
+                      Aspirant, no ID
                     </button>
                   )}
                   {canApprove && (
@@ -460,7 +485,7 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
           </div>
 
           <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs">
-            {(["ALL", "ACTIVE", "PENDING"] as const).map((tab) => (
+            {(["ALL", "ACTIVE", "ASPIRANT", "PENDING"] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => {
@@ -473,7 +498,7 @@ export function MembersClient({ initialMembers, currentUser, permissions }: Memb
                     : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
                 }`}
               >
-                {tab === "ALL" ? "All" : tab === "ACTIVE" ? "Active" : "Pending"}
+                {tab === "ALL" ? "All" : tab === "ACTIVE" ? "Active" : tab === "ASPIRANT" ? "Aspirants" : "Pending"}
               </button>
             ))}
           </div>

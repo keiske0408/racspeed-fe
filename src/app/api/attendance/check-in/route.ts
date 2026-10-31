@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { awardEngagementPoints } from "@/lib/services/rewards";
 import { z } from "zod";
 
 function extractToken(raw: string): string {
@@ -52,12 +53,34 @@ const checkInSchema = z
   .object({
     sessionToken: z.string().optional(),
     token: z.string().optional(),
-    eventId: z.string().uuid("Invalid event ID").optional(),
+    eventId: z.string().uuid("Invalid event ID").optional().or(z.literal("")),
   })
   .refine((data) => Boolean(data.sessionToken || data.token), {
     message: "Session token is required",
     path: ["sessionToken"],
   });
+
+interface ActivityCheckInSource {
+  id: string;
+  title: string;
+  kind: string;
+  club_id: string;
+  volunteer_hours_default: number | string | null;
+  legacy_event_id: string | null;
+}
+
+interface EventCheckInSource {
+  id: string;
+  title: string;
+  event_category: string;
+  host_club_id: string;
+  volunteer_hours_default: number | string | null;
+}
+
+interface MembershipCheckInRow {
+  membership_status: string;
+  profiles: { status: string } | null;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -112,7 +135,9 @@ export async function POST(request: NextRequest) {
     // Verify attendance session exists
     const { data: session, error: sessionError } = await admin
       .from("attendance_sessions")
-      .select("id, event_id, status, expires_at, events(title, host_club_id, volunteer_hours_default)")
+      .select(
+        "id, event_id, activity_id, status, expires_at, events(title, event_category, host_club_id, volunteer_hours_default), activities(title, kind, club_id, volunteer_hours_default, legacy_event_id)"
+      )
       .eq("session_token", sessionToken)
       .maybeSingle();
 
@@ -125,22 +150,53 @@ export async function POST(request: NextRequest) {
 
     // Verify session has not expired by timestamp and is not explicitly closed
     const isPastExpiry = new Date(session.expires_at) < new Date();
-    if (session.status === "CLOSED" || isPastExpiry) {
+    if (session.status !== "ACTIVE" || isPastExpiry) {
       return NextResponse.json(
         { error: "Check-in window for this session has closed." },
         { status: 410 }
       );
     }
 
-    const event = (session as any).events;
-    const hours = Number(event?.volunteer_hours_default || 3.0);
-    const eventTitle = event?.title || "Event";
+    const joinedSession = session as unknown as typeof session & {
+      activities: ActivityCheckInSource | null;
+      events: EventCheckInSource | null;
+    };
+    const activity = joinedSession.activities;
+    const event = joinedSession.events;
+    const source = activity || event;
+    const hours = Number(source?.volunteer_hours_default ?? 3.0);
+    const eventTitle = source?.title || "Event";
+    const targetId: string = session.activity_id || session.event_id;
 
-    // Check if user has already checked in for this event
+    const sourceClubId = activity?.club_id || event?.host_club_id;
+    if (!sourceClubId) {
+      return NextResponse.json({ error: "The activity is not linked to a club." }, { status: 403 });
+    }
+    const [{ data: membership }, { data: profile }] = await Promise.all([
+      admin
+        .from("club_memberships")
+        .select("membership_status, profiles!inner(status)")
+        .eq("club_id", sourceClubId)
+        .eq("profile_id", user.id)
+        .maybeSingle(),
+      admin.from("profiles").select("status, is_platform_admin").eq("id", user.id).maybeSingle(),
+    ]);
+    const member = membership as unknown as MembershipCheckInRow | null;
+    const memberProfile = member?.profiles;
+    const canCheckIn =
+      profile?.status === "ACTIVE" &&
+      (profile.is_platform_admin || (
+        ["ACTIVE", "ASPIRANT"].includes(member?.membership_status || "") && memberProfile?.status === "ACTIVE"
+      ));
+    if (!canCheckIn) {
+      return NextResponse.json({ error: "Only active club members and aspirants can check in." }, { status: 403 });
+    }
+
+    // Check if user has already checked in for this activity/event
     const { data: existingCheckIn } = await admin
       .from("attendance_records")
-      .select("id, check_in_time")
-      .eq("event_id", session.event_id)
+        .select("id, check_in_time")
+      .eq(session.activity_id ? "activity_id" : "event_id", targetId)
       .eq("profile_id", user.id)
       .maybeSingle();
 
@@ -149,7 +205,7 @@ export async function POST(request: NextRequest) {
         {
           error: `You have already checked in for ${eventTitle}.`,
           alreadyCheckedIn: true,
-          eventId: session.event_id,
+          eventId: targetId,
           eventTitle,
           volunteerHours: hours,
           checkInTime: existingCheckIn.check_in_time,
@@ -162,7 +218,8 @@ export async function POST(request: NextRequest) {
     const { data: record, error: insertError } = await admin
       .from("attendance_records")
       .insert({
-        event_id: session.event_id,
+        activity_id: session.activity_id,
+        event_id: session.event_id ?? activity?.legacy_event_id ?? null,
         profile_id: user.id,
         session_id: session.id,
         attended: true,
@@ -181,18 +238,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const sourceKind = activity?.kind || event?.event_category;
+    const isServiceProject = sourceKind === "SERVICE_PROJECT" || sourceKind === "JOINT_PROJECT";
+    await awardEngagementPoints({
+      clubId: sourceClubId,
+      profileId: user.id,
+      sourceType: isServiceProject ? "SERVICE_CHECK_IN" : "CHECK_IN",
+      sourceId: record.id,
+      reason: isServiceProject ? "Verified service project attendance" : "Verified activity attendance",
+    });
+
     return NextResponse.json({
       success: true,
       message: `Check-in confirmed for ${eventTitle}! ${hours} volunteer hours recorded.`,
       recordId: record.id,
       volunteerHours: hours,
       eventTitle,
-      eventId: session.event_id,
+      eventId: targetId,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Unexpected error during check-in:", err);
     return NextResponse.json(
-      { error: err?.message || "Internal server error" },
+      { error: err instanceof Error ? err.message : "Internal server error" },
       { status: 500 }
     );
   }
