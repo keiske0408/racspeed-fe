@@ -75,10 +75,13 @@ npx supabase migration list
 For the linked cloud database, confirm the Supabase project reference is the intended environment, then run:
 
 ```bash
+npx supabase login
 npx supabase link --project-ref <your-project-ref>
 npx supabase db push
 npx supabase migration list
 ```
+
+`supabase login` requires a personal access token from Supabase Account → Access Tokens. Enter it only in the interactive terminal prompt, never in chat or a committed environment file. `supabase link` may also prompt for the project's database password; enter that directly in the terminal.
 
 After the migrations report as applied, verify `public.activities` exists in Supabase Table Editor. If it exists but the API still reports a schema-cache error, run this in the Supabase SQL Editor:
 
