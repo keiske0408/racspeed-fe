@@ -99,6 +99,12 @@ alter table public.engagement_points_ledger enable row level security;
 alter table public.badges enable row level security;
 alter table public.member_badges enable row level security;
 
+drop policy if exists "push_subscriptions_own" on public.push_subscriptions;
+drop policy if exists "push_delivery_logs_own" on public.push_delivery_logs;
+drop policy if exists "engagement_points_select" on public.engagement_points_ledger;
+drop policy if exists "badges_read" on public.badges;
+drop policy if exists "member_badges_select" on public.member_badges;
+
 create policy "push_subscriptions_own" on public.push_subscriptions
   for all to authenticated
   using (profile_id = (select auth.uid()))

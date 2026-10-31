@@ -60,6 +60,10 @@ npx tsx scripts/bootstrap-admin.ts admin@rotaract.local
 
 The Project Center depends on migrations `0008_project_center.sql` and `0009_engagement_and_notifications.sql`. If activity creation returns `Could not find the table 'public.activities' in the schema cache`, the database connected by this app has not applied migration 0008, or the API schema cache has not refreshed.
 
+**Apply migrations through the Supabase CLI as the normal workflow.** Opening a `.sql` file in the editor does not run it, while pasting it into the Supabase SQL Editor changes the database without recording its migration version. A `policy "..." already exists` error means that policy is already present in the target database, usually because the SQL was run once before or partially applied. Migration 0009 now drops and recreates its named policies so that section can be safely rerun.
+
+Check the target database's migration history with `npx supabase migration list` after linking the intended project. If you previously used the SQL Editor, first inspect the migration's objects and history; do not mark a migration applied unless all its statements are present and verified.
+
 For a local database, start Docker Desktop and run:
 
 ```bash
