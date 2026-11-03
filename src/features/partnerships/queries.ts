@@ -142,5 +142,4 @@ export async function getSisterClubsList(
     );
     return { ...club, initiatives, initiativesCount: initiatives.length };
   });
-
 }

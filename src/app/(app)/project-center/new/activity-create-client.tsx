@@ -90,11 +90,13 @@ export function ActivityCreateClient({
   const [rsvpEnabled, setRsvpEnabled] = useState(true);
   const [selfCheckIn, setSelfCheckIn] = useState(false);
   const [selectedPartnerIds, setSelectedPartnerIds] = useState<string[]>(() => {
-    const initialPartner = partnerClubs.find(
-      (club) => club.id === initialSisterClubId,
-    ) || partnerClubs.find(
-      (club) => club.name.trim().toLowerCase() === initialPartnerName?.trim().toLowerCase(),
-    );
+    const initialPartner =
+      partnerClubs.find((club) => club.id === initialSisterClubId) ||
+      partnerClubs.find(
+        (club) =>
+          club.name.trim().toLowerCase() ===
+          initialPartnerName?.trim().toLowerCase(),
+      );
     return initialPartner ? [initialPartner.id] : [];
   });
   const [isPending, startTransition] = useTransition();
@@ -137,8 +139,12 @@ export function ActivityCreateClient({
         ...(UUID_PATTERN.test(partner.id) ? { sisterClubId: partner.id } : {}),
       })),
       ...partners,
-    ].filter((partner, index, all) =>
-      all.findIndex((candidate) => candidate.name.toLowerCase() === partner.name.toLowerCase()) === index,
+    ].filter(
+      (partner, index, all) =>
+        all.findIndex(
+          (candidate) =>
+            candidate.name.toLowerCase() === partner.name.toLowerCase(),
+        ) === index,
     );
 
     const payload = {
@@ -480,54 +486,73 @@ export function ActivityCreateClient({
                 ))}
               </div>
             </Field>
-              <Field
-                label="Partnerships"
-                required={kind === "JOINT_PROJECT"}
+            <Field label="Partnerships" required={kind === "JOINT_PROJECT"}>
+              <div className="mb-2 flex flex-wrap gap-2">
+                {selectedPartnerClubs.map((partner) => (
+                  <div
+                    key={partner.id}
+                    className="inline-flex max-w-full items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-xs text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100"
+                  >
+                    <input
+                      type="hidden"
+                      name="sisterClubId"
+                      value={partner.id}
+                    />
+                    <span className="min-w-0 break-words">{partner.name}</span>
+                    <button
+                      type="button"
+                      aria-label={`Remove partner ${partner.name}`}
+                      title={`Remove ${partner.name}`}
+                      onClick={() =>
+                        setSelectedPartnerIds((previous) =>
+                          previous.filter(
+                            (partnerId) => partnerId !== partner.id,
+                          ),
+                        )
+                      }
+                      className="shrink-0 rounded p-1 hover:bg-emerald-100 focus-visible:ring-2 focus-visible:ring-emerald-600 dark:hover:bg-emerald-900"
+                    >
+                      <X className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <select
+                aria-label="Add partnership"
+                value=""
+                required={
+                  kind === "JOINT_PROJECT" && selectedPartnerIds.length === 0
+                }
+                disabled={selectedPartnerIds.length >= 20}
+                onChange={(event) => {
+                  const partnerId = event.target.value;
+                  if (partnerId)
+                    setSelectedPartnerIds((previous) =>
+                      previous.includes(partnerId)
+                        ? previous
+                        : [...previous, partnerId],
+                    );
+                }}
+                className={inputClass}
               >
-                <div className="mb-2 flex flex-wrap gap-2">
-                  {selectedPartnerClubs.map((partner) => (
-                    <div key={partner.id} className="inline-flex max-w-full items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-xs text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100">
-                      <input type="hidden" name="sisterClubId" value={partner.id} />
-                      <span className="min-w-0 break-words">{partner.name}</span>
-                      <button
-                        type="button"
-                        aria-label={`Remove partner ${partner.name}`}
-                        title={`Remove ${partner.name}`}
-                        onClick={() => setSelectedPartnerIds((previous) => previous.filter((partnerId) => partnerId !== partner.id))}
-                        className="shrink-0 rounded p-1 hover:bg-emerald-100 focus-visible:ring-2 focus-visible:ring-emerald-600 dark:hover:bg-emerald-900"
-                      >
-                        <X className="h-3.5 w-3.5" aria-hidden="true" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                <select
-                  aria-label="Add partnership"
-                  value=""
-                  required={kind === "JOINT_PROJECT" && selectedPartnerIds.length === 0}
-                  disabled={selectedPartnerIds.length >= 20}
-                  onChange={(event) => {
-                    const partnerId = event.target.value;
-                    if (partnerId) setSelectedPartnerIds((previous) => previous.includes(partnerId) ? previous : [...previous, partnerId]);
-                  }}
-                  className={inputClass}
-                >
-                  <option value="">Add from all partnerships</option>
-                  {partnerClubs.filter((club) => !selectedPartnerIds.includes(club.id)).map((club) => (
+                <option value="">Add from all partnerships</option>
+                {partnerClubs
+                  .filter((club) => !selectedPartnerIds.includes(club.id))
+                  .map((club) => (
                     <option key={club.id} value={club.id}>
                       {club.name} · District {club.district}, {club.country}
                     </option>
                   ))}
-                </select>
-                {partnerClubs.length === 0 && (
-                  <Link
-                    href="/partnerships"
-                    className="mt-2 inline-flex text-xs font-semibold text-[#0D3594] dark:text-blue-300"
-                  >
-                    Register a partner club first
-                  </Link>
-                )}
-              </Field>
+              </select>
+              {partnerClubs.length === 0 && (
+                <Link
+                  href="/partnerships"
+                  className="mt-2 inline-flex text-xs font-semibold text-[#0D3594] dark:text-blue-300"
+                >
+                  Register a partner club first
+                </Link>
+              )}
+            </Field>
             {kind !== "JOINT_PROJECT" && (
               <Field
                 label="Partner organizations"

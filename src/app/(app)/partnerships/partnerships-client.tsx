@@ -1041,7 +1041,10 @@ export function PartnershipsClient({
                           </div>
 
                           <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-1">
-                            <Link href={`/project-center/${init.activityId || init.id}`} className="hover:underline break-words">
+                            <Link
+                              href={`/project-center/${init.activityId || init.id}`}
+                              className="hover:underline break-words"
+                            >
                               {init.title}
                             </Link>
                           </h4>

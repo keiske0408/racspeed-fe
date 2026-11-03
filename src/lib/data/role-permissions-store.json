@@ -274,7 +274,8 @@
     ],
     "allowedPermissions": [
       "EVENT_VIEW",
-      "PAYMENT_SUBMIT"
+      "PAYMENT_SUBMIT",
+      "ATTENDANCE_MANAGE"
     ]
   },
   "AUDITOR": {

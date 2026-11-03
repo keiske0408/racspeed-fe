@@ -128,19 +128,29 @@ describe("Project Center activity creation", () => {
       ...base,
       kind: "JOINT_PROJECT",
       partners: [
-        { name: "Manila", sisterClubId: "00000000-0000-0000-0000-000000000099" },
-        { name: "Taipei Diamond", sisterClubId: "00000000-0000-0000-0000-000000000098" },
+        {
+          name: "Manila",
+          sisterClubId: "00000000-0000-0000-0000-000000000099",
+        },
+        {
+          name: "Taipei Diamond",
+          sisterClubId: "00000000-0000-0000-0000-000000000098",
+        },
       ],
     });
     expect("partners" in parsed && parsed.partners).toHaveLength(2);
   });
 
   it("limits project partners to 20", () => {
-    expect(createActivitySchema.safeParse({
-      ...base,
-      kind: "JOINT_PROJECT",
-      partners: Array.from({ length: 21 }, (_, index) => ({ name: `Partner ${index}` })),
-    }).success).toBe(false);
+    expect(
+      createActivitySchema.safeParse({
+        ...base,
+        kind: "JOINT_PROJECT",
+        partners: Array.from({ length: 21 }, (_, index) => ({
+          name: `Partner ${index}`,
+        })),
+      }).success,
+    ).toBe(false);
   });
 });
 
