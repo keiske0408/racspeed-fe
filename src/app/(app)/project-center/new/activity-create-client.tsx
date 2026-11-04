@@ -89,6 +89,7 @@ export function ActivityCreateClient({
   const [minEnabled, setMinEnabled] = useState(false);
   const [rsvpEnabled, setRsvpEnabled] = useState(true);
   const [selfCheckIn, setSelfCheckIn] = useState(false);
+  const [qrCheckIn, setQrCheckIn] = useState(true);
   const [selectedPartnerIds, setSelectedPartnerIds] = useState<string[]>(() => {
     const initialPartner =
       partnerClubs.find((club) => club.id === initialSisterClubId) ||
@@ -167,6 +168,7 @@ export function ActivityCreateClient({
       rsvpEnabled,
       rsvpDeadline: String(data.get("rsvpDeadline") || "") || undefined,
       selfCheckInEnabled: selfCheckIn,
+      qrCheckInEnabled: qrCheckIn,
       checkInWindowMinutes: Number(data.get("checkInWindowMinutes") || 180),
       volunteerHoursDefault: Number(data.get("volunteerHoursDefault") || 0),
       ...(kind === "MEETING"
@@ -631,6 +633,12 @@ export function ActivityCreateClient({
               />
             </Field>
           )}
+          <ToggleRow
+            title="Enable QR Attendance Check-In"
+            description="Generate dynamic rolling QR codes for members to scan on-site. Turn this off for promotional campaigns, recruitment drives, or non-assembly projects."
+            checked={qrCheckIn}
+            onChange={setQrCheckIn}
+          />
           <ToggleRow
             title="Allow 'Check in as me'"
             description="Members can check themselves in during the activity check-in window. QR check-in remains available."

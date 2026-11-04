@@ -159,3 +159,37 @@ export function allowedTransitions(
     (to) => canTransition(from, to, isProject).allowed,
   );
 }
+
+export function isQrCheckInApplicable(input: {
+  qrCheckInEnabled?: boolean | null;
+  qr_check_in_enabled?: boolean | null;
+  kind?: string | null;
+  meetingType?: string | null;
+  category?: string | null;
+  title?: string | null;
+  committee?: string | null;
+}): boolean {
+  if (input.qrCheckInEnabled !== undefined && input.qrCheckInEnabled !== null) {
+    return Boolean(input.qrCheckInEnabled);
+  }
+  if (input.qr_check_in_enabled !== undefined && input.qr_check_in_enabled !== null) {
+    return Boolean(input.qr_check_in_enabled);
+  }
+  const text = (
+    (input.title || "") + " " +
+    (input.category || "") + " " +
+    (input.meetingType || "") + " " +
+    (input.committee || "")
+  ).toLowerCase();
+  if (
+    text.includes("promotion") ||
+    text.includes("recruitment") ||
+    text.includes("marketing") ||
+    text.includes("social media") ||
+    text.includes("public relations") ||
+    text.includes("campaign")
+  ) {
+    return false;
+  }
+  return true;
+}

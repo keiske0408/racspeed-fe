@@ -1,3 +1,4 @@
+import { isQrCheckInApplicable } from "@/features/activities/rules";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export interface EventDTO {
@@ -10,6 +11,7 @@ export interface EventDTO {
   volunteerHours: number;
   attendeesCount: number;
   description?: string;
+  qrCheckInEnabled?: boolean;
 }
 
 const UUID_REGEX =
@@ -100,6 +102,19 @@ const DEFAULT_EVENTS: EventDTO[] = [
     description:
       "Official evaluation and presentation of club achievements to District Governor 3820 leadership.",
   },
+  {
+    id: "00000000-0000-0000-0001-000000000008",
+    title: "District 3820 Membership Recruitment & Social Media Campaign",
+    category: "RECRUITMENT & PROMOTIONS",
+    location: "Online / District 3820 Social Channels",
+    startTime: "2026-11-01T00:00:00Z",
+    endTime: "2026-11-30T23:59:59Z",
+    volunteerHours: 0,
+    attendeesCount: 0,
+    description:
+      "Public relations and recruitment blast promoting club youth initiatives across Laguna and District 3820.",
+    qrCheckInEnabled: false,
+  },
 ];
 
 // Legacy adapter: events are now rows in `activities` (ids preserved by migration 0008).
@@ -142,6 +157,11 @@ export async function getEventsList(
           volunteerHours: Number(a.volunteer_hours_default || 0),
           attendeesCount: records[0]?.count ?? 0,
           description: a.short_description || a.description || undefined,
+          qrCheckInEnabled: isQrCheckInApplicable({
+            qr_check_in_enabled: (a as any).qr_check_in_enabled,
+            title: a.title,
+            category: a.meeting_type || a.kind,
+          }),
         };
       });
     }
@@ -185,6 +205,11 @@ export async function getEventsList(
         volunteerHours: Number(ev.volunteer_hours_default || 3.0),
         attendeesCount: attendees,
         description: ev.description || undefined,
+        qrCheckInEnabled: isQrCheckInApplicable({
+          qr_check_in_enabled: (ev as any).qr_check_in_enabled,
+          title: ev.title,
+          category: ev.event_category,
+        }),
       };
     });
   } catch (err) {

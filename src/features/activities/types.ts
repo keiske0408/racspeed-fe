@@ -200,6 +200,7 @@ export interface ActivitySummaryDTO {
   rsvpEnabled: boolean;
   rsvpDeadline: string | null;
   selfCheckInEnabled: boolean;
+  qrCheckInEnabled: boolean;
   checkInWindowMinutes: number;
   volunteerHoursDefault: number;
   rsvp: RsvpCounts;

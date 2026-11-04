@@ -59,6 +59,7 @@ const baseShape = {
   rsvpEnabled: z.boolean().default(true),
   rsvpDeadline: localDateTime.optional(),
   selfCheckInEnabled: z.boolean().default(false),
+  qrCheckInEnabled: z.boolean().default(true),
   checkInWindowMinutes: z.coerce.number().int().min(0).max(1440).default(180),
   volunteerHoursDefault: z.coerce.number().min(0).max(24).default(0),
 };

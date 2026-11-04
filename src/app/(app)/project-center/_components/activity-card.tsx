@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { CheckSquare, Clock, MapPin, MessageSquare, Users } from "lucide-react";
+import { CheckSquare, Clock, MapPin, MessageSquare, Users, Sparkles } from "lucide-react";
 import { formatManila } from "@/lib/utils/dates";
 import {
   ACTIVITY_KIND_META,
@@ -64,7 +64,15 @@ export function ActivityCard({
         ))}
       <div className="p-4 space-y-3">
         <div className="flex items-center justify-between gap-2">
-          <KindBadge kind={activity.kind} meetingType={activity.meetingType} />
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <KindBadge kind={activity.kind} meetingType={activity.meetingType} />
+            {activity.qrCheckInEnabled === false && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
+                <Sparkles className="h-2.5 w-2.5 text-amber-500" />
+                No QR
+              </span>
+            )}
+          </div>
           <ActivityStatusBadge status={activity.status} />
         </div>
         <div>

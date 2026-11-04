@@ -6,6 +6,7 @@ import {
 import {
   evaluateRsvp,
   evaluateSelfCheckIn,
+  isQrCheckInApplicable,
   minMembersStatus,
 } from "@/features/activities/rules";
 import {
@@ -258,5 +259,55 @@ describe("Member engagement rewards", () => {
       "SERVICE_10",
       "TASK_FINISHER",
     ]);
+  });
+});
+
+describe("QR attendance applicability and toggle", () => {
+  it("defaults qrCheckInEnabled to true when omitted", () => {
+    const parsed = createActivitySchema.safeParse({
+      ...base,
+      kind: "MEETING",
+      meetingType: "GENERAL_ASSEMBLY",
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.qrCheckInEnabled).toBe(true);
+    }
+  });
+
+  it("allows setting qrCheckInEnabled to false for promotional and campaign projects", () => {
+    const parsed = createActivitySchema.safeParse({
+      ...base,
+      kind: "SERVICE_PROJECT",
+      title: "Recruitment and PR Drive",
+      qrCheckInEnabled: false,
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.qrCheckInEnabled).toBe(false);
+    }
+  });
+
+  it("correctly identifies promotional / recruitment activities as not requiring QR", () => {
+    expect(
+      isQrCheckInApplicable({
+        title: "Rotaract Social Media Promotions and Content Blast",
+        category: "PROMOTIONS",
+      })
+    ).toBe(false);
+
+    expect(
+      isQrCheckInApplicable({
+        title: "Campus Membership Recruitment Week",
+        category: "RECRUITMENT",
+      })
+    ).toBe(false);
+
+    expect(
+      isQrCheckInApplicable({
+        title: "Community Feeding Program",
+        category: "SERVICE PROJECT",
+      })
+    ).toBe(true);
   });
 });

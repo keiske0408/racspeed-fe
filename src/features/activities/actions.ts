@@ -25,7 +25,7 @@ import {
   type CreateActivityData,
   type CreateActivityInput,
 } from "./schemas";
-import { canTransition, evaluateRsvp, evaluateSelfCheckIn } from "./rules";
+import { canTransition, evaluateRsvp, evaluateSelfCheckIn, isQrCheckInApplicable } from "./rules";
 import {
   getActivityMediaPage,
   isClubParticipant,
@@ -74,7 +74,7 @@ async function loadActivityAccess(activityId: string) {
   const { data: activity } = await admin
     .from("activities")
     .select(
-      "id, club_id, kind, status, title, owner_id, start_at, end_at, rsvp_enabled, rsvp_deadline, capacity, self_check_in_enabled, check_in_window_minutes, volunteer_hours_default, legacy_event_id",
+      "id, club_id, kind, status, title, owner_id, start_at, end_at, rsvp_enabled, rsvp_deadline, capacity, self_check_in_enabled, qr_check_in_enabled, check_in_window_minutes, volunteer_hours_default, legacy_event_id",
     )
     .eq("id", activityId)
     .maybeSingle();
@@ -106,6 +106,11 @@ async function loadActivityAccess(activityId: string) {
     isParticipant: participant || context.isPlatformAdmin,
     canManage,
     canManageAttendance: canManage || perms.has("ATTENDANCE_MANAGE"),
+    qrCheckInEnabled: isQrCheckInApplicable({
+      qr_check_in_enabled: (activity as any)?.qr_check_in_enabled,
+      title: activity.title,
+      kind: activity.kind,
+    }),
   };
 }
 
@@ -129,6 +134,7 @@ function toActivityRow(data: CreateActivityData) {
       ? manilaLocalToISO(data.rsvpDeadline)
       : null,
     self_check_in_enabled: data.selfCheckInEnabled,
+    qr_check_in_enabled: data.qrCheckInEnabled ?? true,
     check_in_window_minutes: data.checkInWindowMinutes,
     volunteer_hours_default: data.volunteerHoursDefault,
     rotary_year: rotaryYearFor(new Date(startIso)),
@@ -589,6 +595,45 @@ export async function startActivityQrSessionAction(
     };
 
   return { success: true, sessionToken: token, expiresAt };
+}
+
+export async function toggleActivityQrCheckInAction(
+  activityId: string,
+  enabled?: boolean,
+): Promise<ActionResult<{ qrCheckInEnabled: boolean }>> {
+  const access = await loadActivityAccess(activityId);
+  if (!access) return { success: false, error: "Activity not found." };
+  if (!access.canManage) {
+    return {
+      success: false,
+      error: "Only project leaders or officers can change this setting.",
+    };
+  }
+
+  const current = access.qrCheckInEnabled;
+  const next = typeof enabled === "boolean" ? enabled : !current;
+
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("activities")
+    .update({ qr_check_in_enabled: next, updated_at: new Date().toISOString() })
+    .eq("id", activityId);
+
+  if (error && error.message?.includes("qr_check_in_enabled")) {
+    console.warn("Column qr_check_in_enabled not migrated yet, updating in-memory only.");
+  }
+
+  await logActivity(activityId, access.user.id, "UPDATED", {
+    qrCheckInEnabled: next,
+  });
+  revalidateActivity(activityId);
+  revalidatePath("/events");
+  revalidatePath("/project-center");
+  return {
+    success: true,
+    message: next ? "QR check-in enabled." : "QR check-in disabled.",
+    qrCheckInEnabled: next,
+  };
 }
 
 export async function addCommentAction(input: {

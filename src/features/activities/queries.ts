@@ -1,3 +1,4 @@
+import { isQrCheckInApplicable } from "./rules";
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getGroupTasksList } from "@/features/tasks/queries";
@@ -52,6 +53,7 @@ interface ActivitySummaryRow {
   rsvp_enabled: boolean;
   rsvp_deadline: string | null;
   self_check_in_enabled: boolean;
+  qr_check_in_enabled?: boolean | null;
   check_in_window_minutes: number;
   volunteer_hours_default: number;
   cover_storage_path: string | null;
@@ -212,6 +214,13 @@ function mapSummary(
     rsvpEnabled: Boolean(row.rsvp_enabled),
     rsvpDeadline: row.rsvp_deadline,
     selfCheckInEnabled: Boolean(row.self_check_in_enabled),
+    qrCheckInEnabled: isQrCheckInApplicable({
+      qr_check_in_enabled: row.qr_check_in_enabled,
+      title: row.title,
+      kind: row.kind,
+      meetingType: row.meeting_type,
+      committee: row.committee,
+    }),
     checkInWindowMinutes: row.check_in_window_minutes ?? 180,
     volunteerHoursDefault: Number(row.volunteer_hours_default || 0),
     rsvp: {

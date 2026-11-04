@@ -20,6 +20,7 @@ import {
   Trash2,
   Upload,
   Users,
+  Sparkles,
   X,
 } from "lucide-react";
 import type { ActivityDetailDTO } from "@/features/activities/types";
@@ -34,6 +35,7 @@ import {
   selfCheckInAction,
   setCoverMediaAction,
   startActivityQrSessionAction,
+  toggleActivityQrCheckInAction,
   toggleFollowAction,
   toggleReactionAction,
   updateActivityStatusAction,
@@ -166,6 +168,12 @@ export function ActivityDetailClient({
               meetingType={activity.meetingType}
             />
             <ActivityStatusBadge status={activity.status} />
+            {activity.qrCheckInEnabled === false && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
+                <Sparkles className="h-3 w-3 text-amber-500" />
+                No QR Check-In Required
+              </span>
+            )}
             <span className="ml-auto text-xs font-medium text-slate-500">
               RY {activity.rotaryYear}
             </span>
@@ -739,11 +747,13 @@ function AttendancePanel({
   canManage,
   onSelfCheckIn,
   onRevoke,
+  onToggleQrCheckIn,
 }: {
   activity: ActivityDetailDTO;
   canManage: boolean;
   onSelfCheckIn: () => void;
   onRevoke: (id: string) => void;
+  onToggleQrCheckIn?: (enabled: boolean) => void;
 }) {
   const [qr, setQr] = useState<{
     token: string;
@@ -832,14 +842,48 @@ function AttendancePanel({
           </button>
         )}
         {canManage && (
-          <section className="space-y-3 rounded-xl border border-[#EDEDF2] bg-white p-4 dark:border-slate-800 dark:bg-[#161B26]">
-            <div>
-              <h2 className="text-sm font-bold text-[#111625] dark:text-white">
-                QR check-in
-              </h2>
-              <p className="mt-1 text-xs text-slate-500">
-                Create a time-limited code for members to scan.
+          activity.qrCheckInEnabled === false ? (
+            <section className="space-y-3 rounded-xl border border-dashed border-amber-300 bg-amber-50/60 p-4 dark:border-amber-900/50 dark:bg-amber-950/20">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-amber-900 dark:text-amber-200">
+                  <QrCode className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  <h2 className="text-sm font-bold">QR Check-In Disabled</h2>
+                </div>
+                {canManage && onToggleQrCheckIn && (
+                  <button
+                    type="button"
+                    onClick={() => onToggleQrCheckIn(true)}
+                    className="rounded-lg border border-amber-300 bg-white px-2.5 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-50 dark:border-amber-800 dark:bg-slate-900 dark:text-amber-200 cursor-pointer shadow-2xs transition"
+                  >
+                    Enable QR Check-In
+                  </button>
+                )}
+              </div>
+              <p className="text-xs text-amber-800/80 dark:text-amber-300/80">
+                This project does not require on-site QR attendance (e.g. promotional campaign, recruitment drive, or asynchronous initiative).
               </p>
+            </section>
+          ) : (
+            <section className="space-y-3 rounded-xl border border-[#EDEDF2] bg-white p-4 dark:border-slate-800 dark:bg-[#161B26]">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-bold text-[#111625] dark:text-white">
+                  QR check-in
+                </h2>
+                <p className="mt-1 text-xs text-slate-500">
+                  Create a time-limited code for members to scan.
+                </p>
+              </div>
+              {canManage && onToggleQrCheckIn && (
+                <button
+                  type="button"
+                  onClick={() => onToggleQrCheckIn(false)}
+                  className="rounded-lg border border-slate-200 dark:border-slate-700 px-2 py-1 text-[11px] font-semibold text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition shadow-2xs"
+                  title="Turn off QR check-in for promotional or online campaigns"
+                >
+                  Turn off QR
+                </button>
+              )}
             </div>
             <button
               type="button"
@@ -877,6 +921,8 @@ function AttendancePanel({
               </div>
             )}
           </section>
+          )
+        
         )}
       </aside>
     </div>
