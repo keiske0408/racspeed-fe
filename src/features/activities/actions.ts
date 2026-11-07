@@ -17,6 +17,8 @@ import {
   createTask,
   updateTask,
   deleteTask,
+  readTasksStore,
+  writeTasksStore,
   type TaskCommittee,
   type TaskPriority,
   type TaskStatus,
@@ -625,16 +627,20 @@ export async function hardDeleteActivityAction(
 
   const admin = createAdminClient();
 
-  // Ensure activity is archived before hard delete
-  const { data: actRow } = await admin
-    .from("activities")
-    .select("is_archived, archived_at, activity_log(action, created_at)")
-    .eq("id", activityId)
-    .maybeSingle();
+  // Ensure activity is archived before hard delete (querying * and activity_log separately
+  // so missing optional columns never cause PostgREST to return null)
+  const [{ data: actRow }, { data: logRows }] = await Promise.all([
+    admin.from("activities").select("*").eq("id", activityId).maybeSingle(),
+    admin
+      .from("activity_log")
+      .select("action, created_at")
+      .eq("activity_id", activityId),
+  ]);
 
-  const archiveState = resolveArchiveState(
-    (actRow as unknown as Parameters<typeof resolveArchiveState>[0]) || {},
-  );
+  const archiveState = resolveArchiveState({
+    ...((actRow as Record<string, unknown>) || {}),
+    activity_log: (logRows as Array<{ action: string; created_at: string }>) || [],
+  });
   if (!archiveState.isArchived) {
     return {
       success: false,
@@ -661,7 +667,33 @@ export async function hardDeleteActivityAction(
     console.warn("Storage media purge on hard delete fallback:", err);
   }
 
-  // 2. Delete the activity row (foreign keys on all child tables have ON DELETE CASCADE)
+  // 2. Clean up linked tasks in local tasks store and database child tables
+  try {
+    const currentTasks = readTasksStore();
+    const remainingTasks = currentTasks.filter(
+      (t) =>
+        t.projectId !== activityId &&
+        t.projectTitle !== access.activity.title,
+    );
+    if (remainingTasks.length !== currentTasks.length) {
+      writeTasksStore(remainingTasks);
+    }
+  } catch (err) {
+    console.warn("Local task cleanup on activity delete fallback:", err);
+  }
+
+  await Promise.allSettled([
+    admin.from("activity_media").delete().eq("activity_id", activityId),
+    admin.from("activity_comments").delete().eq("activity_id", activityId),
+    admin.from("activity_rsvps").delete().eq("activity_id", activityId),
+    admin.from("activity_check_ins").delete().eq("activity_id", activityId),
+    admin.from("activity_team").delete().eq("activity_id", activityId),
+    admin.from("activity_followers").delete().eq("activity_id", activityId),
+    admin.from("activity_reports").delete().eq("activity_id", activityId),
+    admin.from("activity_log").delete().eq("activity_id", activityId),
+  ]);
+
+  // 3. Delete the activity row
   const { error } = await admin
     .from("activities")
     .delete()
@@ -672,6 +704,13 @@ export async function hardDeleteActivityAction(
       success: false,
       error: `Failed to permanently delete activity: ${error.message}`,
     };
+  }
+
+  if (access.activity.legacy_event_id) {
+    await admin
+      .from("events")
+      .delete()
+      .eq("id", access.activity.legacy_event_id);
   }
 
   revalidateActivity(activityId);

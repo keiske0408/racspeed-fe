@@ -344,82 +344,56 @@ export function ActivityDetailClient({
                     <Pencil className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
                     Edit {isProject ? "Project" : "Activity"}
                   </button>
-                  <button
-                    type="button"
-                    disabled={pending}
-                    onClick={() => {
-                      const nextArchived = !activity.isArchived;
-                      run(
-                        async () => {
-                          const res = await archiveActivityAction(
-                            activity.id,
-                            nextArchived,
-                          );
-                          if (res.success) {
-                            setActivity({
-                              isArchived: nextArchived,
-                              archivedAt: nextArchived
-                                ? new Date().toISOString()
-                                : null,
-                            });
-                          }
-                          return res;
-                        },
-                        nextArchived
-                          ? "Moved to archive."
-                          : "Restored to active workspace.",
-                      );
-                    }}
-                    className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold shadow-2xs transition disabled:opacity-60 ${
-                      activity.isArchived
-                        ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
-                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-                    }`}
-                  >
-                    {activity.isArchived ? (
-                      <>
-                        <ArchiveRestore className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                        Restore {isProject ? "Project" : "Activity"}
-                      </>
-                    ) : (
-                      <>
-                        <Archive className="h-3.5 w-3.5 text-slate-500" />
-                        Archive {isProject ? "Project" : "Activity"}
-                      </>
-                    )}
-                  </button>
-                  {activity.isArchived && (
+                  {!activity.isArchived && (
                     <button
                       type="button"
-                      disabled={pending || isDeleting}
-                      onClick={() => setIsDeleteModalOpen(true)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300 shadow-2xs transition disabled:opacity-60"
-                      title="Permanently remove project and media files"
+                      disabled={pending}
+                      onClick={() => {
+                        run(
+                          async () => {
+                            const res = await archiveActivityAction(
+                              activity.id,
+                              true,
+                            );
+                            if (res.success) {
+                              setActivity({
+                                isArchived: true,
+                                archivedAt: new Date().toISOString(),
+                              });
+                            }
+                            return res;
+                          },
+                          "Moved to archive.",
+                        );
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition disabled:opacity-60"
                     >
-                      <Trash2 className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
-                      Hard Delete
+                      <Archive className="h-3.5 w-3.5 text-slate-500" />
+                      Archive {isProject ? "Project" : "Activity"}
                     </button>
                   )}
                 </>
               )}
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() =>
-                  run(async () => {
-                    const result = await toggleFollowAction(activity.id);
-                    if (result.success)
-                      setActivity({ isFollowing: result.following });
-                    return result;
-                  }, "Follow preference updated.")
-                }
-                className="inline-flex items-center gap-1.5 rounded-lg border border-[#EDEDF2] px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-              >
-                <Heart
-                  className={`h-3.5 w-3.5 ${activity.isFollowing ? "fill-rose-500 text-rose-500" : ""}`}
-                />{" "}
-                {activity.isFollowing ? "Following" : "Follow"}
-              </button>
+              {!activity.isArchived && (
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() =>
+                    run(async () => {
+                      const result = await toggleFollowAction(activity.id);
+                      if (result.success)
+                        setActivity({ isFollowing: result.following });
+                      return result;
+                    }, "Follow preference updated.")
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-[#EDEDF2] px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  <Heart
+                    className={`h-3.5 w-3.5 ${activity.isFollowing ? "fill-rose-500 text-rose-500" : ""}`}
+                  />{" "}
+                  {activity.isFollowing ? "Following" : "Follow"}
+                </button>
+              )}
               {activity.selfCheckInEnabled &&
                 !activity.checkedIn &&
                 (!activity.rsvpEnabled || activity.myRsvp === "GOING") && (

@@ -15,6 +15,7 @@ import {
   Plus,
   Search,
   SlidersHorizontal,
+  Trash2,
 } from "lucide-react";
 import { ActivityCalendar } from "./_components/activity-calendar";
 import { ActivityMoments } from "./_components/activity-moments";
@@ -31,6 +32,7 @@ import {
 import {
   archiveActivityAction,
   bulkArchiveActivitiesAction,
+  hardDeleteActivityAction,
 } from "@/features/activities/actions";
 import { updateTaskStatusAction } from "@/features/tasks/actions";
 import type { GroupTaskDTO, TaskStatus } from "@/lib/data/tasks-types";
@@ -261,11 +263,49 @@ export function ProjectCenterClient({
     });
   }
 
-  const projectCount = activeActivities.filter((a) =>
+  function handleHardDelete(activity: ActivitySummaryDTO) {
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        `Permanently delete "${activity.title}"? This cannot be undone and will remove all linked records and media.`,
+      )
+    ) {
+      return;
+    }
+
+    const previousActivities = activities;
+    setActivities((prev) => prev.filter((item) => item.id !== activity.id));
+
+    startTransition(async () => {
+      const result = await hardDeleteActivityAction(activity.id);
+      if (!result.success) {
+        setActivities(previousActivities);
+        notifyToast({
+          title: "Delete failed",
+          message: result.error,
+          kind: "error",
+        });
+        return;
+      }
+      notifyToast({
+        message: result.message || `"${activity.title}" permanently deleted.`,
+        kind: "success",
+      });
+      router.refresh();
+    });
+  }
+
+  const activeWorkspaceActivities = activeActivities.filter(
+    (a) => !["CANCELLED", "ACCOMPLISHED"].includes(a.status),
+  );
+  const serviceProjectCount = activeWorkspaceActivities.filter((a) =>
     ["SERVICE_PROJECT", "JOINT_PROJECT"].includes(a.kind),
   ).length;
-  const upcomingCount = activeActivities.filter((a) =>
-    ["PLANNED", "ONGOING"].includes(a.status),
+  const ongoingActiveCount = activeWorkspaceActivities.filter(
+    (a) => a.status === "ONGOING",
+  ).length;
+  const plannedActiveCount = activeWorkspaceActivities.filter(
+    (a) => a.status === "PLANNED",
   ).length;
   const awaitingReports = activeActivities.filter(
     (a) => a.status === "AWAITING_REPORT",
@@ -353,14 +393,14 @@ export function ProjectCenterClient({
         aria-label="Project Center summary"
       >
         <SummaryMetric
-          label="Active & Planned"
-          value={upcomingCount}
-          detail="scheduled activities"
+          label="Active Projects"
+          value={activeWorkspaceActivities.length}
+          detail={`${ongoingActiveCount} ongoing · ${plannedActiveCount} planned`}
         />
         <SummaryMetric
-          label="Active Projects"
-          value={projectCount}
-          detail="service initiatives"
+          label="Service & Joint"
+          value={serviceProjectCount}
+          detail="community & twin club service"
         />
         <SummaryMetric
           label="Awaiting report"
@@ -370,7 +410,7 @@ export function ProjectCenterClient({
         />
         <SummaryMetric
           label="Open tasks"
-          value={initialTasks.filter((t) => t.status !== "COMPLETED").length}
+          value={tasksList.filter((t) => t.status !== "COMPLETED").length}
           detail="across club activities"
         />
         <SummaryMetric
@@ -424,7 +464,7 @@ export function ProjectCenterClient({
       )}
 
       <section className="space-y-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-2.5 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex flex-wrap items-center gap-2">
             {/* Active vs Archived Scope Switcher */}
             <div
@@ -453,7 +493,7 @@ export function ProjectCenterClient({
                       : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
                   }`}
                 >
-                  {activeActivities.length}
+                  {activeWorkspaceActivities.length}
                 </span>
               </button>
               <button
@@ -491,7 +531,7 @@ export function ProjectCenterClient({
               id="activity-kind-filter"
               value={kind}
               onChange={(e) => setKind(e.target.value)}
-              className="min-w-40 rounded-lg border border-[#EDEDF2] bg-white px-3 py-2 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-[#161B26] dark:text-slate-200"
+              className="rounded-lg border border-[#EDEDF2] bg-white px-2.5 py-2 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-[#161B26] dark:text-slate-200"
             >
               <option value="ALL">All activity types</option>
               {ACTIVITY_KINDS.map((k) => (
@@ -508,7 +548,7 @@ export function ProjectCenterClient({
               id="activity-status-filter"
               value={status}
               onChange={(e) => setStatus(e.target.value)}
-              className="min-w-36 rounded-lg border border-[#EDEDF2] bg-white px-3 py-2 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-[#161B26] dark:text-slate-200"
+              className="rounded-lg border border-[#EDEDF2] bg-white px-2.5 py-2 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-[#161B26] dark:text-slate-200"
             >
               {scope === "ACTIVE" && (
                 <option value="ACTIVE">Active & upcoming</option>
@@ -532,7 +572,7 @@ export function ProjectCenterClient({
                   id="activity-ry-filter"
                   value={rotaryYear}
                   onChange={(e) => setRotaryYear(e.target.value)}
-                  className="rounded-lg border border-[#EDEDF2] bg-white px-3 py-2 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-[#161B26] dark:text-slate-200"
+                  className="rounded-lg border border-[#EDEDF2] bg-white px-2.5 py-2 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-[#161B26] dark:text-slate-200"
                 >
                   <option value="ALL">All Rotary Years</option>
                   {availableRotaryYears.map((ry) => (
@@ -793,35 +833,48 @@ export function ProjectCenterClient({
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center justify-end gap-2">
+                  <div className="flex items-center justify-end gap-1.5">
                     {manageable ? (
-                      <button
-                        type="button"
-                        disabled={pending}
-                        onClick={() => handleToggleArchive(activity)}
-                        title={
-                          activity.isArchived
-                            ? "Restore project to active workspace"
-                            : "Archive this project"
-                        }
-                        className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition disabled:opacity-50 ${
-                          activity.isArchived
-                            ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
-                            : "border-slate-200 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-                        }`}
-                      >
-                        {activity.isArchived ? (
-                          <>
-                            <ArchiveRestore className="h-3.5 w-3.5" />
-                            <span>Restore</span>
-                          </>
-                        ) : (
-                          <>
-                            <Archive className="h-3.5 w-3.5" />
-                            <span>Archive</span>
-                          </>
+                      <>
+                        <button
+                          type="button"
+                          disabled={pending}
+                          onClick={() => handleToggleArchive(activity)}
+                          title={
+                            activity.isArchived
+                              ? "Restore project to active workspace"
+                              : "Archive this project"
+                          }
+                          className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition disabled:opacity-50 ${
+                            activity.isArchived
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
+                              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                          }`}
+                        >
+                          {activity.isArchived ? (
+                            <>
+                              <ArchiveRestore className="h-3.5 w-3.5" />
+                              <span>Restore</span>
+                            </>
+                          ) : (
+                            <>
+                              <Archive className="h-3.5 w-3.5" />
+                              <span>Archive</span>
+                            </>
+                          )}
+                        </button>
+                        {activity.isArchived && (
+                          <button
+                            type="button"
+                            disabled={pending}
+                            onClick={() => handleHardDelete(activity)}
+                            title="Permanently delete this archived project"
+                            className="inline-flex items-center justify-center rounded-lg border border-rose-200 bg-rose-50 p-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-400 transition disabled:opacity-50"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
                         )}
-                      </button>
+                      </>
                     ) : (
                       <Link
                         href={`/project-center/${activity.id}`}
