@@ -15,8 +15,11 @@ import {
 import type { TeamRole } from "./types";
 import {
   createTask,
+  updateTask,
+  deleteTask,
   type TaskCommittee,
   type TaskPriority,
+  type TaskStatus,
 } from "@/lib/data/tasks-storage";
 import { readPartnershipsStore } from "@/lib/data/partnerships-storage";
 import {
@@ -165,7 +168,9 @@ async function loadActivityAccess(activityId: string) {
     activity.owner_id === user.id ||
     Boolean(chair.data) ||
     perms.has("EVENT_UPDATE") ||
-    perms.has("PROJECT_UPDATE");
+    perms.has("PROJECT_UPDATE") ||
+    perms.has("ROLE_ASSIGN") ||
+    perms.has("SETTINGS_MANAGE");
 
   const canReassignOwner =
     context.isPlatformAdmin ||
@@ -889,8 +894,8 @@ export async function selfCheckInAction(
     sourceType: isProjectKind(a.kind) ? "SERVICE_CHECK_IN" : "CHECK_IN",
     sourceId: activityId,
     reason: isProjectKind(a.kind)
-      ? "Verified service project attendance"
-      : "Verified activity attendance",
+      ? `Attended Service Project: ${a.title}`
+      : `Attended Activity: ${a.title}`,
   });
   await logActivity(activityId, access.user.id, "SELF_CHECK_IN");
   revalidateActivity(activityId);
@@ -1810,4 +1815,131 @@ export async function createActivityTaskAction(
   revalidateActivity(parsed.data.activityId);
   revalidatePath("/tasks");
   return { success: true, message: "Task added." };
+}
+
+const updateActivityTaskSchema = z.object({
+  activityId: uuidString,
+  taskId: z.string().trim().min(1),
+  title: z
+    .string()
+    .trim()
+    .min(3, "Task title must be at least 3 characters")
+    .max(200),
+  description: z.string().trim().max(2000).default(""),
+  committee: z.enum(COMMITTEES).default("CLUB_SERVICE"),
+  priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).default("MEDIUM"),
+  status: z
+    .enum(["TODO", "IN_PROGRESS", "IN_REVIEW", "COMPLETED"])
+    .default("TODO"),
+  dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Due date is required"),
+  assigneeIds: z.array(z.string().trim().min(1)).max(20).default([]),
+});
+
+export async function updateActivityTaskAction(
+  input: z.input<typeof updateActivityTaskSchema>,
+): Promise<ActionResult> {
+  const parsed = updateActivityTaskSchema.safeParse(input);
+  if (!parsed.success)
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message || "Invalid task update",
+    };
+
+  const access = await loadActivityAccess(parsed.data.activityId);
+  if (!access) return { success: false, error: "Activity not found." };
+  if (!access.canManage)
+    return {
+      success: false,
+      error:
+        "Only administrators, authorized officers, or the project chair can edit tasks.",
+    };
+
+  const admin = createAdminClient();
+  const validUuids = parsed.data.assigneeIds.filter((id) =>
+    UUID_PATTERN.test(id),
+  );
+  const { data: assignees } = validUuids.length
+    ? await admin
+        .from("profiles")
+        .select("id, full_name")
+        .in("id", validUuids)
+    : { data: [] as { id: string; full_name: string }[] };
+
+  const assignedMemberIds = (assignees || []).map((a) => a.id);
+  const assignedMemberNames = (assignees || []).map((a) => a.full_name);
+
+  updateTask(parsed.data.taskId, {
+    title: parsed.data.title,
+    description: parsed.data.description,
+    committee: parsed.data.committee as TaskCommittee,
+    priority: parsed.data.priority as TaskPriority,
+    status: parsed.data.status as TaskStatus,
+    dueDate: parsed.data.dueDate,
+    assignedMemberIds,
+    assignedMemberNames,
+  });
+
+  const nowIso = new Date().toISOString();
+  const { error } = await admin
+    .from("tasks")
+    .update({
+      title: parsed.data.title,
+      description: parsed.data.description,
+      committee: parsed.data.committee,
+      priority: parsed.data.priority,
+      status: parsed.data.status,
+      due_date: parsed.data.dueDate,
+      assigned_member_ids: assignedMemberIds,
+      assigned_member_names: assignedMemberNames,
+      updated_at: nowIso,
+    })
+    .eq("id", parsed.data.taskId);
+
+  if (error) {
+    console.warn(
+      "Could not sync activity task update to Supabase:",
+      error.message,
+    );
+  }
+
+  for (const assignee of assignees || []) {
+    if (assignee.id !== access.user.id) {
+      dispatchNotification({
+        profileId: assignee.id,
+        clubId: access.activity.club_id,
+        title: `Task assigned: ${parsed.data.title}`,
+        message: `You were assigned to "${parsed.data.title}" in ${access.activity.title}. Due: ${parsed.data.dueDate}.`,
+        type: "GENERAL",
+        linkUrl: `/project-center/${parsed.data.activityId}?tab=tasks`,
+        dedupeKey: `task_assign_${parsed.data.taskId}_${assignee.id}`,
+        sendPush: true,
+      }).catch((e) => console.warn("Failed assignee task notif:", e));
+    }
+  }
+
+  revalidateActivity(parsed.data.activityId);
+  revalidatePath("/tasks");
+  return { success: true, message: "Task updated." };
+}
+
+export async function deleteActivityTaskAction(
+  activityId: string,
+  taskId: string,
+): Promise<ActionResult> {
+  const access = await loadActivityAccess(activityId);
+  if (!access) return { success: false, error: "Activity not found." };
+  if (!access.canManage)
+    return {
+      success: false,
+      error:
+        "Only administrators, authorized officers, or the project chair can delete tasks.",
+    };
+
+  deleteTask(taskId);
+  const admin = createAdminClient();
+  await admin.from("tasks").delete().eq("id", taskId);
+
+  revalidateActivity(activityId);
+  revalidatePath("/tasks");
+  return { success: true, message: "Task deleted." };
 }

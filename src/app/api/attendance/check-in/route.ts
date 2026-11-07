@@ -277,8 +277,8 @@ export async function POST(request: NextRequest) {
       sourceType: isServiceProject ? "SERVICE_CHECK_IN" : "CHECK_IN",
       sourceId: record.id,
       reason: isServiceProject
-        ? "Verified service project attendance"
-        : "Verified activity attendance",
+        ? `Attended Service Project: ${eventTitle}`
+        : `Attended Activity: ${eventTitle}`,
     });
 
     return NextResponse.json({

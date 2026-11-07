@@ -102,8 +102,13 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-slate-900 px-4 py-12">
       <div className="w-full max-w-md bg-slate-950 border border-slate-800 rounded-2xl p-8 shadow-2xl">
         <div className="text-center mb-8">
-          <div className="w-12 h-12 rounded-xl bg-rose-600 flex items-center justify-center text-white font-black text-xl mx-auto mb-4 shadow-lg shadow-rose-600/30">
-            R
+          <div className="inline-flex items-center justify-center rounded-2xl bg-white px-4 py-2 mb-4 shadow-lg">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/icons/logo%20icon.jpg"
+              alt="RacSpeed"
+              className="h-8 w-auto object-contain"
+            />
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-white">Sign In</h1>
           <p className="text-sm text-slate-400 mt-1">

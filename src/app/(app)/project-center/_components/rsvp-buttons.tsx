@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useTransition } from "react";
+import React, { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, HelpCircle, X } from "lucide-react";
 import { setRsvpAction } from "@/features/activities/actions";
@@ -16,19 +16,19 @@ const OPTIONS: {
     value: "GOING",
     label: "Going",
     icon: Check,
-    active: "bg-emerald-600 text-white border-emerald-600",
+    active: "bg-emerald-600 text-white border-emerald-600 shadow-xs",
   },
   {
     value: "MAYBE",
     label: "Maybe",
     icon: HelpCircle,
-    active: "bg-amber-500 text-white border-amber-500",
+    active: "bg-amber-500 text-white border-amber-500 shadow-xs",
   },
   {
     value: "NOT_GOING",
     label: "Can't go",
     icon: X,
-    active: "bg-slate-700 text-white border-slate-700",
+    active: "bg-slate-700 text-white border-slate-700 shadow-xs",
   },
 ];
 
@@ -36,24 +36,32 @@ export function RsvpButtons({
   activityId,
   current,
   compact = false,
+  onResponseChange,
 }: {
   activityId: string;
   current: RsvpResponse | null;
   compact?: boolean;
+  onResponseChange?: (response: RsvpResponse) => void;
 }) {
   const router = useRouter();
   const [value, setValue] = useState<RsvpResponse | null>(current);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  useEffect(() => {
+    setValue(current);
+  }, [current]);
+
   function choose(next: RsvpResponse) {
     const previous = value;
     setValue(next);
+    onResponseChange?.(next);
     setError(null);
     startTransition(async () => {
       const res = await setRsvpAction({ activityId, response: next });
       if (!res.success) {
         setValue(previous);
+        if (previous) onResponseChange?.(previous);
         setError(res.error);
         return;
       }

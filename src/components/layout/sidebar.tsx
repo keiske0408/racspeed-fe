@@ -72,7 +72,7 @@ const NAV_SECTIONS: NavSection[] = [
         href: "/budgets",
         icon: FileSpreadsheet,
       },
-      { label: "Sister Clubs & Partners", href: "/partnerships", icon: Globe },
+      { label: "Twin Clubs & Partners", href: "/partnerships", icon: Globe },
     ],
   },
   {
@@ -148,15 +148,26 @@ export function Sidebar({
           href="/dashboard"
           className="flex items-center gap-2.5 group"
           onClick={() => onNavigate?.()}
-          title="Racspeed Dashboard"
+          title="RacSpeed Dashboard"
         >
-          <div className="w-7 h-7 rounded-full bg-[#111625] dark:bg-white flex items-center justify-center text-white dark:text-[#111625] font-black text-xs tracking-tighter shadow-xs shrink-0">
-            R
-          </div>
-          {!collapsed && (
-            <span className="font-bold text-base tracking-tight text-[#111625] dark:text-white">
-              Racspeed
-            </span>
+          {collapsed ? (
+            <div className="w-10 h-9 rounded-xl bg-white border border-slate-200/80 dark:border-slate-700/80 flex items-center justify-center overflow-hidden px-1 shadow-2xs shrink-0">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/icons/logo%20icon.jpg"
+                alt="RacSpeed"
+                className="w-full h-full object-contain"
+              />
+            </div>
+          ) : (
+            <div className="h-9 px-3 py-1 rounded-xl bg-white border border-slate-200/80 dark:border-slate-700/80 flex items-center justify-center shadow-2xs shrink-0 transition group-hover:shadow-sm">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/icons/logo%20icon.jpg"
+                alt="RacSpeed"
+                className="h-6 w-auto max-w-[150px] object-contain"
+              />
+            </div>
           )}
         </Link>
       </div>

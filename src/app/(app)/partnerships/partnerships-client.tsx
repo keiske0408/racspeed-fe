@@ -284,10 +284,10 @@ export function PartnershipsClient({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-            Sister Clubs & Partnerships
+            Twin Clubs & Partnerships
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Memorandum of Agreements (MOA), Twin Clubs & Joint Projects
+            Memorandum of Agreements (MOA), Friendship Clubs & Joint Projects
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -370,8 +370,8 @@ export function PartnershipsClient({
       <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 text-xs w-fit max-w-full overflow-x-auto">
         {[
           { key: "ALL", label: "All Partnerships" },
-          { key: "SISTER_CLUB_MOA", label: "Sister Club MOAs" },
-          { key: "DISTRICT_TWIN_CLUB", label: "Twin Clubs" },
+          { key: "SISTER_CLUB_MOA", label: "Twin Club MOAs" },
+          { key: "DISTRICT_TWIN_CLUB", label: "Friendship Clubs" },
           { key: "PROJECT_PARTNER", label: "Project Partners" },
           { key: "SPONSOR_ROTARY_CLUB", label: "Sponsor Rotary Club" },
         ].map((tab) => (
@@ -407,9 +407,20 @@ export function PartnershipsClient({
                 {/* Header with Title, Status & Club Edit/Delete Controls */}
                 <div className="flex items-start justify-between gap-3 mb-2">
                   <div className="flex-1 min-w-0">
-                    <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-900 mb-1.5">
-                      District {club.district} · {club.country}
-                    </span>
+                    <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                      <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-900">
+                        District {club.district} · {club.country}
+                      </span>
+                      <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                        {club.partnershipType === "SISTER_CLUB_MOA"
+                          ? "Twin Club MOA"
+                          : club.partnershipType === "DISTRICT_TWIN_CLUB"
+                            ? "Friendship Club"
+                            : club.partnershipType === "PROJECT_PARTNER"
+                              ? "Project Partner"
+                              : "Sponsor Rotary Club"}
+                      </span>
+                    </div>
                     <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 truncate">
                       {club.partnerClubName}
                     </h3>
@@ -614,7 +625,7 @@ export function PartnershipsClient({
           <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-2xl">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                Add Partner or Sister Club
+                Add Partner or Twin Club
               </h3>
               <button
                 onClick={() => setShowAddModal(false)}
@@ -679,10 +690,10 @@ export function PartnershipsClient({
                   className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
                 >
                   <option value="SISTER_CLUB_MOA">
-                    Sister Club MOA (Official Bilateral)
+                    Twin Club MOA (Official Bilateral)
                   </option>
                   <option value="DISTRICT_TWIN_CLUB">
-                    District Twin Club (District-level)
+                    District Friendship Club (District-level)
                   </option>
                   <option value="PROJECT_PARTNER">
                     Collaborative Project Partner (Potential / Alliance)
@@ -880,10 +891,10 @@ export function PartnershipsClient({
                     className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
                   >
                     <option value="SISTER_CLUB_MOA">
-                      Sister Club MOA (Official Bilateral)
+                      Twin Club MOA (Official Bilateral)
                     </option>
                     <option value="DISTRICT_TWIN_CLUB">
-                      District Twin Club (District-level)
+                      District Friendship Club (District-level)
                     </option>
                     <option value="PROJECT_PARTNER">
                       Collaborative Project Partner (Potential / Alliance)

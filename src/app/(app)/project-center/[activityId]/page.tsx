@@ -25,7 +25,9 @@ export default async function ActivityDetailPage({
   const canManageClub =
     context.isPlatformAdmin ||
     context.permissions.has("EVENT_UPDATE") ||
-    context.permissions.has("PROJECT_UPDATE");
+    context.permissions.has("PROJECT_UPDATE") ||
+    context.permissions.has("ROLE_ASSIGN") ||
+    context.permissions.has("SETTINGS_MANAGE");
   const canManageAttendance =
     context.isPlatformAdmin || context.permissions.has("ATTENDANCE_MANAGE");
 

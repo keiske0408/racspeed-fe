@@ -36,6 +36,7 @@ import {
   addCommentAction,
   createActivityTaskAction,
   deleteActivityMediaAction,
+  deleteActivityTaskAction,
   deleteCommentAction,
   publishProjectReportAction,
   revokeAttendanceAction,
@@ -47,6 +48,7 @@ import {
   toggleFollowAction,
   toggleReactionAction,
   updateActivityStatusAction,
+  updateActivityTaskAction,
   uploadActivityMediaAction,
 } from "@/features/activities/actions";
 import { updateTaskStatusAction } from "@/features/tasks/actions";
@@ -418,21 +420,23 @@ export function ActivityDetailClient({
                 />{" "}
                 {activity.isFollowing ? "Following" : "Follow"}
               </button>
-              {activity.selfCheckInEnabled && !activity.checkedIn && (
-                <button
-                  type="button"
-                  disabled={pending}
-                  onClick={() =>
-                    run(
-                      () => selfCheckInAction(activity.id),
-                      "Check-in recorded.",
-                    )
-                  }
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
-                >
-                  <Check className="h-3.5 w-3.5" /> Check in as me
-                </button>
-              )}
+              {activity.selfCheckInEnabled &&
+                !activity.checkedIn &&
+                (!activity.rsvpEnabled || activity.myRsvp === "GOING") && (
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() =>
+                      run(
+                        () => selfCheckInAction(activity.id),
+                        "Check-in recorded.",
+                      )
+                    }
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60 cursor-pointer"
+                  >
+                    <Check className="h-3.5 w-3.5" /> Check in as me
+                  </button>
+                )}
               {activity.checkedIn && (
                 <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
                   <Check className="h-3.5 w-3.5" /> Checked in
@@ -451,7 +455,13 @@ export function ActivityDetailClient({
                   {activity.rsvp.notGoing} can&apos;t go
                 </p>
               </div>
-              <RsvpButtons activityId={activity.id} current={activity.myRsvp} />
+              <RsvpButtons
+                activityId={activity.id}
+                current={activity.myRsvp}
+                onResponseChange={(next) =>
+                  startTransition(() => setActivity({ myRsvp: next }))
+                }
+              />
             </div>
           )}
         </div>
@@ -994,14 +1004,42 @@ function TasksPanel({
   onTaskCreated: () => void;
 }) {
   const [showForm, setShowForm] = useState(false);
+  const [selectedAssigneeIds, setSelectedAssigneeIds] = useState<string[]>([]);
+  const [editingTask, setEditingTask] = useState<GroupTaskDTO | null>(null);
+  const [editAssigneeIds, setEditAssigneeIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+
   const lanes: { status: TaskStatus; label: string }[] = [
     { status: "TODO", label: "To do" },
     { status: "IN_PROGRESS", label: "In progress" },
     { status: "IN_REVIEW", label: "In review" },
     { status: "COMPLETED", label: "Done" },
   ];
+
+  // Build unified candidate list prioritizing project committee members
+  const teamIds = new Set((activity.team || []).map((t) => t.profileId));
+  const otherMembers = members.filter((m) => !teamIds.has(m.id));
+
+  function toggleAssignee(
+    id: string,
+    current: string[],
+    setter: React.Dispatch<React.SetStateAction<string[]>>,
+  ) {
+    setter(
+      current.includes(id)
+        ? current.filter((item) => item !== id)
+        : [...current, id],
+    );
+  }
+
+  function openEditModal(task: GroupTaskDTO) {
+    setEditingTask(task);
+    setEditAssigneeIds(task.assignedMemberIds || []);
+    setEditError(null);
+  }
+
   return (
     <section className="space-y-4">
       <header className="flex items-center justify-between gap-3">
@@ -1010,14 +1048,17 @@ function TasksPanel({
             Project tasks
           </h2>
           <p className="mt-1 text-xs text-slate-500">
-            Tasks are linked to this activity and appear in My Work.
+            Assign one or more committee or club members to tasks. Admins and authorized officers can edit tasks at any time.
           </p>
         </div>
         {canCreate && (
           <button
             type="button"
-            onClick={() => setShowForm(!showForm)}
-            className="rounded-lg bg-[#0D3594] px-3 py-2 text-xs font-semibold text-white"
+            onClick={() => {
+              setShowForm(!showForm);
+              setError(null);
+            }}
+            className="rounded-lg bg-[#0D3594] px-3 py-2 text-xs font-semibold text-white cursor-pointer"
           >
             {showForm ? "Close" : "Add task"}
           </button>
@@ -1031,8 +1072,6 @@ function TasksPanel({
             const data = new FormData(event.currentTarget);
             setError(null);
             startTransition(async () => {
-              const assigneeId = String(data.get("assigneeId") || "");
-              const assigneeIds = assigneeId ? [assigneeId] : [];
               const result = await createActivityTaskAction({
                 activityId: activity.id,
                 title: String(data.get("title") || ""),
@@ -1041,25 +1080,29 @@ function TasksPanel({
                   data.get("committee") || "CLUB_SERVICE",
                 ) as (typeof COMMITTEES)[number],
                 priority: String(data.get("priority") || "MEDIUM") as
-                  "LOW" | "MEDIUM" | "HIGH" | "URGENT",
+                  | "LOW"
+                  | "MEDIUM"
+                  | "HIGH"
+                  | "URGENT",
                 dueDate: String(data.get("dueDate") || ""),
-                assigneeIds,
+                assigneeIds: selectedAssigneeIds,
               });
               if (!result.success) {
                 setError(result.error);
                 return;
               }
+              setSelectedAssigneeIds([]);
               setShowForm(false);
               onTaskCreated();
             });
           }}
         >
           <label className="text-xs font-semibold">
-            Task title
+            Task title <span className="text-rose-500">*</span>
             <input name="title" required minLength={3} className={fieldClass} />
           </label>
           <label className="text-xs font-semibold">
-            Due date
+            Due date <span className="text-rose-500">*</span>
             <input name="dueDate" type="date" required className={fieldClass} />
           </label>
           <label className="text-xs font-semibold">
@@ -1081,30 +1124,129 @@ function TasksPanel({
               <option>URGENT</option>
             </select>
           </label>
-          <label className="text-xs font-semibold sm:col-span-2">
-            Assign to Committee Member or Officer
-            <select name="assigneeId" className={fieldClass}>
-              <option value="">-- Unassigned --</option>
+
+          {/* Multi-member Assignee Selector */}
+          <div className="sm:col-span-2 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-[#111625] dark:text-white">
+                Assign Members (Select one or more)
+              </span>
+              <div className="flex items-center gap-2">
+                {activity.team && activity.team.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const allTeam = activity.team.map((t) => t.profileId);
+                      setSelectedAssigneeIds((prev) =>
+                        Array.from(new Set([...prev, ...allTeam])),
+                      );
+                    }}
+                    className="text-[11px] font-semibold text-[#0D3594] hover:underline dark:text-blue-300 cursor-pointer"
+                  >
+                    + Assign all committee ({activity.team.length})
+                  </button>
+                )}
+                {selectedAssigneeIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedAssigneeIds([])}
+                    className="text-[11px] font-semibold text-slate-400 hover:text-rose-600 cursor-pointer"
+                  >
+                    Clear ({selectedAssigneeIds.length})
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="max-h-44 overflow-y-auto rounded-xl border border-[#EDEDF2] bg-slate-50/60 p-2.5 space-y-2.5 dark:border-slate-800 dark:bg-slate-900/50">
               {activity.team && activity.team.length > 0 && (
-                <optgroup label="Project Committee & Team">
-                  {activity.team.map((m) => (
-                    <option key={m.profileId} value={m.profileId}>
-                      {m.fullName} ({m.role.replace("_", " ")})
-                    </option>
-                  ))}
-                </optgroup>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400 mb-1.5">
+                    Project Committee & Team
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {activity.team.map((m) => {
+                      const active = selectedAssigneeIds.includes(m.profileId);
+                      return (
+                        <button
+                          key={m.profileId}
+                          type="button"
+                          onClick={() =>
+                            toggleAssignee(
+                              m.profileId,
+                              selectedAssigneeIds,
+                              setSelectedAssigneeIds,
+                            )
+                          }
+                          className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition cursor-pointer ${
+                            active
+                              ? "border-[#0D3594] bg-[#0D3594] text-white shadow-2xs"
+                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                          }`}
+                        >
+                          {active && <Check className="h-3 w-3" />}
+                          <span>{m.fullName}</span>
+                          <span
+                            className={`text-[10px] ${
+                              active
+                                ? "text-blue-100"
+                                : "text-slate-400 dark:text-slate-400"
+                            }`}
+                          >
+                            ({m.role.replace("_", " ")})
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               )}
-              {members && members.length > 0 && (
-                <optgroup label="Club Members & Officers">
-                  {members.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name || m.email || "Member"} {m.role ? `(${m.role})` : ""}
-                    </option>
-                  ))}
-                </optgroup>
+
+              {otherMembers.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                    Club Members & Officers
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {otherMembers.map((m) => {
+                      const active = selectedAssigneeIds.includes(m.id);
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() =>
+                            toggleAssignee(
+                              m.id,
+                              selectedAssigneeIds,
+                              setSelectedAssigneeIds,
+                            )
+                          }
+                          className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition cursor-pointer ${
+                            active
+                              ? "border-[#0D3594] bg-[#0D3594] text-white shadow-2xs"
+                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                          }`}
+                        >
+                          {active && <Check className="h-3 w-3" />}
+                          <span>{m.name || m.email}</span>
+                          {m.role && (
+                            <span
+                              className={`text-[10px] ${
+                                active ? "text-blue-100" : "text-slate-400"
+                              }`}
+                            >
+                              ({m.role})
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               )}
-            </select>
-          </label>
+            </div>
+          </div>
+
           <label className="text-xs font-semibold sm:col-span-2">
             Description
             <textarea name="description" rows={2} className={fieldClass} />
@@ -1117,7 +1259,7 @@ function TasksPanel({
           <div className="sm:col-span-2">
             <button
               disabled={pending}
-              className="rounded-lg bg-[#0D3594] px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
+              className="rounded-lg bg-[#0D3594] px-3.5 py-2 text-xs font-semibold text-white disabled:opacity-60 cursor-pointer"
             >
               {pending ? "Adding..." : "Create task"}
             </button>
@@ -1142,7 +1284,13 @@ function TasksPanel({
               {tasks
                 .filter((task) => task.status === lane.status)
                 .map((task) => (
-                  <TaskCard key={task.id} task={task} canManage={canCreate} />
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    canManage={canCreate}
+                    onEdit={() => openEditModal(task)}
+                    onChanged={onTaskCreated}
+                  />
                 ))}
             </div>
           </div>
@@ -1153,6 +1301,296 @@ function TasksPanel({
           No tasks linked to this activity yet.
         </div>
       )}
+
+      {/* Edit Task Modal for Admin / Officers / Project Chair */}
+      {editingTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-[#EDEDF2] bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-[#161B26]">
+            <div className="flex items-center justify-between border-b border-[#EDEDF2] pb-3 dark:border-slate-800">
+              <h3 className="text-sm font-bold text-[#111625] dark:text-white">
+                Edit Task & Member Assignments
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEditingTask(null)}
+                className="rounded-lg p-1 text-slate-400 hover:text-slate-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form
+              className="mt-4 grid gap-3 sm:grid-cols-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const data = new FormData(event.currentTarget);
+                setEditError(null);
+                startTransition(async () => {
+                  const res = await updateActivityTaskAction({
+                    activityId: activity.id,
+                    taskId: editingTask.id,
+                    title: String(data.get("title") || ""),
+                    description: String(data.get("description") || ""),
+                    committee: String(
+                      data.get("committee") || editingTask.committee,
+                    ) as (typeof COMMITTEES)[number],
+                    priority: String(
+                      data.get("priority") || editingTask.priority,
+                    ) as "LOW" | "MEDIUM" | "HIGH" | "URGENT",
+                    status: String(
+                      data.get("status") || editingTask.status,
+                    ) as TaskStatus,
+                    dueDate: String(data.get("dueDate") || editingTask.dueDate),
+                    assigneeIds: editAssigneeIds,
+                  });
+                  if (!res.success) {
+                    setEditError(res.error);
+                    return;
+                  }
+                  notifyToast({
+                    message: res.message || "Task updated.",
+                    kind: "success",
+                  });
+                  setEditingTask(null);
+                  onTaskCreated();
+                });
+              }}
+            >
+              <label className="text-xs font-semibold sm:col-span-2">
+                Task title <span className="text-rose-500">*</span>
+                <input
+                  name="title"
+                  defaultValue={editingTask.title}
+                  required
+                  minLength={3}
+                  className={fieldClass}
+                />
+              </label>
+              <label className="text-xs font-semibold">
+                Due date <span className="text-rose-500">*</span>
+                <input
+                  name="dueDate"
+                  type="date"
+                  defaultValue={editingTask.dueDate}
+                  required
+                  className={fieldClass}
+                />
+              </label>
+              <label className="text-xs font-semibold">
+                Status
+                <select
+                  name="status"
+                  defaultValue={editingTask.status}
+                  className={fieldClass}
+                >
+                  <option value="TODO">To do</option>
+                  <option value="IN_PROGRESS">In progress</option>
+                  <option value="IN_REVIEW">In review</option>
+                  <option value="COMPLETED">Done</option>
+                </select>
+              </label>
+              <label className="text-xs font-semibold">
+                Committee
+                <select
+                  name="committee"
+                  defaultValue={editingTask.committee}
+                  className={fieldClass}
+                >
+                  {COMMITTEES.map((c) => (
+                    <option key={c} value={c}>
+                      {c.replaceAll("_", " ")}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-xs font-semibold">
+                Priority
+                <select
+                  name="priority"
+                  defaultValue={editingTask.priority}
+                  className={fieldClass}
+                >
+                  <option value="LOW">LOW</option>
+                  <option value="MEDIUM">MEDIUM</option>
+                  <option value="HIGH">HIGH</option>
+                  <option value="URGENT">URGENT</option>
+                </select>
+              </label>
+
+              {/* Multi-Member Selector inside Edit Modal */}
+              <div className="sm:col-span-2 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-[#111625] dark:text-white">
+                    Assigned Members (One or more)
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {activity.team && activity.team.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const allTeam = activity.team.map((t) => t.profileId);
+                          setEditAssigneeIds((prev) =>
+                            Array.from(new Set([...prev, ...allTeam])),
+                          );
+                        }}
+                        className="text-[11px] font-semibold text-[#0D3594] hover:underline dark:text-blue-300 cursor-pointer"
+                      >
+                        + Assign all committee
+                      </button>
+                    )}
+                    {editAssigneeIds.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setEditAssigneeIds([])}
+                        className="text-[11px] font-semibold text-slate-400 hover:text-rose-600 cursor-pointer"
+                      >
+                        Clear ({editAssigneeIds.length})
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="max-h-40 overflow-y-auto rounded-xl border border-[#EDEDF2] bg-slate-50/60 p-2.5 space-y-2.5 dark:border-slate-800 dark:bg-slate-900/50">
+                  {activity.team && activity.team.length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400 mb-1.5">
+                        Project Committee & Team
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {activity.team.map((m) => {
+                          const active = editAssigneeIds.includes(m.profileId);
+                          return (
+                            <button
+                              key={m.profileId}
+                              type="button"
+                              onClick={() =>
+                                toggleAssignee(
+                                  m.profileId,
+                                  editAssigneeIds,
+                                  setEditAssigneeIds,
+                                )
+                              }
+                              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition cursor-pointer ${
+                                active
+                                  ? "border-[#0D3594] bg-[#0D3594] text-white shadow-2xs"
+                                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                              }`}
+                            >
+                              {active && <Check className="h-3 w-3" />}
+                              <span>{m.fullName}</span>
+                              <span
+                                className={`text-[10px] ${
+                                  active ? "text-blue-100" : "text-slate-400"
+                                }`}
+                              >
+                                ({m.role.replace("_", " ")})
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {otherMembers.length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                        Club Members & Officers
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {otherMembers.map((m) => {
+                          const active = editAssigneeIds.includes(m.id);
+                          return (
+                            <button
+                              key={m.id}
+                              type="button"
+                              onClick={() =>
+                                toggleAssignee(
+                                  m.id,
+                                  editAssigneeIds,
+                                  setEditAssigneeIds,
+                                )
+                              }
+                              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition cursor-pointer ${
+                                active
+                                  ? "border-[#0D3594] bg-[#0D3594] text-white shadow-2xs"
+                                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                              }`}
+                            >
+                              {active && <Check className="h-3 w-3" />}
+                              <span>{m.name || m.email}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <label className="text-xs font-semibold sm:col-span-2">
+                Description
+                <textarea
+                  name="description"
+                  rows={2}
+                  defaultValue={editingTask.description}
+                  className={fieldClass}
+                />
+              </label>
+
+              {editError && (
+                <p role="alert" className="text-xs text-rose-600 sm:col-span-2">
+                  {editError}
+                </p>
+              )}
+
+              <div className="flex items-center justify-between gap-2 pt-2 sm:col-span-2">
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => {
+                    startTransition(async () => {
+                      const res = await deleteActivityTaskAction(
+                        activity.id,
+                        editingTask.id,
+                      );
+                      if (!res.success) {
+                        setEditError(res.error);
+                        return;
+                      }
+                      notifyToast({
+                        message: "Task deleted.",
+                        kind: "success",
+                      });
+                      setEditingTask(null);
+                      onTaskCreated();
+                    });
+                  }}
+                  className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300 cursor-pointer"
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Delete
+                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingTask(null)}
+                    className="rounded-lg border border-[#EDEDF2] px-3 py-2 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:text-slate-300"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={pending}
+                    className="rounded-lg bg-[#0D3594] px-4 py-2 text-xs font-semibold text-white disabled:opacity-60 cursor-pointer"
+                  >
+                    {pending ? "Saving..." : "Save changes"}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -1160,9 +1598,13 @@ function TasksPanel({
 function TaskCard({
   task,
   canManage,
+  onEdit,
+  onChanged,
 }: {
   task: GroupTaskDTO;
   canManage: boolean;
+  onEdit?: () => void;
+  onChanged?: () => void;
 }) {
   const [pending, startTransition] = useTransition();
   const nextStatus: TaskStatus =
@@ -1180,19 +1622,33 @@ function TaskCard({
           {task.title}
         </h4>
         {canManage && (
-          <button
-            type="button"
-            disabled={pending}
-            title={`Move to ${nextStatus.replaceAll("_", " ")}`}
-            onClick={() =>
-              startTransition(async () => {
-                await updateTaskStatusAction(task.id, nextStatus);
-              })
-            }
-            className="rounded p-0.5 text-slate-400 hover:text-[#0D3594]"
-          >
-            <Check className="h-3.5 w-3.5" />
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            {onEdit && (
+              <button
+                type="button"
+                disabled={pending}
+                title="Edit task & assignees"
+                onClick={onEdit}
+                className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-[#0D3594] dark:hover:bg-slate-800 cursor-pointer"
+              >
+                <Pencil className="h-3 w-3" />
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={pending}
+              title={`Move to ${nextStatus.replaceAll("_", " ")}`}
+              onClick={() =>
+                startTransition(async () => {
+                  await updateTaskStatusAction(task.id, nextStatus);
+                  onChanged?.();
+                })
+              }
+              className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-emerald-600 dark:hover:bg-slate-800 cursor-pointer"
+            >
+              <Check className="h-3.5 w-3.5" />
+            </button>
+          </div>
         )}
       </div>
       {task.description && (
@@ -1201,15 +1657,22 @@ function TaskCard({
         </p>
       )}
       {task.assignedMemberNames && task.assignedMemberNames.length > 0 && (
-        <div className="mt-2 flex items-center gap-1.5 text-[10px] font-medium text-slate-600 dark:text-slate-300">
-          <Users className="h-3 w-3 text-slate-400 shrink-0" />
-          <span className="truncate">
-            {task.assignedMemberNames.join(", ")}
-          </span>
+        <div className="mt-2 flex flex-wrap items-center gap-1 text-[10px] font-medium text-slate-600 dark:text-slate-300">
+          <Users className="h-3 w-3 text-slate-400 shrink-0 mr-0.5" />
+          {task.assignedMemberNames.map((name, idx) => (
+            <span
+              key={idx}
+              className="rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-[#0D3594] dark:bg-blue-500/10 dark:text-blue-300"
+            >
+              {name}
+            </span>
+          ))}
         </div>
       )}
       <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500">
-        <span className="font-semibold text-slate-600 dark:text-slate-400">{task.priority}</span>
+        <span className="font-semibold text-slate-600 dark:text-slate-400">
+          {task.priority}
+        </span>
         <span>Due {formatManila(`${task.dueDate}T04:00:00Z`, "MMM d")}</span>
       </div>
     </article>
@@ -1306,15 +1769,17 @@ function AttendancePanel({
         </div>
       </section>
       <aside className="space-y-4">
-        {activity.selfCheckInEnabled && !activity.checkedIn && (
-          <button
-            type="button"
-            onClick={onSelfCheckIn}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white"
-          >
-            <Check className="h-4 w-4" /> Check in as me
-          </button>
-        )}
+        {activity.selfCheckInEnabled &&
+          !activity.checkedIn &&
+          (!activity.rsvpEnabled || activity.myRsvp === "GOING") && (
+            <button
+              type="button"
+              onClick={onSelfCheckIn}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white cursor-pointer"
+            >
+              <Check className="h-4 w-4" /> Check in as me
+            </button>
+          )}
         {canManage && (
           activity.qrCheckInEnabled === false ? (
             <section className="space-y-3 rounded-xl border border-dashed border-amber-300 bg-amber-50/60 p-4 dark:border-amber-900/50 dark:bg-amber-950/20">

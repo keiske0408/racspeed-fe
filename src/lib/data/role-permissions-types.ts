@@ -325,9 +325,9 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
   },
   {
     key: "PROJECT_UPDATE",
-    name: "Update Project Status",
+    name: "Update Projects & Task Assignments",
     category: "SERVICE",
-    description: "Edit metrics, beneficiaries, and volunteer hours",
+    description: "Edit project details, metrics, tasks, and committee member assignments",
   },
   {
     key: "PROJECT_SUBMIT_REPORT",

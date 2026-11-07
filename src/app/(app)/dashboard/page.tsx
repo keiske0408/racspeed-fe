@@ -79,13 +79,16 @@ export default async function DashboardPage() {
       : Promise.resolve({ data: [], error: null }),
   ]);
 
-  const upcoming = activities
+  const activeActivities = activities.filter(
+    (activity) => !activity.isArchived,
+  );
+  const upcoming = activeActivities
     .filter(
       (activity) =>
         new Date(activity.startAt) >= now && activity.status !== "CANCELLED",
     )
     .slice(0, 5);
-  const highlights = activities
+  const highlights = activeActivities
     .filter(
       (activity) =>
         activity.status === "ACCOMPLISHED" &&

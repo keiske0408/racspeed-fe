@@ -13,7 +13,9 @@ async function assertTaskAdmin() {
   if (
     !context.isPlatformAdmin &&
     !context.permissions.has("ROLE_ASSIGN") &&
-    !context.permissions.has("SETTINGS_MANAGE")
+    !context.permissions.has("SETTINGS_MANAGE") &&
+    !context.permissions.has("PROJECT_UPDATE") &&
+    !context.permissions.has("EVENT_UPDATE")
   ) {
     throw new Error(
       "Unauthorized: Only administrators and designated officers have authority to perform task management operations.",

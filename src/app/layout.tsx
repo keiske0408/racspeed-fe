@@ -22,6 +22,10 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: "RacSpeed — Rotaract Club Operations Platform",
   description: "Rotaract Club of San Pedro East · Rotary International District 3820 operations platform for membership, attendance, treasury, and district reporting.",
+  icons: {
+    icon: "/icons/logo icon.jpg",
+    apple: "/icons/logo icon.jpg",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
