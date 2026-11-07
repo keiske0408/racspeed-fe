@@ -58,6 +58,7 @@ export function AppShell({
       {/* Desktop Sidebar */}
       <Sidebar
         className="hidden md:flex"
+        userId={userId}
         userFullName={userFullName}
         userEmail={userEmail}
         roleLabel={roleLabel}
@@ -86,6 +87,7 @@ export function AppShell({
             <Sidebar
               className="w-full flex-1 border-r-0"
               onNavigate={() => setMobileMenuOpen(false)}
+              userId={userId}
               userFullName={userFullName}
               userEmail={userEmail}
               roleLabel={roleLabel}

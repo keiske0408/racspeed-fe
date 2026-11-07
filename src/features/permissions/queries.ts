@@ -42,11 +42,19 @@ export async function getRolePermissionsMatrix(): Promise<{
           allowedPermissions: [],
         };
 
+        const mergedPerms = Array.from(
+          new Set([
+            ...dbPermissions,
+            ...(currentConfig.allowedPermissions || []),
+          ]),
+        );
+
         store[key] = {
           ...currentConfig,
           roleLabel: r.name || currentConfig.roleLabel,
           description: r.description || currentConfig.description,
-          allowedPermissions: dbPermissions,
+          allowedPermissions:
+            dbPermissions.length > 0 ? mergedPerms : currentConfig.allowedPermissions,
         };
       }
     }

@@ -28,6 +28,8 @@ export default async function ActivityDetailPage({
     context.permissions.has("PROJECT_UPDATE") ||
     context.permissions.has("ROLE_ASSIGN") ||
     context.permissions.has("SETTINGS_MANAGE");
+  const canManageTasks =
+    canManageClub || context.permissions.has("TASK_MANAGE");
   const canManageAttendance =
     context.isPlatformAdmin || context.permissions.has("ATTENDANCE_MANAGE");
 
@@ -54,7 +56,7 @@ export default async function ActivityDetailPage({
       initialTasks={tasks}
       initialTab={query.tab}
       currentUserId={context.user.id}
-      canCreateTasks={canManageClub || detail.canManage}
+      canCreateTasks={canManageTasks || detail.canManage}
       canManageClub={canManageClub || detail.canManage}
       isPlatformAdmin={context.isPlatformAdmin}
       members={members}

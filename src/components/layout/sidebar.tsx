@@ -104,6 +104,7 @@ const NAV_ITEM_MODULE_MAP: Record<string, string> = {
 export interface SidebarProps {
   className?: string;
   onNavigate?: () => void;
+  userId?: string;
   userFullName?: string;
   userEmail?: string;
   roleLabel?: string;
@@ -114,6 +115,7 @@ export interface SidebarProps {
 export function Sidebar({
   className = "",
   onNavigate,
+  userId,
   userFullName = "Sara",
   userEmail,
   roleLabel,
@@ -244,24 +246,13 @@ export function Sidebar({
           <HelpCircle className="w-4 h-4 text-[#8E95A5] shrink-0" />
           {!collapsed && <span>Help</span>}
         </Link>
-        {(!allowedPages || allowedPages.includes("settings")) && (
-          <Link
-            href="/settings"
-            onClick={() => onNavigate?.()}
-            title="Club Settings"
-            className={`flex items-center ${
-              collapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2"
-            } rounded-xl text-[13px] text-[#6B7280] dark:text-slate-400 hover:text-[#111625] dark:hover:text-white hover:bg-slate-100/60 dark:hover:bg-slate-800/40 transition font-medium`}
-          >
-            <Settings className="w-4 h-4 text-[#8E95A5] shrink-0" />
-            {!collapsed && <span>Settings</span>}
-          </Link>
-        )}
 
         {/* User Profile Component */}
         <div className="pt-2">
-          <div
-            title={`${userFullName} (${userEmail || "Member"})`}
+          <Link
+            href={userId ? `/members/${userId}` : "/dashboard"}
+            onClick={() => onNavigate?.()}
+            title={`${userFullName} (${userEmail || "Member"}) — View My Profile & Points`}
             className={`flex items-center ${
               collapsed ? "justify-center p-2" : "justify-between p-2"
             } rounded-xl hover:bg-slate-100/60 dark:hover:bg-slate-800/40 transition cursor-pointer`}
@@ -286,7 +277,7 @@ export function Sidebar({
             {!collapsed && (
               <ChevronDown className="w-4 h-4 text-[#8E95A5] shrink-0" />
             )}
-          </div>
+          </Link>
         </div>
       </div>
     </aside>

@@ -12,6 +12,7 @@ async function assertTaskAdmin() {
   const context = await getUserAccessContext();
   if (
     !context.isPlatformAdmin &&
+    !context.permissions.has("TASK_MANAGE") &&
     !context.permissions.has("ROLE_ASSIGN") &&
     !context.permissions.has("SETTINGS_MANAGE") &&
     !context.permissions.has("PROJECT_UPDATE") &&
@@ -208,6 +209,9 @@ export async function updateTaskStatusAction(
     );
   const canManage =
     context.isPlatformAdmin ||
+    context.permissions.has("TASK_MANAGE") ||
+    context.permissions.has("PROJECT_UPDATE") ||
+    context.permissions.has("EVENT_UPDATE") ||
     context.permissions.has("ROLE_ASSIGN") ||
     context.permissions.has("SETTINGS_MANAGE");
   if (!isAssigned && !canManage)
@@ -217,16 +221,19 @@ export async function updateTaskStatusAction(
     };
 
   try {
-    const updated = updateTaskStatus(taskId, status);
-    if (!updated) {
-      return { success: false, error: "Task not found." };
-    }
+    const nowIso = new Date().toISOString();
+    const updatedLocal = updateTaskStatus(taskId, status);
+    const updated = updatedLocal || {
+      ...taskBefore,
+      status,
+      updatedAt: nowIso,
+    };
 
     try {
       const admin = createAdminClient();
       await admin
         .from("tasks")
-        .update({ status, updated_at: new Date().toISOString() })
+        .update({ status, updated_at: nowIso })
         .eq("id", taskId);
     } catch (dbErr) {
       console.warn("Could not sync task status to Supabase:", dbErr);
@@ -243,12 +250,23 @@ export async function updateTaskStatusAction(
     }
 
     revalidatePath("/tasks");
+    revalidatePath("/project-center");
+    if (taskBefore.projectId) {
+      revalidatePath(`/project-center/${taskBefore.projectId}`);
+    }
     revalidatePath("/dashboard");
+
+    const statusLabel =
+      status === "TODO"
+        ? "To Do"
+        : status === "IN_PROGRESS"
+          ? "In Progress"
+          : "Done";
 
     return {
       success: true,
       task: updated,
-      message: `Task status updated to ${status}.`,
+      message: `Task moved to ${statusLabel}.`,
     };
   } catch (err: any) {
     return {

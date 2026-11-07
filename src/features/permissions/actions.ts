@@ -7,6 +7,7 @@ import { RoleKey, Permission } from "@/lib/permissions/keys";
 import {
   updateRoleConfig,
   resetRoleToDefaults,
+  PERMISSION_DEFINITIONS,
 } from "@/lib/data/role-permissions-storage";
 
 export async function saveRolePermissionsAction(
@@ -41,6 +42,19 @@ export async function saveRolePermissionsAction(
           .eq("role_id", roleData.id);
 
         if (allowedPermissions.length > 0) {
+          // Ensure all permission keys exist in public.permissions before binding
+          const defsToEnsure = PERMISSION_DEFINITIONS.filter((d) =>
+            allowedPermissions.includes(d.key),
+          ).map((d) => ({
+            key: d.key,
+            description: d.description,
+          }));
+          if (defsToEnsure.length > 0) {
+            await admin
+              .from("permissions")
+              .upsert(defsToEnsure, { onConflict: "key" });
+          }
+
           // Find permission IDs
           const { data: permsData } = await admin
             .from("permissions")

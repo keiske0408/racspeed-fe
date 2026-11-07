@@ -82,9 +82,9 @@ export const APP_MODULES: PageModuleDef[] = [
   },
   {
     key: "partnerships",
-    name: "Sister Clubs & Partners",
+    name: "Twin Clubs & Partners",
     path: "/partnerships",
-    description: "Domestic & international twin clubs and MOAs",
+    description: "Domestic & international twin clubs, friendship clubs, and MOAs",
     category: "FINANCE",
   },
   {
@@ -292,42 +292,60 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     description: "Move leads through orientation pipeline and log follow-ups",
   },
 
-  // SERVICE & ACTIVITIES (9)
+  // SERVICE & ACTIVITIES (12)
   {
     key: "EVENT_VIEW",
-    name: "View Events & Meetings",
+    name: "View Events & Project Center",
     category: "SERVICE",
-    description: "Access club calendar & public event itineraries",
+    description: "Access club calendar, project center & public event itineraries",
   },
   {
     key: "EVENT_CREATE",
     name: "Create & Publish Events",
     category: "SERVICE",
-    description: "Schedule general assemblies, projects & fellowships",
+    description: "Schedule general assemblies, meetings & fellowships",
   },
   {
     key: "EVENT_UPDATE",
-    name: "Modify Event Details",
+    name: "Modify Event Details & QR Settings",
     category: "SERVICE",
-    description: "Change event dates, venues, agendas, and posters",
+    description: "Change event dates, venues, agendas, and toggle QR check-in requirement",
   },
   {
     key: "ATTENDANCE_MANAGE",
     name: "Record & Verify Attendance",
     category: "SERVICE",
-    description: "Generate QR check-in sessions and record manual attendances",
+    description: "Generate QR check-in sessions, record manual check-ins, and revoke attendance",
   },
   {
     key: "PROJECT_CREATE",
     name: "Initiate Service Projects",
     category: "SERVICE",
-    description: "Create project dossiers and plan club community initiatives",
+    description: "Create project dossiers, set committees, and plan club initiatives",
   },
   {
     key: "PROJECT_UPDATE",
-    name: "Update Projects & Task Assignments",
+    name: "Edit Projects & Reassign Project Owners",
     category: "SERVICE",
-    description: "Edit project details, metrics, tasks, and committee member assignments",
+    description: "Edit project details, metrics, committees, and reassign project chairs",
+  },
+  {
+    key: "PROJECT_ARCHIVE",
+    name: "Archive, Restore & Hard Delete Projects",
+    category: "SERVICE",
+    description: "Move finished projects to archive, restore archived items, or permanently hard-delete",
+  },
+  {
+    key: "TASK_MANAGE",
+    name: "Manage Tasks & Member Assignments",
+    category: "SERVICE",
+    description: "Create, edit, and delete tasks, and assign one or more committee or club members",
+  },
+  {
+    key: "MEDIA_MANAGE",
+    name: "Upload & Manage Project Media & Covers",
+    category: "SERVICE",
+    description: "Drag-and-drop photo uploads, manage project galleries, and set dashboard covers",
   },
   {
     key: "PROJECT_SUBMIT_REPORT",
@@ -348,13 +366,20 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     description: "Configure accomplishment report templates and formatting",
   },
 
-  // COMMUNICATION (1)
+  // COMMUNICATION (2)
   {
     key: "NOTIFICATION_SEND",
     name: "Send GC Broadcasts & Notifications",
     category: "COMMUNICATION",
     description:
-      "Dispatch AI announcements, Messenger group chat blasts, and alerts",
+      "Dispatch AI announcements, Messenger group chat blasts, and push alerts",
+  },
+  {
+    key: "DISCUSSION_MODERATE",
+    name: "Moderate Project Discussion Groups",
+    category: "COMMUNICATION",
+    description:
+      "Manage and remove comments in internal project discussion threads",
   },
 
   // FINANCE (11)
@@ -425,13 +450,27 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     category: "FINANCE",
     description: "Audit and approve submitted receipts and expense vouchers",
   },
+  {
+    key: "PARTNERSHIP_MANAGE",
+    name: "Manage Twin Clubs & Partnerships",
+    category: "FINANCE",
+    description:
+      "Create, edit, and manage Twin Club MOAs, District Friendship Clubs, and project partners",
+  },
 
-  // GOVERNANCE & COMPLIANCE (5)
+  // GOVERNANCE & COMPLIANCE (6)
   {
     key: "CERTIFICATE_GENERATE",
     name: "Issue Digital Certificates",
     category: "GOVERNANCE",
     description: "Create and issue verifiable PDF certificates of recognition",
+  },
+  {
+    key: "RESOURCE_MANAGE",
+    name: "Manage Club Resources & Links",
+    category: "GOVERNANCE",
+    description:
+      "Add, pin, edit, and remove club manuals, brand kits, and shared drive links",
   },
   {
     key: "RETENTION_ALERT_VIEW",

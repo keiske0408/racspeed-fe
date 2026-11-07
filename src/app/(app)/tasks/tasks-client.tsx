@@ -245,7 +245,7 @@ const KANBAN_STAGES: {
 }[] = [
   {
     status: "TODO",
-    label: "Backlog / To Do",
+    label: "To Do",
     dot: "bg-amber-400",
     bg: "bg-[#FEF5E7]",
     text: "text-[#D97706]",
@@ -258,15 +258,8 @@ const KANBAN_STAGES: {
     text: "text-[#4F6BFF]",
   },
   {
-    status: "IN_REVIEW",
-    label: "In Review",
-    dot: "bg-[#8B5CF6]",
-    bg: "bg-[#F3EFFE]",
-    text: "text-[#8B5CF6]",
-  },
-  {
     status: "COMPLETED",
-    label: "Completed",
+    label: "Done",
     dot: "bg-[#10B981]",
     bg: "bg-[#E9F9F0]",
     text: "text-[#10B981]",
@@ -1097,8 +1090,7 @@ export function TasksClient({
                   <option value="ALL">All Statuses</option>
                   <option value="TODO">To Do</option>
                   <option value="IN_PROGRESS">In Progress</option>
-                  <option value="IN_REVIEW">In Review</option>
-                  <option value="COMPLETED">Completed</option>
+                  <option value="COMPLETED">Done</option>
                 </select>
               </div>
 
@@ -1260,11 +1252,13 @@ export function TasksClient({
           )}
         </div>
       ) : viewMode === "BOARD" ? (
-        /* KANBAN BOARD VIEW (Matching Reference Screenshot) */
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
+        /* KANBAN BOARD VIEW (3 Stages: To Do -> In Progress -> Done) */
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
           {KANBAN_STAGES.map((stage) => {
-            const stageTasks = filteredTasks.filter(
-              (t) => t.status === stage.status,
+            const stageTasks = filteredTasks.filter((t) =>
+              stage.status === "IN_PROGRESS"
+                ? t.status === "IN_PROGRESS" || t.status === "IN_REVIEW"
+                : t.status === stage.status,
             );
             return (
               <div
@@ -1391,8 +1385,7 @@ export function TasksClient({
                   >
                     <option value="TODO">To Do</option>
                     <option value="IN_PROGRESS">In Progress</option>
-                    <option value="IN_REVIEW">In Review</option>
-                    <option value="COMPLETED">Completed</option>
+                    <option value="COMPLETED">Done</option>
                   </select>
                 </div>
 
@@ -1937,8 +1930,7 @@ export function TasksClient({
                   >
                     <option value="TODO">To Do</option>
                     <option value="IN_PROGRESS">In Progress</option>
-                    <option value="IN_REVIEW">In Review</option>
-                    <option value="COMPLETED">Completed</option>
+                    <option value="COMPLETED">Done</option>
                   </select>
                 </div>
 

@@ -562,6 +562,7 @@ export function ActivityDetailClient({
             activity={activity}
             tasks={tasks}
             canCreate={canCreateTasks}
+            currentUserId={currentUserId}
             members={members}
             onTaskCreated={() => router.refresh()}
           />
@@ -994,12 +995,14 @@ function TasksPanel({
   activity,
   tasks,
   canCreate,
+  currentUserId,
   members = [],
   onTaskCreated,
 }: {
   activity: ActivityDetailDTO;
   tasks: GroupTaskDTO[];
   canCreate: boolean;
+  currentUserId?: string;
   members?: MemberDTO[];
   onTaskCreated: () => void;
 }) {
@@ -1014,7 +1017,6 @@ function TasksPanel({
   const lanes: { status: TaskStatus; label: string }[] = [
     { status: "TODO", label: "To do" },
     { status: "IN_PROGRESS", label: "In progress" },
-    { status: "IN_REVIEW", label: "In review" },
     { status: "COMPLETED", label: "Done" },
   ];
 
@@ -1266,35 +1268,41 @@ function TasksPanel({
           </div>
         </form>
       )}
-      <div className="grid gap-3 xl:grid-cols-4">
-        {lanes.map((lane) => (
-          <div
-            key={lane.status}
-            className="min-h-36 rounded-xl bg-slate-50 p-2.5 dark:bg-slate-900/50"
-          >
-            <div className="flex items-center justify-between px-1 pb-2">
-              <h3 className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                {lane.label}
-              </h3>
-              <span className="text-[10px] text-slate-400">
-                {tasks.filter((task) => task.status === lane.status).length}
-              </span>
-            </div>
-            <div className="space-y-2">
-              {tasks
-                .filter((task) => task.status === lane.status)
-                .map((task) => (
+      <div className="grid gap-3 md:grid-cols-3">
+        {lanes.map((lane) => {
+          const laneTasks = tasks.filter((task) =>
+            lane.status === "IN_PROGRESS"
+              ? task.status === "IN_PROGRESS" || task.status === "IN_REVIEW"
+              : task.status === lane.status,
+          );
+          return (
+            <div
+              key={lane.status}
+              className="min-h-36 rounded-xl bg-slate-50 p-2.5 dark:bg-slate-900/50"
+            >
+              <div className="flex items-center justify-between px-1 pb-2">
+                <h3 className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                  {lane.label}
+                </h3>
+                <span className="text-[10px] text-slate-400">
+                  {laneTasks.length}
+                </span>
+              </div>
+              <div className="space-y-2">
+                {laneTasks.map((task) => (
                   <TaskCard
                     key={task.id}
                     task={task}
+                    currentUserId={currentUserId}
                     canManage={canCreate}
                     onEdit={() => openEditModal(task)}
                     onChanged={onTaskCreated}
                   />
                 ))}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       {tasks.length === 0 && !showForm && (
         <div className="rounded-xl border border-dashed border-slate-300 py-10 text-center text-xs text-slate-500 dark:border-slate-700">
@@ -1380,12 +1388,15 @@ function TasksPanel({
                 Status
                 <select
                   name="status"
-                  defaultValue={editingTask.status}
+                  defaultValue={
+                    editingTask.status === "IN_REVIEW"
+                      ? "IN_PROGRESS"
+                      : editingTask.status
+                  }
                   className={fieldClass}
                 >
                   <option value="TODO">To do</option>
                   <option value="IN_PROGRESS">In progress</option>
-                  <option value="IN_REVIEW">In review</option>
                   <option value="COMPLETED">Done</option>
                 </select>
               </label>
@@ -1597,58 +1608,79 @@ function TasksPanel({
 
 function TaskCard({
   task,
+  currentUserId,
   canManage,
   onEdit,
   onChanged,
 }: {
   task: GroupTaskDTO;
+  currentUserId?: string;
   canManage: boolean;
   onEdit?: () => void;
   onChanged?: () => void;
 }) {
   const [pending, startTransition] = useTransition();
-  const nextStatus: TaskStatus =
-    task.status === "TODO"
-      ? "IN_PROGRESS"
-      : task.status === "IN_PROGRESS"
-        ? "IN_REVIEW"
-        : task.status === "IN_REVIEW"
-          ? "COMPLETED"
-          : "TODO";
+  const isAssignedToMe = Boolean(
+    currentUserId && task.assignedMemberIds?.includes(currentUserId),
+  );
+  const canAdvance = canManage || isAssignedToMe;
+  const effectiveStatus: TaskStatus =
+    task.status === "IN_REVIEW" ? "IN_PROGRESS" : task.status;
+
+  function handleMove(next: TaskStatus) {
+    startTransition(async () => {
+      const res = await updateTaskStatusAction(task.id, next);
+      if (!res.success) {
+        notifyToast({
+          title: "Could not update task",
+          message: res.error || "Failed to update task status.",
+          kind: "error",
+        });
+        return;
+      }
+      notifyToast({
+        message: res.message || "Task updated.",
+        kind: "success",
+      });
+      onChanged?.();
+    });
+  }
+
   return (
-    <article className="rounded-lg border border-[#EDEDF2] bg-white p-3 dark:border-slate-800 dark:bg-[#161B26]">
+    <article
+      className={`rounded-xl border bg-white p-3.5 transition dark:bg-[#161B26] ${
+        isAssignedToMe
+          ? "border-blue-300/80 ring-1 ring-blue-500/15 dark:border-blue-500/40"
+          : "border-[#EDEDF2] dark:border-slate-800"
+      }`}
+    >
       <div className="flex items-start justify-between gap-2">
-        <h4 className="text-xs font-semibold text-[#111625] dark:text-white">
-          {task.title}
-        </h4>
-        {canManage && (
-          <div className="flex items-center gap-1 shrink-0">
-            {onEdit && (
-              <button
-                type="button"
-                disabled={pending}
-                title="Edit task & assignees"
-                onClick={onEdit}
-                className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-[#0D3594] dark:hover:bg-slate-800 cursor-pointer"
-              >
-                <Pencil className="h-3 w-3" />
-              </button>
-            )}
-            <button
-              type="button"
-              disabled={pending}
-              title={`Move to ${nextStatus.replaceAll("_", " ")}`}
-              onClick={() =>
-                startTransition(async () => {
-                  await updateTaskStatusAction(task.id, nextStatus);
-                  onChanged?.();
-                })
-              }
-              className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-emerald-600 dark:hover:bg-slate-800 cursor-pointer"
-            >
-              <Check className="h-3.5 w-3.5" />
-            </button>
-          </div>
+        <div className="min-w-0 flex-1">
+          {isAssignedToMe && (
+            <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[9.5px] font-bold text-[#0D3594] dark:bg-blue-500/15 dark:text-blue-300">
+              <UserCheck className="h-2.5 w-2.5" /> Assigned to you
+            </span>
+          )}
+          <h4
+            className={`text-xs font-semibold ${
+              effectiveStatus === "COMPLETED"
+                ? "line-through text-slate-400 dark:text-slate-500"
+                : "text-[#111625] dark:text-white"
+            }`}
+          >
+            {task.title}
+          </h4>
+        </div>
+        {canManage && onEdit && (
+          <button
+            type="button"
+            disabled={pending}
+            title="Edit task & assignees"
+            onClick={onEdit}
+            className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-[#0D3594] dark:hover:bg-slate-800 cursor-pointer shrink-0"
+          >
+            <Pencil className="h-3 w-3" />
+          </button>
         )}
       </div>
       {task.description && (
@@ -1669,12 +1701,64 @@ function TaskCard({
           ))}
         </div>
       )}
-      <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500">
+      <div className="mt-2.5 flex items-center justify-between text-[10px] text-slate-500">
         <span className="font-semibold text-slate-600 dark:text-slate-400">
           {task.priority}
         </span>
         <span>Due {formatManila(`${task.dueDate}T04:00:00Z`, "MMM d")}</span>
       </div>
+
+      {canAdvance && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-1.5 border-t border-slate-100 pt-2.5 dark:border-slate-800/80">
+          {effectiveStatus === "TODO" && (
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => handleMove("IN_PROGRESS")}
+              className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#0D3594] px-2.5 py-1.5 text-[11px] font-bold text-white shadow-2xs hover:bg-[#092569] disabled:opacity-60 transition cursor-pointer"
+            >
+              <Clock className="h-3 w-3" />
+              {pending ? "Updating..." : "Mark In Progress"}
+            </button>
+          )}
+          {effectiveStatus === "IN_PROGRESS" && (
+            <>
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => handleMove("TODO")}
+                className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-500 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                ← To Do
+              </button>
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => handleMove("COMPLETED")}
+                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-2xs hover:bg-emerald-700 disabled:opacity-60 transition cursor-pointer"
+              >
+                <Check className="h-3.5 w-3.5" />
+                {pending ? "Saving..." : "Mark as Done"}
+              </button>
+            </>
+          )}
+          {effectiveStatus === "COMPLETED" && (
+            <div className="flex w-full items-center justify-between">
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                <Check className="h-3.5 w-3.5" /> Completed
+              </span>
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => handleMove("IN_PROGRESS")}
+                className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-500 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                Reopen
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </article>
   );
 }

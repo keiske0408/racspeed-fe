@@ -32,7 +32,8 @@ import {
   archiveActivityAction,
   bulkArchiveActivitiesAction,
 } from "@/features/activities/actions";
-import type { GroupTaskDTO } from "@/lib/data/tasks-types";
+import { updateTaskStatusAction } from "@/features/tasks/actions";
+import type { GroupTaskDTO, TaskStatus } from "@/lib/data/tasks-types";
 import { formatManilaDate } from "@/lib/utils/dates";
 import { notifyToast } from "@/components/shared/toast-viewport";
 
@@ -61,10 +62,15 @@ export function ProjectCenterClient({
   // Optimistic / local state for immediate archive/restore feedback
   const [activities, setActivities] =
     useState<ActivitySummaryDTO[]>(initialActivities);
+  const [tasksList, setTasksList] = useState<GroupTaskDTO[]>(initialTasks);
 
   React.useEffect(() => {
     setActivities(initialActivities);
   }, [initialActivities]);
+
+  React.useEffect(() => {
+    setTasksList(initialTasks);
+  }, [initialTasks]);
 
   const initialScopeParam = searchParams.get("scope")?.toUpperCase();
   const [scope, setScope] = useState<WorkspaceScope>(
@@ -270,7 +276,7 @@ export function ProjectCenterClient({
   const accomplished = filtered.filter((a) =>
     ["COMPLETED", "ACCOMPLISHED"].includes(a.status),
   );
-  const myTasks = initialTasks.filter(
+  const myTasks = tasksList.filter(
     (task) =>
       task.assignedMemberIds.includes(currentUserId) ||
       task.assignedMemberNames.some(
@@ -278,6 +284,31 @@ export function ProjectCenterClient({
       ) ||
       task.createdBy.toLowerCase() === currentUserName.toLowerCase(),
   );
+
+  function handleAdvanceMyTask(task: GroupTaskDTO, nextStatus: TaskStatus) {
+    setTasksList((prev) =>
+      prev.map((item) =>
+        item.id === task.id ? { ...item, status: nextStatus } : item,
+      ),
+    );
+    startTransition(async () => {
+      const res = await updateTaskStatusAction(task.id, nextStatus);
+      if (!res.success) {
+        setTasksList(initialTasks);
+        notifyToast({
+          title: "Could not update task",
+          message: res.error || "Failed to update task status.",
+          kind: "error",
+        });
+        return;
+      }
+      notifyToast({
+        message: res.message || "Task updated.",
+        kind: "success",
+      });
+      router.refresh();
+    });
+  }
 
   return (
     <main className="space-y-5 pb-10">
@@ -579,35 +610,76 @@ export function ProjectCenterClient({
         ) : view === "TASKS" ? (
           myTasks.length ? (
             <div className="overflow-hidden rounded-xl border border-[#EDEDF2] bg-white dark:border-slate-800 dark:bg-[#161B26]">
-              {myTasks.map((task) => (
-                <Link
-                  key={task.id}
-                  href={
-                    task.projectId
-                      ? `/project-center/${task.projectId}?tab=tasks`
-                      : "#"
-                  }
-                  className="grid gap-2 border-b border-[#EDEDF2] px-4 py-3 last:border-0 hover:bg-slate-50/80 dark:border-slate-800 dark:hover:bg-slate-800/40 sm:grid-cols-[minmax(180px,2fr)_minmax(120px,1fr)_minmax(100px,.8fr)_minmax(120px,1fr)] sm:items-center"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-[#111625] dark:text-white">
-                      {task.title}
-                    </p>
-                    <p className="mt-0.5 truncate text-xs text-slate-500">
-                      {task.projectTitle || "Club task"}
-                    </p>
+              {myTasks.map((task) => {
+                const effectiveStatus: TaskStatus =
+                  task.status === "IN_REVIEW" ? "IN_PROGRESS" : task.status;
+                const statusLabel =
+                  effectiveStatus === "TODO"
+                    ? "To Do"
+                    : effectiveStatus === "IN_PROGRESS"
+                      ? "In Progress"
+                      : "Done";
+                return (
+                  <div
+                    key={task.id}
+                    className="grid gap-2 border-b border-[#EDEDF2] px-4 py-3 last:border-0 hover:bg-slate-50/80 dark:border-slate-800 dark:hover:bg-slate-800/40 sm:grid-cols-[minmax(180px,2fr)_minmax(110px,.9fr)_minmax(100px,.8fr)_minmax(90px,.7fr)_minmax(130px,1fr)] sm:items-center"
+                  >
+                    <div className="min-w-0">
+                      <Link
+                        href={
+                          task.projectId
+                            ? `/project-center/${task.projectId}?tab=tasks`
+                            : "#"
+                        }
+                        className="truncate block text-sm font-semibold text-[#111625] hover:text-[#0D3594] dark:text-white dark:hover:text-blue-300"
+                      >
+                        {task.title}
+                      </Link>
+                      <p className="mt-0.5 truncate text-xs text-slate-500">
+                        {task.projectTitle || "Club task"}
+                      </p>
+                    </div>
+                    <span className="text-xs text-slate-600 dark:text-slate-300">
+                      {task.committee.replaceAll("_", " ")}
+                    </span>
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      {statusLabel}
+                    </span>
+                    <span className="text-xs text-slate-500">
+                      Due {task.dueDate}
+                    </span>
+                    <div className="flex items-center justify-end gap-1.5">
+                      {effectiveStatus === "TODO" && (
+                        <button
+                          type="button"
+                          disabled={pending}
+                          onClick={() =>
+                            handleAdvanceMyTask(task, "IN_PROGRESS")
+                          }
+                          className="rounded-lg bg-[#0D3594] px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-[#092569] disabled:opacity-60 transition cursor-pointer"
+                        >
+                          Mark In Progress
+                        </button>
+                      )}
+                      {effectiveStatus === "IN_PROGRESS" && (
+                        <button
+                          type="button"
+                          disabled={pending}
+                          onClick={() => handleAdvanceMyTask(task, "COMPLETED")}
+                          className="rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-700 disabled:opacity-60 transition cursor-pointer"
+                        >
+                          Mark as Done
+                        </button>
+                      )}
+                      {effectiveStatus === "COMPLETED" && (
+                        <span className="rounded-lg bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+                          ✓ Done
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <span className="text-xs text-slate-600 dark:text-slate-300">
-                    {task.committee.replaceAll("_", " ")}
-                  </span>
-                  <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-                    {task.status.replaceAll("_", " ")}
-                  </span>
-                  <span className="text-xs text-slate-500">
-                    Due {task.dueDate}
-                  </span>
-                </Link>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div className="rounded-xl border border-dashed border-slate-300 py-12 text-center text-xs text-slate-500 dark:border-slate-700">

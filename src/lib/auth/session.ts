@@ -147,6 +147,11 @@ export const getUserAccessContext = cache(async function getUserAccessContext(
 
   const store = readRolePermissionsStore();
   const roleConfig = store[roleKey];
+  if (roleConfig?.allowedPermissions) {
+    for (const p of roleConfig.allowedPermissions) {
+      perms.add(p);
+    }
+  }
   const allowedPages = roleConfig?.allowedPages ||
     DEFAULT_ROLE_PAGES[roleKey] || ["dashboard", "events"];
 

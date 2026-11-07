@@ -172,6 +172,11 @@ async function loadActivityAccess(activityId: string) {
     perms.has("ROLE_ASSIGN") ||
     perms.has("SETTINGS_MANAGE");
 
+  const canManageTasks = canManage || perms.has("TASK_MANAGE");
+  const canManageArchive = canManage || perms.has("PROJECT_ARCHIVE");
+  const canManageMedia = canManage || perms.has("MEDIA_MANAGE");
+  const canModerateDiscussion = canManage || perms.has("DISCUSSION_MODERATE");
+
   const canReassignOwner =
     context.isPlatformAdmin ||
     perms.has("PROJECT_UPDATE") ||
@@ -183,6 +188,10 @@ async function loadActivityAccess(activityId: string) {
     activity,
     isParticipant: participant || context.isPlatformAdmin,
     canManage,
+    canManageTasks,
+    canManageArchive,
+    canManageMedia,
+    canModerateDiscussion,
     canManageAttendance: canManage || perms.has("ATTENDANCE_MANAGE"),
     canReassignOwner,
     qrCheckInEnabled: isQrCheckInApplicable({
@@ -554,7 +563,7 @@ export async function archiveActivityAction(
 ): Promise<ActionResult<{ isArchived: boolean }>> {
   const access = await loadActivityAccess(activityId);
   if (!access) return { success: false, error: "Activity not found." };
-  if (!access.canManage) {
+  if (!access.canManageArchive) {
     return {
       success: false,
       error: "Only the project owner, chair, or club officers can archive or restore this activity.",
@@ -607,7 +616,7 @@ export async function hardDeleteActivityAction(
 ): Promise<ActionResult> {
   const access = await loadActivityAccess(activityId);
   if (!access) return { success: false, error: "Activity not found." };
-  if (!access.canManage && !access.user.isPlatformAdmin) {
+  if (!access.canManageArchive && !access.user.isPlatformAdmin) {
     return {
       success: false,
       error: "Only project owners, club officers, or platform administrators can permanently delete this project.",
@@ -698,6 +707,7 @@ export async function bulkArchiveActivitiesAction(
   const context = await getUserAccessContext(clubId);
   const canManageClub =
     context.isPlatformAdmin ||
+    context.permissions.has("PROJECT_ARCHIVE") ||
     context.permissions.has("PROJECT_UPDATE") ||
     context.permissions.has("EVENT_UPDATE");
 
@@ -1113,7 +1123,7 @@ export async function deleteCommentAction(
     .eq("activity_id", activityId)
     .maybeSingle();
   if (!comment) return { success: false, error: "Comment not found." };
-  if (comment.author_id !== access.user.id && !access.canManage) {
+  if (comment.author_id !== access.user.id && !access.canModerateDiscussion) {
     return { success: false, error: "You can only delete your own comments." };
   }
 
@@ -1474,7 +1484,7 @@ export async function uploadActivityMediaAction(
   const activityId = String(formData.get("activityId") || "");
   const access = await loadActivityAccess(activityId);
   if (!access) return { success: false, error: "Activity not found." };
-  if (!access.canManage)
+  if (!access.canManageMedia)
     return {
       success: false,
       error: "Only the chair or officers can upload photos.",
@@ -1581,7 +1591,7 @@ export async function deleteActivityMediaAction(
   if (!uuidString.safeParse(mediaId).success)
     return { success: false, error: "Invalid photo." };
   const access = await loadActivityAccess(activityId);
-  if (!access?.canManage)
+  if (!access?.canManageMedia)
     return {
       success: false,
       error: "Only the chair or officers can remove photos.",
@@ -1615,7 +1625,7 @@ export async function setCoverMediaAction(
   if (!uuidString.safeParse(mediaId).success)
     return { success: false, error: "Invalid photo." };
   const access = await loadActivityAccess(activityId);
-  if (!access?.canManage)
+  if (!access?.canManageMedia)
     return {
       success: false,
       error: "Only the chair or officers can change the cover.",
@@ -1731,7 +1741,7 @@ export async function createActivityTaskAction(
     };
   const access = await loadActivityAccess(parsed.data.activityId);
   if (!access) return { success: false, error: "Activity not found." };
-  if (!access.canManage)
+  if (!access.canManageTasks)
     return {
       success: false,
       error: "Only the chair or officers can add tasks.",
@@ -1847,7 +1857,7 @@ export async function updateActivityTaskAction(
 
   const access = await loadActivityAccess(parsed.data.activityId);
   if (!access) return { success: false, error: "Activity not found." };
-  if (!access.canManage)
+  if (!access.canManageTasks)
     return {
       success: false,
       error:
@@ -1928,7 +1938,7 @@ export async function deleteActivityTaskAction(
 ): Promise<ActionResult> {
   const access = await loadActivityAccess(activityId);
   if (!access) return { success: false, error: "Activity not found." };
-  if (!access.canManage)
+  if (!access.canManageTasks)
     return {
       success: false,
       error:
