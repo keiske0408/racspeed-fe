@@ -4,17 +4,38 @@ import React, { useState, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { Lock, Mail, ArrowRight, AlertCircle } from "lucide-react";
+import { Lock, Mail, ArrowRight, AlertCircle, QrCode } from "lucide-react";
+
+function sanitizeRedirectTarget(raw: string | null): string {
+  if (!raw) return "/dashboard";
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("/") && !trimmed.startsWith("//")) {
+    return trimmed;
+  }
+  return "/dashboard";
+}
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTo = searchParams.get("redirectTo") || "/dashboard";
+  const redirectTo = sanitizeRedirectTarget(searchParams.get("redirectTo"));
+  const isQrAttendanceRedirect =
+    redirectTo.includes("token=") ||
+    redirectTo.includes("sessionToken=") ||
+    redirectTo.includes("checkInToken=");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  React.useEffect(() => {
+    if (typeof window !== "undefined" && redirectTo !== "/dashboard") {
+      try {
+        window.sessionStorage.setItem("racspeed_post_login_redirect", redirectTo);
+      } catch {}
+    }
+  }, [redirectTo]);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -23,7 +44,7 @@ function LoginForm() {
 
     try {
       const supabase = createClient();
-      const { data, error: authError } = await supabase.auth.signInWithPassword({
+      const { error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
@@ -34,7 +55,18 @@ function LoginForm() {
         return;
       }
 
-      router.push(redirectTo);
+      let destination = redirectTo;
+      if (typeof window !== "undefined") {
+        try {
+          const stored = window.sessionStorage.getItem("racspeed_post_login_redirect");
+          if (destination === "/dashboard" && stored) {
+            destination = sanitizeRedirectTarget(stored);
+          }
+          window.sessionStorage.removeItem("racspeed_post_login_redirect");
+        } catch {}
+      }
+
+      router.push(destination);
       router.refresh();
     } catch (err: any) {
       setError(err?.message || "Failed to sign in. Please verify your credentials.");
@@ -44,6 +76,17 @@ function LoginForm() {
 
   return (
     <form onSubmit={handleLogin} className="space-y-4">
+      {isQrAttendanceRedirect && (
+        <div className="mb-4 p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 flex items-start gap-3 text-xs">
+          <QrCode className="w-5 h-5 shrink-0 mt-0.5 text-emerald-400" />
+          <div>
+            <p className="font-bold text-emerald-200">QR Attendance Scan Detected</p>
+            <p className="mt-0.5 text-emerald-300/90">
+              Sign in with your club account to automatically verify and record your event attendance.
+            </p>
+          </div>
+        </div>
+      )}
       {error && (
         <div className="mb-4 p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-start gap-3 text-sm">
           <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />

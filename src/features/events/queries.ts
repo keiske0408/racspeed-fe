@@ -1,4 +1,4 @@
-import { isQrCheckInApplicable } from "@/features/activities/rules";
+import { isQrCheckInApplicable, resolveArchiveState } from "@/features/activities/rules";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export interface EventDTO {
@@ -12,6 +12,7 @@ export interface EventDTO {
   attendeesCount: number;
   description?: string;
   qrCheckInEnabled?: boolean;
+  isArchived?: boolean;
 }
 
 const UUID_REGEX =
@@ -137,7 +138,8 @@ export async function getEventsList(
         start_at,
         end_at,
         volunteer_hours_default,
-        attendance_records (count)
+        attendance_records (count),
+        activity_log (action, created_at)
       `,
       )
       .eq("club_id", clubId)
@@ -147,6 +149,9 @@ export async function getEventsList(
     if (!activitiesError && activities) {
       return activities.map((a) => {
         const records = (a.attendance_records as any[]) || [];
+        const archiveState = resolveArchiveState({
+          activity_log: (a.activity_log as { action: string; created_at: string }[]) || [],
+        });
         return {
           id: a.id,
           title: a.title,
@@ -162,6 +167,7 @@ export async function getEventsList(
             title: a.title,
             category: a.meeting_type || a.kind,
           }),
+          isArchived: archiveState.isArchived,
         };
       });
     }

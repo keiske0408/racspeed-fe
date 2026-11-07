@@ -4,6 +4,7 @@ import { env } from "@/lib/env";
 
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
+  const fullTarget = `${pathname}${request.nextUrl.search}`;
   const isAuthRoute = pathname.startsWith("/login") || pathname.startsWith("/register");
   const isApiRoute = pathname.startsWith("/api");
   const isPublicRoute = isAuthRoute || pathname === "/" || pathname === "/pending-approval" || pathname === "/access-denied";
@@ -16,7 +17,7 @@ export async function proxy(request: NextRequest) {
   if (!hasAuthCookie) {
     if (!isPublicRoute && !isApiRoute) {
       const loginUrl = new URL("/login", request.url);
-      loginUrl.searchParams.set("redirectTo", pathname);
+      loginUrl.searchParams.set("redirectTo", fullTarget);
       return NextResponse.redirect(loginUrl);
     }
     return NextResponse.next({
@@ -63,13 +64,20 @@ export async function proxy(request: NextRequest) {
   // Redirect unauthenticated user trying to access protected app routes
   if (!user && !isPublicRoute && !isApiRoute) {
     const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("redirectTo", pathname);
+    loginUrl.searchParams.set("redirectTo", fullTarget);
     return NextResponse.redirect(loginUrl);
   }
 
-  // Redirect authenticated user away from login/register to dashboard
+  // Redirect authenticated user away from login/register to intended destination or dashboard
   if (user && isAuthRoute) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    const redirectParam = request.nextUrl.searchParams.get("redirectTo");
+    const safeDestination =
+      redirectParam &&
+      redirectParam.startsWith("/") &&
+      !redirectParam.startsWith("//")
+        ? redirectParam
+        : "/dashboard";
+    return NextResponse.redirect(new URL(safeDestination, request.url));
   }
 
   return response;

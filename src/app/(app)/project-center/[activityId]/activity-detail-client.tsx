@@ -9,15 +9,23 @@ import {
   Lock,
   ArchiveRestore,
   ArrowLeft,
+  Ban,
   CalendarDays,
   Check,
   CheckSquare,
   Clock,
+  Copy,
+  Download,
   Heart,
+  HeartHandshake,
   ImagePlus,
   MapPin,
   MessageSquare,
+  PauseCircle,
+  PlayCircle,
+  Plus,
   QrCode,
+  RefreshCw,
   Send,
   ShieldCheck,
   Trash2,
@@ -38,7 +46,9 @@ import {
   deleteActivityMediaAction,
   deleteActivityTaskAction,
   deleteCommentAction,
+  manualCheckInMemberAction,
   publishProjectReportAction,
+  revokeActivityQrSessionAction,
   revokeAttendanceAction,
   selfCheckInAction,
   setRsvpAction,
@@ -47,6 +57,7 @@ import {
   toggleActivityQrCheckInAction,
   toggleFollowAction,
   toggleReactionAction,
+  updateActivityQrSessionStatusAction,
   updateActivityStatusAction,
   updateActivityTaskAction,
   uploadActivityMediaAction,
@@ -61,7 +72,12 @@ import {
   ACTIVITY_STATUS_LABELS,
   COMMITTEES,
 } from "@/features/activities/types";
-import { minMembersStatus } from "@/features/activities/rules";
+import {
+  DEFAULT_QR_EXPIRATION_MINUTES,
+  minMembersStatus,
+  QR_EXPIRATION_OPTIONS,
+  type QrSessionStatus,
+} from "@/features/activities/rules";
 import { formatManila, isoToManilaLocal } from "@/lib/utils/dates";
 import { notifyToast } from "@/components/shared/toast-viewport";
 import { uploadActivityPhotos } from "@/features/activities/media-upload";
@@ -89,6 +105,13 @@ const TABS: {
   { id: "REPORT", label: "Report", icon: ShieldCheck },
 ];
 
+export interface PartnerClubOption {
+  id: string;
+  name: string;
+  district: string;
+  country: string;
+}
+
 export function ActivityDetailClient({
   initialActivity,
   initialTasks,
@@ -98,6 +121,7 @@ export function ActivityDetailClient({
   canManageClub,
   isPlatformAdmin = false,
   members = [],
+  partnerClubs = [],
 }: {
   initialActivity: ActivityDetailDTO;
   initialTasks: GroupTaskDTO[];
@@ -107,6 +131,7 @@ export function ActivityDetailClient({
   canManageClub: boolean;
   isPlatformAdmin?: boolean;
   members?: MemberDTO[];
+  partnerClubs?: PartnerClubOption[];
 }) {
   const router = useRouter();
   const [activity, setActivity] = useOptimistic(
@@ -553,6 +578,8 @@ export function ActivityDetailClient({
           <AttendancePanel
             activity={activity}
             canManage={activity.canManageAttendance}
+            members={members}
+            onRefresh={() => router.refresh()}
             onSelfCheckIn={() =>
               run(() => selfCheckInAction(activity.id), "Check-in recorded.")
             }
@@ -628,6 +655,7 @@ export function ActivityDetailClient({
         <EditActivityModal
           activity={activity}
           members={members}
+          partnerClubs={partnerClubs}
           canReassignOwner={canReassignOwner}
           isOpen={isEditOpen}
           onClose={() => setIsEditOpen(false)}
@@ -1740,26 +1768,70 @@ function TaskCard({
 function AttendancePanel({
   activity,
   canManage,
+  members = [],
+  onRefresh,
   onSelfCheckIn,
   onRevoke,
   onToggleQrCheckIn,
 }: {
   activity: ActivityDetailDTO;
   canManage: boolean;
+  members?: MemberDTO[];
+  onRefresh?: () => void;
   onSelfCheckIn: () => void;
   onRevoke: (id: string) => void;
   onToggleQrCheckIn?: (enabled: boolean) => void;
 }) {
+  const [qrDurationMinutes, setQrDurationMinutes] = useState<number>(
+    DEFAULT_QR_EXPIRATION_MINUTES,
+  );
   const [qr, setQr] = useState<{
     token: string;
     url: string;
     image: string;
+    createdAt: string;
+    expiresAt: string;
+    status: QrSessionStatus;
   } | null>(null);
+  const [secondsRemaining, setSecondsRemaining] = useState<number>(0);
+  const [copiedUrl, setCopiedUrl] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [manualProfileId, setManualProfileId] = useState("");
   const [pending, startTransition] = useTransition();
-  async function createQr() {
+
+  React.useEffect(() => {
+    if (!qr || qr.status !== "ACTIVE") return;
+    const tick = () => {
+      const diffSec = Math.max(
+        0,
+        Math.floor((new Date(qr.expiresAt).getTime() - Date.now()) / 1000),
+      );
+      setSecondsRemaining(diffSec);
+      if (diffSec === 0) {
+        setQr((prev) => (prev ? { ...prev, status: "EXPIRED" } : prev));
+      }
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [qr]);
+
+  function formatCountdown(totalSec: number) {
+    const mins = Math.floor(totalSec / 60);
+    const secs = totalSec % 60;
+    return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  }
+
+  async function createQr(options?: {
+    durationMinutes?: number;
+    forceRegenerate?: boolean;
+  }) {
     setError(null);
-    const result = await startActivityQrSessionAction(activity.id);
+    const duration = options?.durationMinutes ?? qrDurationMinutes;
+    const result = await startActivityQrSessionAction(activity.id, {
+      durationMinutes: duration,
+      forceRegenerate: options?.forceRegenerate ?? false,
+    });
     if (!result.success) {
       setError(result.error);
       return;
@@ -1771,12 +1843,115 @@ function AttendancePanel({
       margin: 2,
       color: { dark: "#111625", light: "#ffffff" },
     });
-    setQr({ token: result.sessionToken, url, image });
+    setQrDurationMinutes(result.durationMinutes);
+    setQr({
+      token: result.sessionToken,
+      url,
+      image,
+      createdAt: result.createdAt,
+      expiresAt: result.expiresAt,
+      status: result.status,
+    });
+    const diffSec = Math.max(
+      0,
+      Math.floor((new Date(result.expiresAt).getTime() - Date.now()) / 1000),
+    );
+    setSecondsRemaining(diffSec);
   }
+
+  function handleQrStatusChange(nextStatus: "ACTIVE" | "PAUSED" | "CLOSED") {
+    if (!qr) return;
+    startTransition(async () => {
+      const res = await updateActivityQrSessionStatusAction(
+        activity.id,
+        nextStatus,
+      );
+      if (!res.success) {
+        setError(res.error);
+        return;
+      }
+      setQr((prev) => (prev ? { ...prev, status: nextStatus } : prev));
+      notifyToast({
+        message: res.message || `QR session ${nextStatus.toLowerCase()}.`,
+        kind: "success",
+      });
+    });
+  }
+
+  function handleRevokeQr() {
+    if (!qr) return;
+    startTransition(async () => {
+      const res = await revokeActivityQrSessionAction(activity.id, qr.token);
+      if (!res.success) {
+        setError(res.error);
+        return;
+      }
+      setQr((prev) => (prev ? { ...prev, status: "REVOKED" } : prev));
+      setSecondsRemaining(0);
+      notifyToast({
+        message: "QR code revoked immediately.",
+        kind: "success",
+      });
+    });
+  }
+
+  function handleManualMemberCheckIn(e: React.FormEvent) {
+    e.preventDefault();
+    if (!manualProfileId) return;
+    startTransition(async () => {
+      const res = await manualCheckInMemberAction(
+        activity.id,
+        manualProfileId,
+      );
+      if (!res.success) {
+        notifyToast({
+          title: "Manual check-in failed",
+          message: res.error,
+          kind: "error",
+        });
+        return;
+      }
+      setManualProfileId("");
+      notifyToast({
+        message: res.message || "Member manually checked in.",
+        kind: "success",
+      });
+      onRefresh?.();
+    });
+  }
+
+  function exportCsv() {
+    const header = [
+      "Participant Name",
+      "Check-In Method",
+      "Check-In Time (Manila)",
+      "Volunteer Hours",
+    ];
+    const rows = activity.attendees.map((a) => [
+      `"${(a.fullName || "").replace(/"/g, '""')}"`,
+      `"${a.checkInMethod || "QR"}"`,
+      `"${formatManila(a.checkInTime, "yyyy-MM-dd hh:mm:ss a")}"`,
+      String(a.volunteerHours ?? 0),
+    ]);
+    const csv = [header.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `attendance-${activity.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const checkedInIds = new Set(activity.attendees.map((a) => a.profileId));
+  const availableMembersForManual = members.filter(
+    (m) => !checkedInIds.has(m.id),
+  );
+
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(260px,.7fr)]">
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(280px,.75fr)]">
       <section className="overflow-hidden rounded-xl border border-[#EDEDF2] bg-white dark:border-slate-800 dark:bg-[#161B26]">
-        <header className="flex items-center justify-between border-b border-[#EDEDF2] px-4 py-3 dark:border-slate-800">
+        <header className="flex items-center justify-between border-b border-[#EDEDF2] px-4 py-3 dark:border-slate-800 flex-wrap gap-2">
           <div>
             <h2 className="text-sm font-bold text-[#111625] dark:text-white">
               Attendance roster
@@ -1785,12 +1960,54 @@ function AttendancePanel({
               {activity.attendees.length} checked in
             </p>
           </div>
-          {canManage && (
-            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500">
-              <ShieldCheck className="h-3.5 w-3.5" /> Manager view
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {activity.attendees.length > 0 && (
+              <button
+                type="button"
+                onClick={exportCsv}
+                className="inline-flex items-center gap-1 rounded-lg border border-[#EDEDF2] px-2.5 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-50 dark:border-slate-700 dark:text-emerald-300 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                <Download className="h-3.5 w-3.5" /> Export CSV
+              </button>
+            )}
+            {canManage && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500">
+                <ShieldCheck className="h-3.5 w-3.5" /> Manager view
+              </span>
+            )}
+          </div>
         </header>
+
+        {canManage && availableMembersForManual.length > 0 && (
+          <form
+            onSubmit={handleManualMemberCheckIn}
+            className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 border-b border-[#EDEDF2] bg-slate-50/70 px-4 py-2.5 dark:border-slate-800 dark:bg-slate-900/40"
+          >
+            <select
+              value={manualProfileId}
+              onChange={(e) => setManualProfileId(e.target.value)}
+              className="flex-1 rounded-lg border border-[#DDE1EA] bg-white px-2.5 py-1.5 text-xs text-[#111625] dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+              aria-label="Manually check in club member"
+            >
+              <option value="">
+                + Manual check-in for a club member ({availableMembersForManual.length} remaining)...
+              </option>
+              {availableMembersForManual.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name} {m.role ? `(${m.role})` : ""}
+                </option>
+              ))}
+            </select>
+            <button
+              type="submit"
+              disabled={!manualProfileId || pending}
+              className="inline-flex items-center justify-center gap-1 rounded-lg bg-[#0D3594] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#092569] disabled:opacity-50 cursor-pointer shrink-0"
+            >
+              <UserCheck className="h-3.5 w-3.5" /> Check In Member
+            </button>
+          </form>
+        )}
+
         <div className="divide-y divide-[#EDEDF2] dark:divide-slate-800">
           {activity.attendees.map((attendee) => (
             <div
@@ -1811,7 +2028,7 @@ function AttendancePanel({
                 <button
                   type="button"
                   onClick={() => onRevoke(attendee.id)}
-                  className="rounded p-1 text-slate-400 hover:text-rose-600"
+                  className="rounded p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
                   aria-label={`Remove check-in for ${attendee.fullName}`}
                 >
                   <X className="h-4 w-4" />
@@ -1838,8 +2055,8 @@ function AttendancePanel({
               <Check className="h-4 w-4" /> Check in as me
             </button>
           )}
-        {canManage && (
-          activity.qrCheckInEnabled === false ? (
+        {canManage &&
+          (activity.qrCheckInEnabled === false ? (
             <section className="space-y-3 rounded-xl border border-dashed border-amber-300 bg-amber-50/60 p-4 dark:border-amber-900/50 dark:bg-amber-950/20">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 text-amber-900 dark:text-amber-200">
@@ -1862,65 +2079,202 @@ function AttendancePanel({
             </section>
           ) : (
             <section className="space-y-3 rounded-xl border border-[#EDEDF2] bg-white p-4 dark:border-slate-800 dark:bg-[#161B26]">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <h2 className="text-sm font-bold text-[#111625] dark:text-white">
-                  QR check-in
-                </h2>
-                <p className="mt-1 text-xs text-slate-500">
-                  Create a time-limited code for members to scan.
-                </p>
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-bold text-[#111625] dark:text-white">
+                      QR Attendance Session
+                    </h2>
+                    {qr && (
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                          qr.status === "ACTIVE"
+                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300"
+                            : qr.status === "PAUSED"
+                              ? "bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/50 dark:text-amber-300"
+                              : "bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/50 dark:text-rose-300"
+                        }`}
+                      >
+                        {qr.status}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Cryptographic time-limited QR code for participant check-in.
+                  </p>
+                </div>
+                {canManage && onToggleQrCheckIn && (
+                  <button
+                    type="button"
+                    onClick={() => onToggleQrCheckIn(false)}
+                    className="rounded-lg border border-slate-200 dark:border-slate-700 px-2 py-1 text-[11px] font-semibold text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition shadow-2xs"
+                    title="Turn off QR check-in for promotional or online campaigns"
+                  >
+                    Turn off QR
+                  </button>
+                )}
               </div>
-              {canManage && onToggleQrCheckIn && (
+
+              <div className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-900">
+                <label
+                  htmlFor="activity-qr-duration"
+                  className="text-xs font-semibold text-slate-600 dark:text-slate-300"
+                >
+                  Expiration Window:
+                </label>
+                <select
+                  id="activity-qr-duration"
+                  value={qrDurationMinutes}
+                  onChange={(e) => {
+                    const nextMins = Number(e.target.value);
+                    setQrDurationMinutes(nextMins);
+                    if (qr) {
+                      startTransition(() =>
+                        createQr({
+                          durationMinutes: nextMins,
+                          forceRegenerate: true,
+                        }),
+                      );
+                    }
+                  }}
+                  className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                >
+                  {QR_EXPIRATION_OPTIONS.map((mins) => (
+                    <option key={mins} value={mins}>
+                      {mins} min{mins === 20 ? " (Default)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => onToggleQrCheckIn(false)}
-                  className="rounded-lg border border-slate-200 dark:border-slate-700 px-2 py-1 text-[11px] font-semibold text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition shadow-2xs"
-                  title="Turn off QR check-in for promotional or online campaigns"
+                  disabled={pending}
+                  onClick={() =>
+                    startTransition(() =>
+                      createQr({
+                        durationMinutes: qrDurationMinutes,
+                        forceRegenerate: Boolean(qr),
+                      }),
+                    )
+                  }
+                  className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-[#0D3594] px-3 py-2 text-xs font-semibold text-white hover:bg-[#092569] disabled:opacity-60 cursor-pointer"
                 >
-                  Turn off QR
+                  <QrCode className="h-4 w-4" />
+                  {qr ? "Regenerate QR" : "Generate QR Code"}
                 </button>
-              )}
-            </div>
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() => startTransition(createQr)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-[#EDEDF2] px-3 py-2 text-xs font-semibold hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:hover:bg-slate-800"
-            >
-              <QrCode className="h-4 w-4" />
-              {qr ? "Refresh QR code" : "Start QR session"}
-            </button>
-            {error && <p className="text-xs text-rose-600">{error}</p>}
-            {qr && (
-              <div className="space-y-2 rounded-lg bg-slate-50 p-3 dark:bg-slate-900">
-                <div className="flex justify-center">
-                  <Image
-                    unoptimized
-                    src={qr.image}
-                    alt="QR code for activity check-in"
-                    width={224}
-                    height={224}
-                    className="h-56 w-56"
-                  />
-                </div>
-                <p className="break-all text-center text-[10px] text-slate-500">
-                  Session token active for up to 3 hours
-                </p>
-                <a
-                  href={qr.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="block text-center text-xs font-semibold text-[#0D3594] dark:text-blue-300"
-                >
-                  Open check-in link
-                </a>
+                {qr && (
+                  <>
+                    <button
+                      type="button"
+                      disabled={pending}
+                      onClick={() =>
+                        handleQrStatusChange(
+                          qr.status === "PAUSED" ? "ACTIVE" : "PAUSED",
+                        )
+                      }
+                      className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300 cursor-pointer disabled:opacity-50"
+                    >
+                      {qr.status === "PAUSED" ? (
+                        <>
+                          <PlayCircle className="h-3.5 w-3.5" /> Resume
+                        </>
+                      ) : (
+                        <>
+                          <PauseCircle className="h-3.5 w-3.5" /> Pause
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={pending || qr.status === "REVOKED"}
+                      onClick={handleRevokeQr}
+                      className="inline-flex items-center gap-1 rounded-lg border border-rose-300 bg-rose-50 px-2.5 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300 cursor-pointer disabled:opacity-50"
+                    >
+                      <Ban className="h-3.5 w-3.5" /> Revoke
+                    </button>
+                  </>
+                )}
               </div>
-            )}
-          </section>
-          )
-        
-        )}
+
+              {error && <p className="text-xs text-rose-600">{error}</p>}
+              {qr && (
+                <div className="space-y-2.5 rounded-lg bg-slate-50 p-3 dark:bg-slate-900">
+                  <div className="flex justify-center relative">
+                    <Image
+                      unoptimized
+                      src={qr.image}
+                      alt="QR code for activity check-in"
+                      width={224}
+                      height={224}
+                      className={`h-56 w-56 rounded-lg ${
+                        qr.status !== "ACTIVE" ? "opacity-20 blur-[2px]" : ""
+                      }`}
+                    />
+                    {qr.status !== "ACTIVE" && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center">
+                        <Ban className="h-7 w-7 text-rose-600 mb-1" />
+                        <span className="text-xs font-bold uppercase text-slate-900 dark:text-white">
+                          QR {qr.status}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-1.5 text-[10px] border-t border-slate-200/80 pt-2 dark:border-slate-800">
+                    <div>
+                      <span className="text-slate-400 block">Generated</span>
+                      <span className="font-semibold text-slate-700 dark:text-slate-200">
+                        {formatManila(qr.createdAt, "h:mm:ss a")}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block">Expires</span>
+                      <span className="font-semibold text-slate-700 dark:text-slate-200">
+                        {formatManila(qr.expiresAt, "h:mm:ss a")}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-slate-400 block">Countdown</span>
+                      <span className="font-mono font-bold text-rose-600 dark:text-rose-400">
+                        {qr.status === "ACTIVE"
+                          ? formatCountdown(secondsRemaining)
+                          : qr.status}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(qr.url);
+                        setCopiedUrl(true);
+                        setTimeout(() => setCopiedUrl(false), 2500);
+                      }}
+                      className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer"
+                    >
+                      {copiedUrl ? (
+                        <Check className="h-3.5 w-3.5 text-emerald-600" />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5" />
+                      )}
+                      {copiedUrl ? "Copied!" : "Copy Check-In Link"}
+                    </button>
+                    <a
+                      href={qr.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center justify-center rounded-lg bg-slate-900 px-3 py-1.5 text-[11px] font-semibold text-white dark:bg-white dark:text-slate-900"
+                    >
+                      Open Link
+                    </a>
+                  </div>
+                </div>
+              )}
+            </section>
+          ))}
       </aside>
     </div>
   );
@@ -2867,6 +3221,7 @@ const fieldClass =
 interface EditActivityModalProps {
   activity: ActivityDetailDTO;
   members: MemberDTO[];
+  partnerClubs?: PartnerClubOption[];
   canReassignOwner: boolean;
   isOpen: boolean;
   onClose: () => void;
@@ -2876,6 +3231,7 @@ interface EditActivityModalProps {
 function EditActivityModal({
   activity,
   members,
+  partnerClubs = [],
   canReassignOwner,
   isOpen,
   onClose,
@@ -2916,6 +3272,60 @@ function EditActivityModal({
     String(activity.projectDetails?.fundingTotal ?? 0)
   );
   const [fundingSource, setFundingSource] = useState(activity.projectDetails?.fundingSource || "");
+
+  // Joint / Partner Clubs & External Partner Organizations
+  const [selectedPartnerIds, setSelectedPartnerIds] = useState<string[]>(() => {
+    const existingPartners = activity.projectDetails?.partners || [];
+    const matchedIds: string[] = [];
+    for (const p of existingPartners) {
+      const match =
+        (p.sisterClubId &&
+          partnerClubs.find((club) => club.id === p.sisterClubId)) ||
+        partnerClubs.find(
+          (club) =>
+            club.name.trim().toLowerCase() === p.name.trim().toLowerCase(),
+        );
+      if (match && !matchedIds.includes(match.id)) {
+        matchedIds.push(match.id);
+      }
+    }
+    return matchedIds;
+  });
+  const [selectedPartnerDropdown, setSelectedPartnerDropdown] = useState("");
+  const [customPartners, setCustomPartners] = useState<string[]>(() => {
+    const existingPartners = activity.projectDetails?.partners || [];
+    return existingPartners
+      .filter((p) => {
+        const matchedClub =
+          (p.sisterClubId &&
+            partnerClubs.some((club) => club.id === p.sisterClubId)) ||
+          partnerClubs.some(
+            (club) =>
+              club.name.trim().toLowerCase() === p.name.trim().toLowerCase(),
+          );
+        return !matchedClub && p.name.trim().length > 0;
+      })
+      .map((p) => p.name.trim());
+  });
+  const [customPartnerInput, setCustomPartnerInput] = useState("");
+
+  const selectedPartnerClubs = selectedPartnerIds.flatMap((id) => {
+    const club = partnerClubs.find((c) => c.id === id);
+    return club ? [club] : [];
+  });
+
+  function handleAddCustomPartner() {
+    const trimmed = customPartnerInput.trim();
+    if (!trimmed) return;
+    if (
+      !customPartners.some(
+        (existing) => existing.toLowerCase() === trimmed.toLowerCase(),
+      )
+    ) {
+      setCustomPartners((prev) => [...prev, trimmed]);
+    }
+    setCustomPartnerInput("");
+  }
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -2971,6 +3381,34 @@ function EditActivityModal({
           meetingType: activity.meetingType || "GENERAL_ASSEMBLY",
         };
       } else if (isProject) {
+        const finalCustomNames = [
+          ...customPartners,
+          ...(customPartnerInput.trim() ? [customPartnerInput.trim()] : []),
+        ];
+        const combinedPartners = [
+          ...selectedPartnerClubs.map((club) => ({
+            name: club.name,
+            role: "SISTER_CLUB" as const,
+            sisterClubId: club.id,
+          })),
+          ...finalCustomNames.map((name) => ({
+            name,
+            role: "IMPLEMENTING_PARTNER" as const,
+          })),
+        ];
+
+        if (
+          activity.kind === "JOINT_PROJECT" &&
+          combinedPartners.length === 0
+        ) {
+          setError(
+            "Joint Projects require at least one Twin/Friendship/Partner club or external partner organization.",
+          );
+          setSaving(false);
+          return;
+        }
+
+        const primarySisterClub = selectedPartnerClubs[0];
         inputPayload = {
           ...basePayload,
           kind: activity.kind,
@@ -2981,16 +3419,10 @@ function EditActivityModal({
           fundingSource: fundingSource.trim(),
           areasOfFocus: activity.projectDetails?.areasOfFocus || [],
           sdgs: activity.projectDetails?.sdgs || [],
-          partners: (activity.projectDetails?.partners || []).map((p) => ({
-            name: p.name,
-            role: p.role,
-          })),
+          sisterClubId: primarySisterClub?.id,
+          sisterClubName: primarySisterClub?.name,
+          partners: combinedPartners,
         };
-        if (activity.kind === "JOINT_PROJECT" && inputPayload.partners.length === 0) {
-          inputPayload.partners = [
-            { name: "Joint Project Partner", role: "IMPLEMENTING_PARTNER" },
-          ];
-        }
       } else {
         inputPayload = {
           ...basePayload,
@@ -3285,6 +3717,168 @@ function EditActivityModal({
                       placeholder="e.g. Club Treasury, Corporate Sponsor, District Grant"
                       className={fieldClass}
                     />
+                  </div>
+                </div>
+
+                {/* Joint Partners / Twin & Sister Club Selection */}
+                <div className="pt-2 space-y-3 border-t border-slate-100 dark:border-slate-800">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                      <HeartHandshake className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                      Partnerships (Twin / Friendship / Partner Clubs)
+                      {activity.kind === "JOINT_PROJECT" && (
+                        <span className="text-rose-500">*</span>
+                      )}
+                    </label>
+                    <p className="mt-0.5 text-[11px] text-slate-500">
+                      {activity.kind === "JOINT_PROJECT"
+                        ? "Select one or more registered Twin, Friendship, or Partner clubs co-implementing this joint project."
+                        : "Optionally link any Twin, Friendship, or Partner clubs collaborating on this project."}
+                    </p>
+
+                    {selectedPartnerClubs.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {selectedPartnerClubs.map((partner) => (
+                          <div
+                            key={partner.id}
+                            className="inline-flex max-w-full items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100"
+                          >
+                            <span className="min-w-0 break-words font-medium">
+                              {partner.name}
+                            </span>
+                            <span className="text-[10px] text-emerald-700 dark:text-emerald-300">
+                              (D{partner.district})
+                            </span>
+                            <button
+                              type="button"
+                              aria-label={`Remove partner ${partner.name}`}
+                              onClick={() =>
+                                setSelectedPartnerIds((prev) =>
+                                  prev.filter((id) => id !== partner.id),
+                                )
+                              }
+                              className="shrink-0 rounded p-0.5 hover:bg-emerald-100 dark:hover:bg-emerald-900 cursor-pointer text-emerald-800 dark:text-emerald-200"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <select
+                      aria-label="Add partnership club"
+                      value={selectedPartnerDropdown}
+                      disabled={
+                        partnerClubs.filter(
+                          (c) => !selectedPartnerIds.includes(c.id),
+                        ).length === 0
+                      }
+                      onChange={(e) => {
+                        const partnerId = e.target.value;
+                        if (partnerId) {
+                          setSelectedPartnerIds((prev) =>
+                            prev.includes(partnerId)
+                              ? prev
+                              : [...prev, partnerId],
+                          );
+                          setSelectedPartnerDropdown("");
+                        }
+                      }}
+                      className={fieldClass}
+                    >
+                      <option value="">
+                        {partnerClubs.filter(
+                          (c) => !selectedPartnerIds.includes(c.id),
+                        ).length === 0
+                          ? partnerClubs.length === 0
+                            ? "No partner clubs registered yet"
+                            : "All available partner clubs added"
+                          : selectedPartnerIds.length === 0
+                            ? "+ Select a Twin / Friendship / Partner club..."
+                            : `+ Add another partner club (${
+                                partnerClubs.filter(
+                                  (c) => !selectedPartnerIds.includes(c.id),
+                                ).length
+                              } remaining)...`}
+                      </option>
+                      {partnerClubs
+                        .filter((club) => !selectedPartnerIds.includes(club.id))
+                        .map((club) => (
+                          <option key={club.id} value={club.id}>
+                            {club.name} · District {club.district},{" "}
+                            {club.country}
+                          </option>
+                        ))}
+                    </select>
+
+                    {partnerClubs.length === 0 && (
+                      <Link
+                        href="/partnerships"
+                        className="mt-1.5 inline-flex text-xs font-semibold text-[#0D3594] dark:text-blue-300 hover:underline"
+                      >
+                        Register a Twin or Partner club in Partnerships &rarr;
+                      </Link>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                      Additional Partner Organizations
+                    </label>
+                    <p className="mt-0.5 text-[11px] text-slate-500">
+                      External non-Rotary partners, NGOs, LGUs, schools, or corporate co-organizers.
+                    </p>
+
+                    {customPartners.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {customPartners.map((partnerName) => (
+                          <span
+                            key={partnerName}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                          >
+                            {partnerName}
+                            <button
+                              type="button"
+                              aria-label={`Remove ${partnerName}`}
+                              onClick={() =>
+                                setCustomPartners((prev) =>
+                                  prev.filter((name) => name !== partnerName),
+                                )
+                              }
+                              className="rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="mt-1.5 flex gap-2">
+                      <input
+                        type="text"
+                        maxLength={200}
+                        value={customPartnerInput}
+                        onChange={(e) => setCustomPartnerInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleAddCustomPartner();
+                          }
+                        }}
+                        placeholder="e.g. Barangay San Antonio LGU or Red Cross"
+                        className={`${fieldClass} mt-0 flex-1`}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddCustomPartner}
+                        disabled={!customPartnerInput.trim()}
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer shrink-0"
+                      >
+                        <Plus className="h-3.5 w-3.5" /> Add Partner
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>

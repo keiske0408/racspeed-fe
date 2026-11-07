@@ -409,7 +409,7 @@ export async function getActivityDetail(
       .eq("activity_id", activityId),
     admin
       .from("activity_partners")
-      .select("id, name, partner_role")
+      .select("id, name, partner_role, sister_club_id")
       .eq("activity_id", activityId)
       .order("created_at"),
     admin
@@ -519,12 +519,12 @@ export async function getActivityDetail(
         (partners.data || []) as unknown as {
           id: string;
           name: string;
-          partner_role: PartnerRole;
+          partner_role: PartnerRole; sister_club_id?: string | null;
         }[]
       ).map((partner) => ({
         id: partner.id,
         name: partner.name,
-        role: partner.partner_role,
+        role: partner.partner_role, sisterClubId: partner.sister_club_id ?? null,
       })),
     };
   }

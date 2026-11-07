@@ -1,6 +1,6 @@
 "use server";
 
-import { randomBytes, randomUUID } from "crypto";
+import { createHash, randomBytes, randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -37,7 +37,19 @@ import {
   type CreateActivityData,
   type CreateActivityInput,
 } from "./schemas";
-import { canTransition, evaluateRsvp, evaluateSelfCheckIn, isQrCheckInApplicable, resolveArchiveState } from "./rules";
+import {
+  canTransition,
+  DEFAULT_QR_EXPIRATION_MINUTES,
+  decodeSessionSecretMeta,
+  encodeSessionSecretMeta,
+  evaluateRsvp,
+  evaluateSelfCheckIn,
+  isQrCheckInApplicable,
+  normalizeQrDurationMinutes,
+  resolveArchiveState,
+  resolveQrSessionLifecycle,
+  type QrSessionLifecycleStatus,
+} from "./rules";
 import {
   getActivityMediaPage,
   isClubParticipant,
@@ -287,7 +299,10 @@ async function syncProjectRelations(
         activity_id: activityId,
         name: p.name,
         partner_role: p.role,
-        sister_club_id: p.sisterClubId || null,
+        sister_club_id:
+          p.sisterClubId && UUID_PATTERN.test(p.sisterClubId)
+            ? p.sisterClubId
+            : null,
       })),
     );
   }
@@ -983,9 +998,27 @@ export async function revokeAttendanceAction(
   return { success: true, message: "Check-in removed." };
 }
 
+export interface QrSessionActionData {
+  sessionToken: string;
+  createdAt: string;
+  expiresAt: string;
+  durationMinutes: number;
+  status: QrSessionLifecycleStatus;
+  opensAt?: string | null;
+  closesAt?: string | null;
+}
+
 export async function startActivityQrSessionAction(
   activityId: string,
-): Promise<ActionResult<{ sessionToken: string; expiresAt: string }>> {
+  options?: {
+    durationMinutes?: number;
+    forceRegenerate?: boolean;
+    opensAt?: string;
+    closesAt?: string;
+    sessionDate?: string;
+    label?: string;
+  },
+): Promise<ActionResult<QrSessionActionData>> {
   const access = await loadActivityAccess(activityId);
   if (!access) return { success: false, error: "Activity not found." };
   if (!access.canManageAttendance)
@@ -1001,7 +1034,13 @@ export async function startActivityQrSessionAction(
   }
 
   const admin = createAdminClient();
-  const nowIso = new Date().toISOString();
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const durationMinutes = normalizeQrDurationMinutes(
+    options?.durationMinutes ?? DEFAULT_QR_EXPIRATION_MINUTES,
+  );
+
+  // Expire any stale ACTIVE sessions whose timestamp has passed
   await admin
     .from("attendance_sessions")
     .update({ status: "EXPIRED" })
@@ -1009,32 +1048,89 @@ export async function startActivityQrSessionAction(
     .eq("status", "ACTIVE")
     .lt("expires_at", nowIso);
 
-  const fiveMinutesAgo = new Date(Date.now() - 5 * 60_000).toISOString();
-  const { data: recent } = await admin
-    .from("attendance_sessions")
-    .select("session_token, expires_at")
-    .eq("activity_id", activityId)
-    .eq("status", "ACTIVE")
-    .gt("expires_at", nowIso)
-    .gt("created_at", fiveMinutesAgo)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (recent)
-    return {
-      success: true,
-      sessionToken: recent.session_token,
-      expiresAt: recent.expires_at,
-    };
+  // If not forcing regeneration and no custom duration override was requested, reuse an active valid session
+  if (!options?.forceRegenerate && options?.durationMinutes === undefined) {
+    const { data: recent } = await admin
+      .from("attendance_sessions")
+      .select("session_token, created_at, expires_at, status, secret_hash")
+      .eq("activity_id", activityId)
+      .eq("status", "ACTIVE")
+      .gt("expires_at", nowIso)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-  // Unguessable token: knowing the activity id must not allow remote check-in.
-  const token = `racspeed-${randomBytes(18).toString("base64url")}`;
-  const expiresAt = new Date(Date.now() + 3 * 60 * 60_000).toISOString();
+    if (recent) {
+      const recentRow = recent as {
+        session_token: string;
+        created_at?: string;
+        expires_at: string;
+        status?: string;
+        secret_hash?: string | null;
+      };
+      const resolved = resolveQrSessionLifecycle({
+        dbStatus: recentRow.status,
+        secretHash: recentRow.secret_hash,
+        expiresAt: recentRow.expires_at,
+        activityEndAt: access.activity.end_at,
+        now,
+      });
+      if (resolved.status === "ACTIVE" || resolved.status === "SCHEDULED") {
+        return {
+          success: true,
+          sessionToken: recentRow.session_token,
+          createdAt: recentRow.created_at || nowIso,
+          expiresAt: recentRow.expires_at,
+          durationMinutes: resolved.durationMinutes,
+          status: resolved.status,
+          opensAt: resolved.opensAt,
+          closesAt: resolved.closesAt,
+        };
+      }
+    }
+  }
+
+  // Invalidate any previously active sessions for this activity before issuing a new token
+  const revokedSecret = encodeSessionSecretMeta({
+    hash: "revoked",
+    lifecycleStatus: "REVOKED",
+    durationMinutes,
+  });
+  await admin
+    .from("attendance_sessions")
+    .update({
+      status: "CLOSED",
+      secret_hash: revokedSecret,
+      expires_at: nowIso,
+    })
+    .eq("activity_id", activityId)
+    .eq("status", "ACTIVE");
+
+  // Generate cryptographically secure 192-bit token
+  const token = `racspeed-${randomBytes(24).toString("base64url")}`;
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const expiresAt = new Date(
+    now.getTime() + durationMinutes * 60_000,
+  ).toISOString();
+  const initialLifecycle: QrSessionLifecycleStatus =
+    options?.opensAt && new Date(options.opensAt).getTime() > now.getTime()
+      ? "SCHEDULED"
+      : "ACTIVE";
+  const secretHash = encodeSessionSecretMeta({
+    hash: tokenHash,
+    lifecycleStatus: initialLifecycle,
+    durationMinutes,
+    opensAt: options?.opensAt || null,
+    closesAt: options?.closesAt || null,
+    sessionDate: options?.sessionDate || null,
+    label: options?.label || null,
+  });
+
   const { error } = await admin.from("attendance_sessions").insert({
     activity_id: activityId,
     event_id: access.activity.legacy_event_id,
     session_token: token,
-    secret_hash: token,
+    secret_hash: secretHash,
     status: "ACTIVE",
     created_by: access.user.id,
     expires_at: expiresAt,
@@ -1045,7 +1141,275 @@ export async function startActivityQrSessionAction(
       error: `Failed to start QR session: ${error.message}`,
     };
 
-  return { success: true, sessionToken: token, expiresAt };
+  await logActivity(
+    activityId,
+    access.user.id,
+    options?.forceRegenerate ? "QR_REGENERATED" : "QR_GENERATED",
+    {
+      durationMinutes,
+      expiresAt,
+      opensAt: options?.opensAt || null,
+      closesAt: options?.closesAt || null,
+    },
+  );
+
+  return {
+    success: true,
+    sessionToken: token,
+    createdAt: nowIso,
+    expiresAt,
+    durationMinutes,
+    status: initialLifecycle,
+    opensAt: options?.opensAt || null,
+    closesAt: options?.closesAt || null,
+  };
+}
+
+export async function revokeActivityQrSessionAction(
+  activityId: string,
+  sessionToken?: string,
+): Promise<ActionResult<{ status: QrSessionLifecycleStatus }>> {
+  const access = await loadActivityAccess(activityId);
+  if (!access) return { success: false, error: "Activity not found." };
+  if (!access.canManageAttendance) {
+    return {
+      success: false,
+      error: "Unauthorized: You cannot revoke QR sessions for this activity.",
+    };
+  }
+
+  const admin = createAdminClient();
+  const nowIso = new Date().toISOString();
+  const revokedSecret = encodeSessionSecretMeta({
+    hash: "revoked",
+    lifecycleStatus: "REVOKED",
+  });
+
+  let query = admin
+    .from("attendance_sessions")
+    .update({
+      status: "CLOSED",
+      secret_hash: revokedSecret,
+      expires_at: nowIso,
+    })
+    .eq("activity_id", activityId);
+
+  if (sessionToken) {
+    query = query.eq("session_token", sessionToken);
+  } else {
+    query = query.eq("status", "ACTIVE");
+  }
+
+  const { error } = await query;
+  if (error) {
+    return {
+      success: false,
+      error: `Failed to revoke QR session: ${error.message}`,
+    };
+  }
+
+  await logActivity(activityId, access.user.id, "QR_REVOKED", {
+    revokedAt: nowIso,
+  });
+  revalidateActivity(activityId);
+  revalidatePath("/events");
+  return {
+    success: true,
+    status: "REVOKED",
+    message: "QR code has been revoked. Previous attendance records remain intact.",
+  };
+}
+
+export async function updateActivityQrSessionStatusAction(
+  activityId: string,
+  nextStatus: "ACTIVE" | "PAUSED" | "CLOSED",
+): Promise<ActionResult<{ status: QrSessionLifecycleStatus }>> {
+  const access = await loadActivityAccess(activityId);
+  if (!access) return { success: false, error: "Activity not found." };
+  if (!access.canManageAttendance) {
+    return {
+      success: false,
+      error: "Unauthorized: You cannot manage attendance sessions for this activity.",
+    };
+  }
+
+  const admin = createAdminClient();
+  const { data: latest } = await admin
+    .from("attendance_sessions")
+    .select("id, session_token, secret_hash, expires_at")
+    .eq("activity_id", activityId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!latest) {
+    if (nextStatus === "ACTIVE") {
+      const started = await startActivityQrSessionAction(activityId, {
+        forceRegenerate: true,
+      });
+      if (!started.success) return started;
+      return {
+        success: true,
+        status: started.status,
+        message: "Attendance session started.",
+      };
+    }
+    return {
+      success: false,
+      error: "No QR attendance session found for this activity.",
+    };
+  }
+
+  const latestRow = latest as {
+    id: string;
+    session_token: string;
+    secret_hash?: string | null;
+    expires_at: string;
+  };
+  const currentMeta = decodeSessionSecretMeta(latestRow.secret_hash);
+  const updatedSecret = encodeSessionSecretMeta({
+    ...currentMeta,
+    hash: currentMeta.hash || "session",
+    lifecycleStatus: nextStatus,
+  });
+
+  const dbStatus = nextStatus === "CLOSED" ? "CLOSED" : "ACTIVE";
+  const { error } = await admin
+    .from("attendance_sessions")
+    .update({
+      status: dbStatus,
+      secret_hash: updatedSecret,
+    })
+    .eq("id", latestRow.id);
+
+  if (error) {
+    return {
+      success: false,
+      error: `Failed to update session status: ${error.message}`,
+    };
+  }
+
+  await logActivity(activityId, access.user.id, "SESSION_STATUS_CHANGED", {
+    status: nextStatus,
+  });
+  revalidateActivity(activityId);
+  revalidatePath("/events");
+
+  const statusLabels: Record<"ACTIVE" | "PAUSED" | "CLOSED", string> = {
+    ACTIVE: "Attendance session is now active.",
+    PAUSED: "Attendance session paused.",
+    CLOSED: "Attendance session closed.",
+  };
+
+  return {
+    success: true,
+    status: nextStatus,
+    message: statusLabels[nextStatus],
+  };
+}
+
+export async function manualCheckInMemberAction(
+  activityId: string,
+  profileId: string,
+  customVolunteerHours?: number,
+): Promise<ActionResult<{ recordId: string; volunteerHours: number }>> {
+  if (!uuidString.safeParse(profileId).success) {
+    return { success: false, error: "Please select a valid club member." };
+  }
+  const access = await loadActivityAccess(activityId);
+  if (!access) return { success: false, error: "Activity not found." };
+  if (!access.canManageAttendance) {
+    return {
+      success: false,
+      error: "Unauthorized: Only attendance managers or officers can manually record attendance.",
+    };
+  }
+
+  const admin = createAdminClient();
+  const { data: existing } = await admin
+    .from("attendance_records")
+    .select("id")
+    .eq("activity_id", activityId)
+    .eq("profile_id", profileId)
+    .maybeSingle();
+
+  if (existing) {
+    return {
+      success: false,
+      error: "This member is already checked in for this activity.",
+    };
+  }
+
+  const hours =
+    customVolunteerHours !== undefined && Number.isFinite(customVolunteerHours)
+      ? Math.max(0, Number(customVolunteerHours))
+      : Number(access.activity.volunteer_hours_default || 0);
+  const nowIso = new Date().toISOString();
+
+  const { data: created, error } = await admin
+    .from("attendance_records")
+    .insert({
+      activity_id: activityId,
+      event_id: access.activity.legacy_event_id,
+      profile_id: profileId,
+      attended: true,
+      check_in_method: "MANUAL",
+      volunteer_hours: hours,
+      verified_by: access.user.id,
+      check_in_time: nowIso,
+    })
+    .select("id")
+    .single();
+
+  if (error || !created) {
+    if (error?.code === "23505") {
+      return {
+        success: false,
+        error: "This member is already checked in for this activity.",
+      };
+    }
+    return {
+      success: false,
+      error: `Failed to record manual attendance: ${error?.message ?? "unknown error"}`,
+    };
+  }
+
+  await Promise.allSettled([
+    admin.from("activity_rsvps").upsert({
+      activity_id: activityId,
+      profile_id: profileId,
+      response: "GOING",
+      responded_at: nowIso,
+    }),
+    admin.from("activity_followers").upsert({
+      activity_id: activityId,
+      profile_id: profileId,
+    }),
+    awardEngagementPoints({
+      clubId: access.activity.club_id,
+      profileId,
+      sourceType: isProjectKind(access.activity.kind)
+        ? "SERVICE_CHECK_IN"
+        : "CHECK_IN",
+      sourceId: created.id,
+      reason: isProjectKind(access.activity.kind)
+        ? `Attended Service Project: ${access.activity.title}`
+        : `Attended Activity: ${access.activity.title}`,
+    }),
+    logActivity(activityId, access.user.id, "MANUAL_CHECK_IN", {
+      profileId,
+      volunteerHours: hours,
+    }),
+  ]);
+
+  revalidateActivity(activityId);
+  revalidatePath("/events");
+  return {
+    success: true,
+    recordId: created.id,
+    volunteerHours: hours,
+    message: "Member manually checked in.",
+  };
 }
 
 export async function toggleActivityQrCheckInAction(

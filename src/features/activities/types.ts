@@ -237,7 +237,12 @@ export interface ActivityProjectDetailsDTO {
   completedAt: string | null;
   areasOfFocus: string[];
   sdgs: number[];
-  partners: { id: string; name: string; role: PartnerRole }[];
+  partners: {
+    id: string;
+    name: string;
+    role: PartnerRole;
+    sisterClubId?: string | null;
+  }[];
 }
 
 export interface ActivityPersonDTO {

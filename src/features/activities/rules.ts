@@ -234,3 +234,232 @@ export function resolveArchiveState(input: {
   return { isArchived: false, archivedAt: null };
 }
 
+export const DEFAULT_QR_EXPIRATION_MINUTES =
+  Number(process.env.NEXT_PUBLIC_QR_DEFAULT_EXPIRATION_MINUTES || 20) || 20;
+
+export const QR_EXPIRATION_OPTIONS = [5, 10, 15, 20, 30, 60] as const;
+export type QrExpirationOption = (typeof QR_EXPIRATION_OPTIONS)[number];
+
+export const QR_SESSION_STATUSES = [
+  "DRAFT",
+  "SCHEDULED",
+  "ACTIVE",
+  "PAUSED",
+  "CLOSED",
+  "EXPIRED",
+  "REVOKED",
+] as const;
+export type QrSessionLifecycleStatus = (typeof QR_SESSION_STATUSES)[number];
+export type QrSessionStatus = QrSessionLifecycleStatus;
+
+export function normalizeQrDurationMinutes(raw?: number | null): number {
+  const num = Number(raw);
+  if (!Number.isFinite(num) || num <= 0) {
+    return DEFAULT_QR_EXPIRATION_MINUTES;
+  }
+  return Math.min(Math.max(Math.round(num), 1), 1440);
+}
+
+export interface SessionSecretMeta {
+  hash: string;
+  lifecycleStatus?: QrSessionLifecycleStatus;
+  durationMinutes?: number;
+  opensAt?: string | null;
+  closesAt?: string | null;
+  sessionDate?: string | null;
+  label?: string | null;
+}
+
+/**
+ * Encodes session metadata alongside the token hash inside `secret_hash`
+ * so lifecycle states (REVOKED, PAUSED, SCHEDULED, DRAFT) and duration are
+ * preserved even if migration 0014 has not yet been applied to the remote DB.
+ */
+export function encodeSessionSecretMeta(meta: SessionSecretMeta): string {
+  const parts = [`h=${meta.hash}`];
+  if (meta.lifecycleStatus) parts.push(`st=${meta.lifecycleStatus}`);
+  if (meta.durationMinutes) parts.push(`dur=${meta.durationMinutes}`);
+  if (meta.opensAt) parts.push(`op=${encodeURIComponent(meta.opensAt)}`);
+  if (meta.closesAt) parts.push(`cl=${encodeURIComponent(meta.closesAt)}`);
+  if (meta.sessionDate) parts.push(`dt=${encodeURIComponent(meta.sessionDate)}`);
+  if (meta.label) parts.push(`lbl=${encodeURIComponent(meta.label)}`);
+  return `v2|${parts.join("|")}`;
+}
+
+export function decodeSessionSecretMeta(
+  secretHash?: string | null,
+): SessionSecretMeta {
+  if (!secretHash) return { hash: "" };
+  if (!secretHash.startsWith("v2|")) {
+    return { hash: secretHash };
+  }
+  const out: SessionSecretMeta = { hash: "" };
+  const segments = secretHash.slice(3).split("|");
+  for (const seg of segments) {
+    const eqIdx = seg.indexOf("=");
+    if (eqIdx === -1) continue;
+    const k = seg.slice(0, eqIdx);
+    const v = seg.slice(eqIdx + 1);
+    if (k === "h") out.hash = v;
+    else if (
+      k === "st" &&
+      (QR_SESSION_STATUSES as readonly string[]).includes(v)
+    ) {
+      out.lifecycleStatus = v as QrSessionLifecycleStatus;
+    } else if (k === "dur") {
+      const parsed = Number(v);
+      if (Number.isFinite(parsed) && parsed > 0) out.durationMinutes = parsed;
+    } else if (k === "op") out.opensAt = decodeURIComponent(v);
+    else if (k === "cl") out.closesAt = decodeURIComponent(v);
+    else if (k === "dt") out.sessionDate = decodeURIComponent(v);
+    else if (k === "lbl") out.label = decodeURIComponent(v);
+  }
+  return out;
+}
+
+export function resolveQrSessionLifecycle(input: {
+  dbStatus?: string | null;
+  secretHash?: string | null;
+  expiresAt: string;
+  opensAt?: string | null;
+  closesAt?: string | null;
+  activityEndAt?: string | null;
+  now?: Date;
+}): {
+  status: QrSessionLifecycleStatus;
+  durationMinutes: number;
+  opensAt: string | null;
+  closesAt: string | null;
+} {
+  const nowMs = (input.now ?? new Date()).getTime();
+  const meta = decodeSessionSecretMeta(input.secretHash);
+  const rawStatus = (
+    meta.lifecycleStatus ||
+    input.dbStatus ||
+    "ACTIVE"
+  ).toUpperCase();
+  const opensAt = input.opensAt ?? meta.opensAt ?? null;
+  const closesAt = input.closesAt ?? meta.closesAt ?? null;
+  const durationMinutes = normalizeQrDurationMinutes(meta.durationMinutes);
+
+  if (rawStatus === "REVOKED") {
+    return { status: "REVOKED", durationMinutes, opensAt, closesAt };
+  }
+  if (rawStatus === "CLOSED") {
+    return { status: "CLOSED", durationMinutes, opensAt, closesAt };
+  }
+  if (rawStatus === "PAUSED") {
+    return { status: "PAUSED", durationMinutes, opensAt, closesAt };
+  }
+  if (rawStatus === "DRAFT") {
+    return { status: "DRAFT", durationMinutes, opensAt, closesAt };
+  }
+
+  // Check session closing boundary or activity end boundary
+  const effectiveClosesAt = closesAt || input.activityEndAt || null;
+  if (effectiveClosesAt && new Date(effectiveClosesAt).getTime() < nowMs) {
+    return { status: "CLOSED", durationMinutes, opensAt, closesAt };
+  }
+
+  // Check scheduled opening time
+  if (opensAt && new Date(opensAt).getTime() > nowMs) {
+    return { status: "SCHEDULED", durationMinutes, opensAt, closesAt };
+  }
+
+  // Check QR token expiration timestamp
+  if (
+    rawStatus === "EXPIRED" ||
+    new Date(input.expiresAt).getTime() <= nowMs
+  ) {
+    return { status: "EXPIRED", durationMinutes, opensAt, closesAt };
+  }
+
+  return { status: "ACTIVE", durationMinutes, opensAt, closesAt };
+}
+
+export type QrScanCheckInCode =
+  | "OK"
+  | "TOKEN_EXPIRED"
+  | "TOKEN_REVOKED"
+  | "SESSION_CLOSED"
+  | "NOT_ELIGIBLE"
+  | "ALREADY_CHECKED_IN";
+
+export interface QrScanRuleResult {
+  allowed: boolean;
+  code: QrScanCheckInCode;
+  reason?: string;
+}
+
+export function evaluateQrScanCheckIn(input: {
+  sessionLifecycle: QrSessionLifecycleStatus;
+  activityStatus?: ActivityStatus | string | null;
+  isArchived?: boolean;
+  qrCheckInEnabled?: boolean;
+  isParticipant: boolean;
+  alreadyCheckedIn: boolean;
+}): QrScanRuleResult {
+  if (input.qrCheckInEnabled === false) {
+    return {
+      allowed: false,
+      code: "SESSION_CLOSED",
+      reason: "Attendance check-in is currently closed.",
+    };
+  }
+  if (
+    input.isArchived ||
+    input.activityStatus === "CANCELLED" ||
+    input.activityStatus === "DRAFT"
+  ) {
+    return {
+      allowed: false,
+      code: "SESSION_CLOSED",
+      reason: "Attendance check-in is currently closed.",
+    };
+  }
+  if (input.sessionLifecycle === "REVOKED") {
+    return {
+      allowed: false,
+      code: "TOKEN_REVOKED",
+      reason:
+        "This QR code has been revoked. Please ask the event administrator to display the current attendance QR code.",
+    };
+  }
+  if (input.sessionLifecycle === "EXPIRED") {
+    return {
+      allowed: false,
+      code: "TOKEN_EXPIRED",
+      reason:
+        "This QR code has expired. Please ask the event administrator to generate a new attendance QR code.",
+    };
+  }
+  if (
+    input.sessionLifecycle === "CLOSED" ||
+    input.sessionLifecycle === "PAUSED" ||
+    input.sessionLifecycle === "SCHEDULED" ||
+    input.sessionLifecycle === "DRAFT"
+  ) {
+    return {
+      allowed: false,
+      code: "SESSION_CLOSED",
+      reason: "Attendance check-in is currently closed.",
+    };
+  }
+  if (!input.isParticipant) {
+    return {
+      allowed: false,
+      code: "NOT_ELIGIBLE",
+      reason:
+        "You are not authorized or registered to attend this event. Only active club members and aspirants are eligible.",
+    };
+  }
+  if (input.alreadyCheckedIn) {
+    return {
+      allowed: false,
+      code: "ALREADY_CHECKED_IN",
+      reason: "You are already checked in for this event.",
+    };
+  }
+  return { allowed: true, code: "OK" };
+}
+

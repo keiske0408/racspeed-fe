@@ -28,14 +28,26 @@ import {
   Archive,
   LayoutGrid,
   List,
+  Ban,
+  Download,
+  Pause,
+  Play,
+  RotateCcw,
 } from "lucide-react";
 import { formatManilaDate, formatManila } from "@/lib/utils/dates";
 import { createClient } from "@/lib/supabase/client";
 import { notifyToast } from "@/components/shared/toast-viewport";
 import {
   startQrAttendanceSessionAction,
+  revokeQrAttendanceSessionAction,
+  updateQrAttendanceSessionStatusAction,
   getEventAttendeesAction,
 } from "@/features/events/actions";
+import {
+  DEFAULT_QR_EXPIRATION_MINUTES,
+  QR_EXPIRATION_OPTIONS,
+  type QrSessionLifecycleStatus,
+} from "@/features/activities/rules";
 import { EventDTO, EventAttendeeDTO } from "@/features/events/queries";
 
 export function extractSessionToken(raw: string): string {
@@ -126,13 +138,40 @@ export function EventsClient({
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
   const [sessionToken, setSessionToken] = useState<string>("");
-  const [secondsRemaining, setSecondsRemaining] = useState<number>(60);
+  const [qrDurationMinutes, setQrDurationMinutes] = useState<number>(
+    DEFAULT_QR_EXPIRATION_MINUTES,
+  );
+  const [qrCreatedAt, setQrCreatedAt] = useState<string | null>(null);
+  const [qrExpiresAt, setQrExpiresAt] = useState<string | null>(null);
+  const [qrLifecycleStatus, setQrLifecycleStatus] =
+    useState<QrSessionLifecycleStatus>("ACTIVE");
+  const [isManagingQr, setIsManagingQr] = useState(false);
+  const [secondsRemaining, setSecondsRemaining] = useState<number>(
+    DEFAULT_QR_EXPIRATION_MINUTES * 60,
+  );
   const [checkInTokenInput, setCheckInTokenInput] = useState(
     initialToken ? extractSessionToken(initialToken) : "",
   );
   const [notification, setNotification] = useState<NotificationState | null>(
     null,
   );
+  const [scanVerificationCard, setScanVerificationCard] = useState<{
+    status:
+      | "VERIFIED"
+      | "ALREADY_CHECKED_IN"
+      | "EXPIRED"
+      | "REVOKED"
+      | "CLOSED"
+      | "NOT_ELIGIBLE"
+      | "ERROR";
+    title: string;
+    message: string;
+    participantName?: string;
+    projectName?: string;
+    eventId?: string;
+    checkInTime?: string;
+    volunteerHours?: number;
+  } | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const hasAutoCheckedInRef = useRef(false);
 
@@ -156,7 +195,7 @@ export function EventsClient({
 
   const nowMs = Date.now();
   const isArchived = (event: EventDTO) =>
-    new Date(event.endTime).getTime() < nowMs;
+    Boolean(event.isArchived) || new Date(event.endTime).getTime() < nowMs;
   const visibleEvents = events.filter((event) =>
     eventScope === "ARCHIVE" ? isArchived(event) : !isArchived(event),
   );
@@ -416,6 +455,12 @@ export function EventsClient({
       });
 
       const result = await response.json();
+      if (response.status === 401 || result.code === "UNAUTHENTICATED") {
+        const redirectTarget = `/events?token=${encodeURIComponent(cleanToken)}`;
+        window.location.href = `/login?redirectTo=${encodeURIComponent(redirectTarget)}`;
+        return;
+      }
+
       if (response.ok && result.success) {
         const matchedEventId = result.eventId || selectedEvent?.id;
         if (matchedEventId) {
@@ -431,6 +476,19 @@ export function EventsClient({
           );
         }
 
+        setScanVerificationCard({
+          status: "VERIFIED",
+          title: "Attendance Confirmed!",
+          message:
+            result.message ||
+            "Your attendance has been verified and recorded.",
+          participantName: result.participantName,
+          projectName: result.projectName || result.eventTitle,
+          eventId: matchedEventId,
+          checkInTime: result.checkInTime || new Date().toISOString(),
+          volunteerHours: result.volunteerHours,
+        });
+
         setNotification({
           title: "Attendance Confirmed!",
           message:
@@ -441,7 +499,7 @@ export function EventsClient({
           eventTitle: result.eventTitle,
           volunteerHours: result.volunteerHours,
         });
-      } else if (result.alreadyCheckedIn) {
+      } else if (result.alreadyCheckedIn || result.code === "ALREADY_CHECKED_IN") {
         const matchedEventId = result.eventId || selectedEvent?.id;
         if (matchedEventId) {
           setCheckedInEventIds((prev) =>
@@ -449,16 +507,55 @@ export function EventsClient({
           );
         }
 
-        setNotification({
-          title: "Already Registered & Scanned",
+        setScanVerificationCard({
+          status: "ALREADY_CHECKED_IN",
+          title: "You are already checked in for this event.",
           message:
-            result.error ||
-            `You have already checked in for this event! Your attendance is verified and volunteer hours are recorded.`,
+            result.error || "You are already checked in for this event.",
+          participantName: result.participantName,
+          projectName: result.projectName || result.eventTitle,
+          eventId: matchedEventId,
+          checkInTime: result.checkInTime,
+          volunteerHours: result.volunteerHours,
+        });
+
+        setNotification({
+          title: "Already Checked In",
+          message:
+            result.error || "You are already checked in for this event.",
           type: "info",
           eventId: matchedEventId,
           eventTitle: result.eventTitle,
         });
       } else {
+        const mappedStatus =
+          result.code === "TOKEN_EXPIRED"
+            ? "EXPIRED"
+            : result.code === "TOKEN_REVOKED"
+              ? "REVOKED"
+              : result.code === "SESSION_CLOSED"
+                ? "CLOSED"
+                : result.code === "NOT_ELIGIBLE"
+                  ? "NOT_ELIGIBLE"
+                  : "ERROR";
+
+        setScanVerificationCard({
+          status: mappedStatus,
+          title:
+            mappedStatus === "EXPIRED"
+              ? "QR Code Expired"
+              : mappedStatus === "REVOKED"
+                ? "QR Code Revoked"
+                : mappedStatus === "CLOSED"
+                  ? "Check-In Closed"
+                  : mappedStatus === "NOT_ELIGIBLE"
+                    ? "Not Eligible to Check In"
+                    : "Check-In Notice",
+          message: result.error || "Attendance verification failed.",
+          projectName: result.projectName || result.eventTitle,
+          eventId: result.eventId,
+        });
+
         setNotification({
           title: "Check-In Notice",
           message: result.error || "Attendance verification failed.",
@@ -486,30 +583,66 @@ export function EventsClient({
     }
   }, [initialToken]);
 
-  // Dynamic token rotation timer
+  // Server-backed QR expiration countdown timer
   useEffect(() => {
-    if (!qrModalOpen || !selectedEvent) return;
-
-    let timer: NodeJS.Timeout;
-    if (secondsRemaining > 0) {
-      timer = setTimeout(() => setSecondsRemaining((prev) => prev - 1), 1000);
-    } else {
-      generateFreshToken(selectedEvent);
-      setSecondsRemaining(60);
+    if (!qrModalOpen || !selectedEvent || !qrExpiresAt) return;
+    if (qrLifecycleStatus !== "ACTIVE" && qrLifecycleStatus !== "SCHEDULED") {
+      setSecondsRemaining(0);
+      return;
     }
 
-    return () => clearTimeout(timer);
-  }, [qrModalOpen, secondsRemaining, selectedEvent]);
+    const updateRemaining = () => {
+      const diffSec = Math.max(
+        0,
+        Math.floor((new Date(qrExpiresAt).getTime() - Date.now()) / 1000),
+      );
+      setSecondsRemaining(diffSec);
+      if (diffSec <= 0 && qrLifecycleStatus === "ACTIVE") {
+        setQrLifecycleStatus("EXPIRED");
+      }
+    };
 
-  async function generateFreshToken(event: EventDTO) {
+    updateRemaining();
+    const interval = setInterval(updateRemaining, 1000);
+    return () => clearInterval(interval);
+  }, [qrModalOpen, selectedEvent, qrExpiresAt, qrLifecycleStatus]);
+
+  async function generateFreshToken(
+    event: EventDTO,
+    options?: { durationMinutes?: number; forceRegenerate?: boolean },
+  ) {
+    setIsManagingQr(true);
     try {
       const QRCode = (await import("qrcode")).default;
-      const res = await startQrAttendanceSessionAction(event.id);
-      const activeToken =
-        res.success && res.sessionToken
-          ? res.sessionToken
-          : `racspeed-${event.id.slice(0, 8)}-${Date.now().toString(36)}`;
+      const durationToUse = options?.durationMinutes ?? qrDurationMinutes;
+      const res = await startQrAttendanceSessionAction(event.id, {
+        durationMinutes: durationToUse,
+        forceRegenerate: options?.forceRegenerate,
+      });
+
+      if (!res.success || !res.sessionToken) {
+        setNotification({
+          title: "QR Generation Failed",
+          message:
+            (res as { error?: string }).error ||
+            "Could not generate QR session.",
+          type: "error",
+        });
+        return;
+      }
+
+      const activeToken = res.sessionToken;
       setSessionToken(activeToken);
+      setQrCreatedAt(
+        (res as { createdAt?: string }).createdAt || new Date().toISOString(),
+      );
+      setQrExpiresAt(res.expiresAt);
+      setQrDurationMinutes(
+        (res as { durationMinutes?: number }).durationMinutes || durationToUse,
+      );
+      setQrLifecycleStatus(
+        (res as { status?: QrSessionLifecycleStatus }).status || "ACTIVE",
+      );
 
       // Fetch live attendees for this event
       const attendeesRes = await getEventAttendeesAction(event.id);
@@ -528,22 +661,116 @@ export function EventsClient({
         color: { dark: "#0f172a", light: "#ffffff" },
       });
       setQrCodeDataUrl(dataUrl);
-    } catch {
-      try {
-        const QRCode = (await import("qrcode")).default;
-        const fallbackToken = `racspeed-${event.id.slice(0, 8)}-${Date.now().toString(36)}`;
-        setSessionToken(fallbackToken);
-        const origin =
-          typeof window !== "undefined" ? window.location.origin : "";
-        const checkInUrl = `${origin}/events?token=${encodeURIComponent(fallbackToken)}`;
-        const dataUrl = await QRCode.toDataURL(checkInUrl, {
-          width: 320,
-          margin: 2,
-          color: { dark: "#0f172a", light: "#ffffff" },
+
+      if (options?.forceRegenerate) {
+        setNotification({
+          title: "QR Code Regenerated",
+          message: `Previous QR code invalidated. New token valid for ${durationToUse} minutes.`,
+          type: "success",
         });
-        setQrCodeDataUrl(dataUrl);
-      } catch {}
+      }
+    } catch (err: any) {
+      setNotification({
+        title: "QR Session Error",
+        message: err?.message || "Failed to generate QR code.",
+        type: "error",
+      });
+    } finally {
+      setIsManagingQr(false);
     }
+  }
+
+  async function handleRevokeQr() {
+    if (!selectedEvent) return;
+    setIsManagingQr(true);
+    try {
+      const res = await revokeQrAttendanceSessionAction(
+        selectedEvent.id,
+        sessionToken || undefined,
+      );
+      if (!res.success) {
+        setNotification({
+          title: "Revoke Failed",
+          message: (res as { error?: string }).error || "Could not revoke QR.",
+          type: "error",
+        });
+        return;
+      }
+      setQrLifecycleStatus("REVOKED");
+      setSecondsRemaining(0);
+      setNotification({
+        title: "QR Code Revoked",
+        message:
+          "This QR code is now invalid. Existing attendance records remain preserved.",
+        type: "info",
+      });
+    } finally {
+      setIsManagingQr(false);
+    }
+  }
+
+  async function handleSessionStatusChange(
+    nextStatus: "ACTIVE" | "PAUSED" | "CLOSED",
+  ) {
+    if (!selectedEvent) return;
+    setIsManagingQr(true);
+    try {
+      const res = await updateQrAttendanceSessionStatusAction(
+        selectedEvent.id,
+        nextStatus,
+      );
+      if (!res.success) {
+        setNotification({
+          title: "Status Update Failed",
+          message:
+            (res as { error?: string }).error ||
+            "Could not update session status.",
+          type: "error",
+        });
+        return;
+      }
+      setQrLifecycleStatus(nextStatus);
+      setNotification({
+        title: "Session Updated",
+        message:
+          (res as { message?: string }).message ||
+          `Session marked as ${nextStatus.toLowerCase()}.`,
+        type: "success",
+      });
+    } finally {
+      setIsManagingQr(false);
+    }
+  }
+
+  function exportAttendeesCsv(event: EventDTO, list: EventAttendeeDTO[]) {
+    const header = [
+      "Full Name",
+      "Email",
+      "Check-In Method",
+      "Check-In Time (Manila)",
+      "Volunteer Hours",
+    ];
+    const rows = list.map((a) => [
+      `"${(a.fullName || "").replace(/"/g, '""')}"`,
+      `"${(a.email || "").replace(/"/g, '""')}"`,
+      `"${a.checkInMethod || "QR"}"`,
+      `"${formatManila(a.checkInTime, "yyyy-MM-dd hh:mm:ss a")}"`,
+      String(a.volunteerHours ?? 0),
+    ]);
+    const csv = [header.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `attendance-${event.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function formatCountdown(totalSec: number) {
+    const mins = Math.floor(totalSec / 60);
+    const secs = totalSec % 60;
+    return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
   }
 
   function handleOpenQr(event: EventDTO) {
@@ -557,8 +784,8 @@ export function EventsClient({
     }
     setSelectedEvent(event);
     setQrModalOpen(true);
-    setSecondsRemaining(60);
-    generateFreshToken(event);
+    setQrCodeDataUrl(null);
+    generateFreshToken(event, { durationMinutes: qrDurationMinutes });
   }
 
   async function handleManualCheckIn(e: React.FormEvent) {
@@ -582,6 +809,120 @@ export function EventsClient({
 
   return (
     <div className="space-y-6 relative pb-10">
+      {/* ========================================================================= */}
+      {/* MOBILE-FIRST QR SCAN VERIFICATION RESULT CARD */}
+      {/* ========================================================================= */}
+      {scanVerificationCard && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`rounded-2xl border p-5 shadow-lg transition-all ${
+            scanVerificationCard.status === "VERIFIED"
+              ? "border-emerald-300 bg-emerald-50/90 text-emerald-950 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-100"
+              : scanVerificationCard.status === "ALREADY_CHECKED_IN"
+                ? "border-sky-300 bg-sky-50/90 text-sky-950 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-100"
+                : "border-rose-300 bg-rose-50/90 text-rose-950 dark:border-rose-800 dark:bg-rose-950/50 dark:text-rose-100"
+          }`}
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-3.5 min-w-0">
+              <div
+                className={`p-2.5 rounded-xl shrink-0 ${
+                  scanVerificationCard.status === "VERIFIED"
+                    ? "bg-emerald-600 text-white"
+                    : scanVerificationCard.status === "ALREADY_CHECKED_IN"
+                      ? "bg-sky-600 text-white"
+                      : "bg-rose-600 text-white"
+                }`}
+              >
+                {scanVerificationCard.status === "VERIFIED" ||
+                scanVerificationCard.status === "ALREADY_CHECKED_IN" ? (
+                  <CheckCircle className="w-6 h-6" />
+                ) : (
+                  <AlertCircle className="w-6 h-6" />
+                )}
+              </div>
+              <div className="min-w-0 space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-black/10 dark:bg-white/10">
+                    {scanVerificationCard.status === "VERIFIED"
+                      ? "Attendance Verified"
+                      : scanVerificationCard.status === "ALREADY_CHECKED_IN"
+                        ? "Duplicate Scan Prevented"
+                        : "Check-In Rejected"}
+                  </span>
+                </div>
+                <h2 className="text-base sm:text-lg font-bold tracking-tight">
+                  {scanVerificationCard.title}
+                </h2>
+                <p className="text-xs sm:text-sm opacity-90">
+                  {scanVerificationCard.message}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setScanVerificationCard(null)}
+              className="p-1.5 rounded-lg opacity-70 hover:opacity-100 transition cursor-pointer shrink-0"
+              aria-label="Dismiss attendance confirmation"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {(scanVerificationCard.projectName ||
+            scanVerificationCard.participantName ||
+            scanVerificationCard.checkInTime) && (
+            <div className="mt-4 pt-3.5 border-t border-black/10 dark:border-white/10 grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+              {scanVerificationCard.participantName && (
+                <div>
+                  <span className="text-[10px] uppercase tracking-wider opacity-70 block font-semibold">
+                    Participant
+                  </span>
+                  <span className="font-bold">
+                    {scanVerificationCard.participantName}
+                  </span>
+                </div>
+              )}
+              {scanVerificationCard.projectName && (
+                <div className="sm:col-span-2">
+                  <span className="text-[10px] uppercase tracking-wider opacity-70 block font-semibold">
+                    Project / Event
+                  </span>
+                  <span className="font-bold">
+                    {scanVerificationCard.projectName}
+                  </span>
+                </div>
+              )}
+              {scanVerificationCard.checkInTime && (
+                <div>
+                  <span className="text-[10px] uppercase tracking-wider opacity-70 block font-semibold">
+                    Check-In Timestamp
+                  </span>
+                  <span className="font-mono font-bold">
+                    {formatManila(
+                      scanVerificationCard.checkInTime,
+                      "MMM d, yyyy · h:mm:ss a",
+                    )}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {scanVerificationCard.eventId && (
+            <div className="mt-3 flex items-center justify-end gap-2">
+              <Link
+                href={`/project-center/${scanVerificationCard.eventId}`}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900 text-xs font-semibold shadow-xs hover:opacity-90 transition"
+              >
+                <span>Open Project Workspace</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* TITLE & HEADER BAR */}
@@ -1169,15 +1510,28 @@ export function EventsClient({
             </div>
 
             {/* Modal Footer */}
-            <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
-              <button
-                type="button"
-                onClick={() => openAttendeesModal(inspectingEvent)}
-                className="inline-flex items-center gap-1.5 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-semibold cursor-pointer"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                Refresh Roster
-              </button>
+            <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs gap-2 flex-wrap">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => openAttendeesModal(inspectingEvent)}
+                  className="inline-flex items-center gap-1.5 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-semibold cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Refresh Roster
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    exportAttendeesCsv(inspectingEvent, attendeesList)
+                  }
+                  disabled={attendeesList.length === 0}
+                  className="inline-flex items-center gap-1.5 text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 font-semibold cursor-pointer disabled:opacity-40"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Export CSV ({attendeesList.length})
+                </button>
+              </div>
               <button
                 type="button"
                 onClick={() => setAttendeesModalOpen(false)}
@@ -1195,58 +1549,225 @@ export function EventsClient({
       {/* ========================================================================= */}
       {qrModalOpen && selectedEvent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-2xl flex flex-col items-center text-center max-h-[90vh] overflow-y-auto">
+          <div className="w-full max-w-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-2xl flex flex-col items-center text-center max-h-[92vh] overflow-y-auto">
             <div className="w-full flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <span className="text-xs font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider">
-                Active QR Attendance Session
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider">
+                  QR Attendance Session
+                </span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border ${
+                    qrLifecycleStatus === "ACTIVE"
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800"
+                      : qrLifecycleStatus === "PAUSED"
+                        ? "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800"
+                        : qrLifecycleStatus === "SCHEDULED"
+                          ? "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/60 dark:text-sky-300 dark:border-sky-800"
+                          : "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800"
+                  }`}
+                >
+                  {qrLifecycleStatus}
+                </span>
+              </div>
               <button
                 onClick={() => setQrModalOpen(false)}
-                className="p-1 rounded-md text-slate-400 hover:text-slate-600"
+                className="p-1 rounded-md text-slate-400 hover:text-slate-600 cursor-pointer"
+                aria-label="Close QR Session Modal"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="mt-4">
-              <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                {selectedEvent.title}
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Scan with any phone camera or the RacSpeed PWA Scanner
-              </p>
+            <div className="mt-3 w-full text-left flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
+                  {selectedEvent.title}
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5 truncate">
+                  {formatManilaDate(selectedEvent.startTime)} &bull;{" "}
+                  {selectedEvent.location}
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <label
+                  htmlFor="qr-duration-select"
+                  className="text-[11px] font-semibold text-slate-500"
+                >
+                  Validity:
+                </label>
+                <select
+                  id="qr-duration-select"
+                  value={qrDurationMinutes}
+                  onChange={(e) => {
+                    const nextDuration = Number(e.target.value);
+                    setQrDurationMinutes(nextDuration);
+                    generateFreshToken(selectedEvent, {
+                      durationMinutes: nextDuration,
+                      forceRegenerate: true,
+                    });
+                  }}
+                  className="px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200"
+                >
+                  {QR_EXPIRATION_OPTIONS.map((mins) => (
+                    <option key={mins} value={mins}>
+                      {mins} min{mins === 20 ? " (Default)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             {/* QR Display */}
-            <div className="my-4 p-3 rounded-2xl bg-white border border-slate-200 shadow-inner">
-              {qrCodeDataUrl ? (
+            <div className="my-4 p-3 rounded-2xl bg-white border border-slate-200 shadow-inner relative">
+              {qrCodeDataUrl && qrLifecycleStatus === "ACTIVE" ? (
                 <img
                   src={qrCodeDataUrl}
                   alt="Live Attendance QR Code"
-                  className="w-60 h-60 mx-auto rounded-lg"
+                  className="w-56 h-56 mx-auto rounded-lg"
                 />
+              ) : qrCodeDataUrl ? (
+                <div className="relative">
+                  <img
+                    src={qrCodeDataUrl}
+                    alt="Inactive Attendance QR Code"
+                    className="w-56 h-56 mx-auto rounded-lg opacity-20 blur-[2px]"
+                  />
+                  <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center">
+                    <Ban className="w-8 h-8 text-rose-600 mb-1.5" />
+                    <span className="text-xs font-bold text-slate-900 uppercase">
+                      QR Code {qrLifecycleStatus}
+                    </span>
+                    <span className="text-[11px] text-slate-600 mt-0.5">
+                      Regenerate or resume session to accept scans
+                    </span>
+                  </div>
+                </div>
               ) : (
-                <div className="w-60 h-60 flex items-center justify-center text-xs text-slate-400">
-                  Generating rolling code...
+                <div className="w-56 h-56 flex items-center justify-center text-xs text-slate-400">
+                  Generating cryptographic QR code...
                 </div>
               )}
             </div>
 
-            {/* Rotating countdown token */}
-            <div className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60 space-y-2 text-left">
+            {/* Timestamps & Countdown Panel */}
+            <div className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60 space-y-2.5 text-left">
+              <div className="grid grid-cols-3 gap-2 text-[11px] pb-2 border-b border-slate-200/70 dark:border-slate-700">
+                <div>
+                  <span className="text-slate-400 block">Generated</span>
+                  <span className="font-semibold text-slate-700 dark:text-slate-200">
+                    {qrCreatedAt
+                      ? formatManila(qrCreatedAt, "h:mm:ss a")
+                      : "—"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">Expires At</span>
+                  <span className="font-semibold text-slate-700 dark:text-slate-200">
+                    {qrExpiresAt
+                      ? formatManila(qrExpiresAt, "h:mm:ss a")
+                      : "—"}
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-slate-400 block">Countdown</span>
+                  <span
+                    className={`font-mono font-bold text-xs ${
+                      qrLifecycleStatus === "ACTIVE" && secondsRemaining > 60
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : "text-rose-600 dark:text-rose-400"
+                    }`}
+                  >
+                    {qrLifecycleStatus === "ACTIVE"
+                      ? formatCountdown(secondsRemaining)
+                      : qrLifecycleStatus}
+                  </span>
+                </div>
+              </div>
+
               <div className="flex items-center justify-between text-xs font-semibold">
-                <span className="text-slate-500">Live Session Token:</span>
-                <span className="text-rose-600 dark:text-rose-400 font-mono font-bold">
-                  Refreshes in {secondsRemaining}s
+                <span className="text-slate-500">Cryptographic Token:</span>
+                <span className="text-[10px] text-slate-400">
+                  Valid for {qrDurationMinutes}m window
                 </span>
               </div>
               <p className="font-mono text-xs text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-900 py-1.5 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 truncate select-all">
-                {sessionToken}
+                {sessionToken || "No active token"}
               </p>
+
+              {/* Admin Session Lifecycle Controls */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-1">
+                <button
+                  type="button"
+                  disabled={isManagingQr}
+                  onClick={() =>
+                    generateFreshToken(selectedEvent, {
+                      durationMinutes: qrDurationMinutes,
+                      forceRegenerate: true,
+                    })
+                  }
+                  className="py-1.5 px-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-[11px] font-semibold text-white dark:text-slate-900 transition flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw
+                    className={`w-3 h-3 ${isManagingQr ? "animate-spin" : ""}`}
+                  />
+                  <span>Regenerate</span>
+                </button>
+
+                {qrLifecycleStatus === "PAUSED" ? (
+                  <button
+                    type="button"
+                    disabled={isManagingQr}
+                    onClick={() => handleSessionStatusChange("ACTIVE")}
+                    className="py-1.5 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-[11px] font-semibold text-white transition flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                  >
+                    <Play className="w-3 h-3" />
+                    <span>Resume</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={
+                      isManagingQr || qrLifecycleStatus !== "ACTIVE"
+                    }
+                    onClick={() => handleSessionStatusChange("PAUSED")}
+                    className="py-1.5 px-2.5 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-[11px] font-semibold text-amber-800 dark:text-amber-300 transition flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40"
+                  >
+                    <Pause className="w-3 h-3" />
+                    <span>Pause</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  disabled={
+                    isManagingQr ||
+                    qrLifecycleStatus === "CLOSED" ||
+                    qrLifecycleStatus === "REVOKED"
+                  }
+                  onClick={() => handleSessionStatusChange("CLOSED")}
+                  className="py-1.5 px-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white hover:bg-slate-100 dark:bg-slate-900 text-[11px] font-semibold text-slate-700 dark:text-slate-300 transition flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40"
+                >
+                  <Clock className="w-3 h-3" />
+                  <span>Close</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={
+                    isManagingQr || qrLifecycleStatus === "REVOKED"
+                  }
+                  onClick={handleRevokeQr}
+                  className="py-1.5 px-2.5 rounded-lg border border-rose-300 dark:border-rose-800 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-[11px] font-semibold text-rose-700 dark:text-rose-300 transition flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40"
+                >
+                  <Ban className="w-3 h-3" />
+                  <span>Revoke</span>
+                </button>
+              </div>
 
               <div className="flex items-center gap-2 pt-1">
                 <button
                   type="button"
+                  disabled={!sessionToken || qrLifecycleStatus !== "ACTIVE"}
                   onClick={() => {
                     const origin =
                       typeof window !== "undefined"
@@ -1263,23 +1784,24 @@ export function EventsClient({
                     });
                     setTimeout(() => setCopiedLink(false), 3000);
                   }}
-                  className="flex-1 py-1.5 px-2.5 rounded-lg bg-slate-200/70 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-[11px] font-semibold text-slate-700 dark:text-slate-200 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="flex-1 py-1.5 px-2.5 rounded-lg bg-slate-200/70 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-[11px] font-semibold text-slate-700 dark:text-slate-200 transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40"
                 >
                   {copiedLink ? (
                     <Check className="w-3.5 h-3.5 text-emerald-600" />
                   ) : (
                     <Copy className="w-3.5 h-3.5" />
                   )}
-                  <span>{copiedLink ? "Link Copied!" : "Copy Link"}</span>
+                  <span>{copiedLink ? "Link Copied!" : "Copy Check-In URL"}</span>
                 </button>
                 <button
                   type="button"
+                  disabled={!sessionToken || qrLifecycleStatus !== "ACTIVE"}
                   onClick={() => {
                     setCheckInTokenInput(sessionToken);
                     submitScannedToken(sessionToken);
                     setQrModalOpen(false);
                   }}
-                  className="py-1.5 px-3 rounded-lg bg-rose-600 hover:bg-rose-500 text-[11px] font-semibold text-white transition shadow-xs cursor-pointer shrink-0"
+                  className="py-1.5 px-3 rounded-lg bg-rose-600 hover:bg-rose-500 text-[11px] font-semibold text-white transition shadow-xs cursor-pointer shrink-0 disabled:opacity-40"
                 >
                   Check In as Me
                 </button>
@@ -1293,16 +1815,30 @@ export function EventsClient({
                   <Users className="w-3.5 h-3.5 text-rose-600" />
                   Live Scanned Attendees ({liveSessionAttendees.length})
                 </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setQrModalOpen(false);
-                    openAttendeesModal(selectedEvent);
-                  }}
-                  className="text-rose-600 hover:underline text-[11px] font-semibold cursor-pointer"
-                >
-                  View Full Roster &rarr;
-                </button>
+                <div className="flex items-center gap-3">
+                  {liveSessionAttendees.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        exportAttendeesCsv(selectedEvent, liveSessionAttendees)
+                      }
+                      className="text-emerald-600 hover:underline text-[11px] font-semibold cursor-pointer inline-flex items-center gap-1"
+                    >
+                      <Download className="w-3 h-3" />
+                      CSV
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQrModalOpen(false);
+                      openAttendeesModal(selectedEvent);
+                    }}
+                    className="text-rose-600 hover:underline text-[11px] font-semibold cursor-pointer"
+                  >
+                    Full Roster &rarr;
+                  </button>
+                </div>
               </div>
 
               <div className="mt-2 space-y-1.5 max-h-36 overflow-y-auto pr-1">
@@ -1316,11 +1852,16 @@ export function EventsClient({
                       key={att.id}
                       className="px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800 flex items-center justify-between text-xs"
                     >
-                      <span className="font-semibold text-slate-900 dark:text-slate-100 truncate">
-                        {att.fullName}
-                      </span>
+                      <div className="min-w-0">
+                        <span className="font-semibold text-slate-900 dark:text-slate-100 truncate block">
+                          {att.fullName}
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          {att.checkInMethod}
+                        </span>
+                      </div>
                       <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold shrink-0">
-                        {formatManila(att.checkInTime, "h:mm a")}
+                        {formatManila(att.checkInTime, "h:mm:ss a")}
                       </span>
                     </div>
                   ))
