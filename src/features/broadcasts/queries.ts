@@ -22,10 +22,13 @@ export async function getBroadcastSourceItems(): Promise<BroadcastSourceItem[]> 
       getProjectsList().catch(() => [] as ProjectDTO[]),
     ]);
 
+    const seenIds = new Set<string>();
     const items: BroadcastSourceItem[] = [];
 
     // Map Events
     for (const ev of events) {
+      if (!ev.id || seenIds.has(ev.id)) continue;
+      seenIds.add(ev.id);
       let dateStr = "Upcoming Date TBA";
       let timeStr = "8:00 AM – 12:00 PM";
       let callTimeStr = "7:15 AM (Assembly & Briefing)";
@@ -86,6 +89,8 @@ export async function getBroadcastSourceItems(): Promise<BroadcastSourceItem[]> 
 
     // Map Projects
     for (const pr of projects) {
+      if (!pr.id || seenIds.has(pr.id)) continue;
+      seenIds.add(pr.id);
       items.push({
         id: pr.id,
         type: "project",

@@ -100,12 +100,19 @@ async function loadActivityAccess(activityId: string) {
     perms.has("EVENT_UPDATE") ||
     perms.has("PROJECT_UPDATE");
 
+  const canReassignOwner =
+    context.isPlatformAdmin ||
+    perms.has("PROJECT_UPDATE") ||
+    perms.has("EVENT_UPDATE") ||
+    perms.has("SETTINGS_MANAGE");
+
   return {
     user,
     activity,
     isParticipant: participant || context.isPlatformAdmin,
     canManage,
     canManageAttendance: canManage || perms.has("ATTENDANCE_MANAGE"),
+    canReassignOwner,
     qrCheckInEnabled: isQrCheckInApplicable({
       qr_check_in_enabled: (activity as any)?.qr_check_in_enabled,
       title: activity.title,
@@ -250,13 +257,18 @@ export async function createActivityAction(
   const partnerError = await validateProjectPartners(data);
   if (partnerError) return { success: false, error: partnerError };
   const admin = createAdminClient();
+  const ownerId =
+    (context.isPlatformAdmin || context.permissions.has("PROJECT_UPDATE")) &&
+    data.ownerId
+      ? data.ownerId
+      : user.id;
   const { data: created, error } = await admin
     .from("activities")
     .insert({
       ...toActivityRow(data),
       status: data.status,
       club_id: data.clubId,
-      owner_id: user.id,
+      owner_id: ownerId,
       created_by: user.id,
       is_published: data.status !== "DRAFT",
     })
@@ -273,7 +285,7 @@ export async function createActivityAction(
   await Promise.all([
     admin.from("activity_team").insert({
       activity_id: created.id,
-      profile_id: user.id,
+      profile_id: ownerId,
       team_role: "CHAIR",
     }),
     admin
@@ -322,12 +334,35 @@ export async function updateActivityAction(
 
   const partnerError = await validateProjectPartners(parsed.data);
   if (partnerError) return { success: false, error: partnerError };
-  const { error } = await createAdminClient()
+  const admin = createAdminClient();
+  const updatePayload: Record<string, unknown> = {
+    ...toActivityRow(parsed.data),
+    updated_at: new Date().toISOString(),
+  };
+
+  if (
+    parsed.data.ownerId &&
+    access.canReassignOwner &&
+    parsed.data.ownerId !== access.activity.owner_id
+  ) {
+    updatePayload.owner_id = parsed.data.ownerId;
+    await admin.from("activity_team").upsert(
+      {
+        activity_id: activityId,
+        profile_id: parsed.data.ownerId,
+        team_role: "CHAIR",
+      },
+      { onConflict: "activity_id,profile_id" },
+    );
+    await logActivity(activityId, access.user.id, "REASSIGNED_OWNER", {
+      from: access.activity.owner_id,
+      to: parsed.data.ownerId,
+    });
+  }
+
+  const { error } = await admin
     .from("activities")
-    .update({
-      ...toActivityRow(parsed.data),
-      updated_at: new Date().toISOString(),
-    })
+    .update(updatePayload)
     .eq("id", activityId);
   if (error)
     return {
@@ -380,6 +415,138 @@ export async function updateActivityStatusAction(
   revalidateActivity(activityId);
   return { success: true, message: "Status updated." };
 }
+
+export async function archiveActivityAction(
+  activityId: string,
+  archived: boolean,
+  note?: string,
+): Promise<ActionResult<{ isArchived: boolean }>> {
+  const access = await loadActivityAccess(activityId);
+  if (!access) return { success: false, error: "Activity not found." };
+  if (!access.canManage) {
+    return {
+      success: false,
+      error: "Only the project owner, chair, or club officers can archive or restore this activity.",
+    };
+  }
+
+  const admin = createAdminClient();
+  const nowIso = new Date().toISOString();
+
+  // Attempt to update explicit archive columns (if migration 0012 is applied), fallback to updated_at
+  const { error: colErr } = await admin
+    .from("activities")
+    .update({
+      is_archived: archived,
+      archived_at: archived ? nowIso : null,
+      archived_by: archived ? access.user.id : null,
+      updated_at: nowIso,
+    } as Record<string, unknown>)
+    .eq("id", activityId);
+
+  if (colErr) {
+    await admin
+      .from("activities")
+      .update({ updated_at: nowIso })
+      .eq("id", activityId);
+  }
+
+  await logActivity(
+    activityId,
+    access.user.id,
+    archived ? "ARCHIVED" : "UNARCHIVED",
+    {
+      previous_status: access.activity.status,
+      ...(note?.trim() ? { note: note.trim() } : {}),
+    },
+  );
+
+  revalidateActivity(activityId);
+  return {
+    success: true,
+    isArchived: archived,
+    message: archived
+      ? `'${access.activity.title}' moved to archive.`
+      : `'${access.activity.title}' restored to active workspace.`,
+  };
+}
+
+export async function bulkArchiveActivitiesAction(
+  activityIds: string[],
+): Promise<ActionResult<{ count: number }>> {
+  const user = await requireUser();
+  const validIds = Array.from(
+    new Set(activityIds.filter((id) => uuidString.safeParse(id).success)),
+  ).slice(0, 100);
+
+  if (validIds.length === 0) {
+    return { success: false, error: "Select at least one activity to archive." };
+  }
+
+  const admin = createAdminClient();
+  const { data: rows } = await admin
+    .from("activities")
+    .select("id, club_id, title, status, owner_id")
+    .in("id", validIds);
+
+  if (!rows || rows.length === 0) {
+    return { success: false, error: "No matching activities found." };
+  }
+
+  const clubId = rows[0].club_id;
+  const context = await getUserAccessContext(clubId);
+  const canManageClub =
+    context.isPlatformAdmin ||
+    context.permissions.has("PROJECT_UPDATE") ||
+    context.permissions.has("EVENT_UPDATE");
+
+  const allowedRows = rows.filter(
+    (r) => canManageClub || r.owner_id === user.id,
+  );
+  if (allowedRows.length === 0) {
+    return {
+      success: false,
+      error: "You do not have permission to archive the selected activities.",
+    };
+  }
+
+  const allowedIds = allowedRows.map((r) => r.id);
+  const nowIso = new Date().toISOString();
+
+  const { error: colErr } = await admin
+    .from("activities")
+    .update({
+      is_archived: true,
+      archived_at: nowIso,
+      archived_by: user.id,
+      updated_at: nowIso,
+    } as Record<string, unknown>)
+    .in("id", allowedIds);
+
+  if (colErr) {
+    await admin
+      .from("activities")
+      .update({ updated_at: nowIso })
+      .in("id", allowedIds);
+  }
+
+  await admin.from("activity_log").insert(
+    allowedRows.map((r) => ({
+      activity_id: r.id,
+      actor_id: user.id,
+      action: "ARCHIVED",
+      details: { previous_status: r.status, bulk: true },
+    })),
+  );
+
+  revalidateActivity();
+  return {
+    success: true,
+    count: allowedIds.length,
+    message: `Archived ${allowedIds.length} ${allowedIds.length === 1 ? "activity" : "activities"}.`,
+  };
+}
+
 
 export async function setRsvpAction(input: {
   activityId: string;

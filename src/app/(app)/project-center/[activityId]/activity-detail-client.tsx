@@ -5,6 +5,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
+  Archive,
+  ArchiveRestore,
   ArrowLeft,
   CalendarDays,
   Check,
@@ -20,7 +22,11 @@ import {
   Trash2,
   Upload,
   Users,
+  Pencil,
+  Shield,
+  Sliders,
   Sparkles,
+  UserCheck,
   X,
 } from "lucide-react";
 import type { ActivityDetailDTO } from "@/features/activities/types";
@@ -42,6 +48,8 @@ import {
   uploadActivityMediaAction,
 } from "@/features/activities/actions";
 import { updateTaskStatusAction } from "@/features/tasks/actions";
+import { archiveActivityAction, updateActivityAction } from "@/features/activities/actions";
+import type { MemberDTO } from "@/features/members/queries";
 import {
   isProjectKind,
   ACTIVITY_KIND_META,
@@ -50,7 +58,7 @@ import {
   COMMITTEES,
 } from "@/features/activities/types";
 import { minMembersStatus } from "@/features/activities/rules";
-import { formatManila } from "@/lib/utils/dates";
+import { formatManila, isoToManilaLocal } from "@/lib/utils/dates";
 import { notifyToast } from "@/components/shared/toast-viewport";
 import { uploadActivityPhotos } from "@/features/activities/media-upload";
 import {
@@ -84,6 +92,8 @@ export function ActivityDetailClient({
   currentUserId,
   canCreateTasks,
   canManageClub,
+  isPlatformAdmin = false,
+  members = [],
 }: {
   initialActivity: ActivityDetailDTO;
   initialTasks: GroupTaskDTO[];
@@ -91,6 +101,8 @@ export function ActivityDetailClient({
   currentUserId: string;
   canCreateTasks: boolean;
   canManageClub: boolean;
+  isPlatformAdmin?: boolean;
+  members?: MemberDTO[];
 }) {
   const router = useRouter();
   const [activity, setActivity] = useOptimistic(
@@ -107,6 +119,10 @@ export function ActivityDetailClient({
       : "OVERVIEW",
   );
   const [pending, startTransition] = useTransition();
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const canEdit =
+    canManageClub || activity.canManage || activity.ownerId === currentUserId;
+  const canReassignOwner = isPlatformAdmin || canManageClub;
 
   const isProject = isProjectKind(activity.kind);
   const canRsvp = isRsvpOpen(activity);
@@ -148,6 +164,33 @@ export function ActivityDetailClient({
       >
         <ArrowLeft className="h-3.5 w-3.5" /> Project Center
       </Link>
+      {activity.isArchived && (
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-xl border border-slate-300 bg-slate-100/90 px-4 py-3 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200">
+          <div className="flex items-center gap-2">
+            <Archive className="h-4 w-4 text-slate-500 shrink-0" />
+            <span>
+              <strong>Archived record:</strong> This {isProject ? "project" : "activity"} has been moved to the archive. RSVPs and live check-ins are closed while historical data, attendance, and reports remain preserved.
+            </span>
+          </div>
+          {canEdit && (
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() =>
+                run(async () => {
+                  const res = await archiveActivityAction(activity.id, false);
+                  if (res.success) setActivity({ isArchived: false, archivedAt: null });
+                  return res;
+                }, "Restored to active workspace.")
+              }
+              className="inline-flex items-center gap-1.5 self-start sm:self-auto shrink-0 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60 transition"
+            >
+              <ArchiveRestore className="h-3.5 w-3.5" />
+              Restore to Active
+            </button>
+          )}
+        </div>
+      )}
       <section className="overflow-hidden rounded-2xl border border-[#EDEDF2] bg-white dark:border-slate-800 dark:bg-[#161B26]">
         {activity.coverUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -168,6 +211,12 @@ export function ActivityDetailClient({
               meetingType={activity.meetingType}
             />
             <ActivityStatusBadge status={activity.status} />
+            {activity.isArchived && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                <Archive className="h-3 w-3" />
+                Archived
+              </span>
+            )}
             {activity.qrCheckInEnabled === false && (
               <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
                 <Sparkles className="h-3 w-3 text-amber-500" />
@@ -208,6 +257,62 @@ export function ActivityDetailClient({
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
+              {canEdit && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditOpen(true)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow-2xs hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition"
+                  >
+                    <Pencil className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                    Edit {isProject ? "Project" : "Activity"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => {
+                      const nextArchived = !activity.isArchived;
+                      run(
+                        async () => {
+                          const res = await archiveActivityAction(
+                            activity.id,
+                            nextArchived,
+                          );
+                          if (res.success) {
+                            setActivity({
+                              isArchived: nextArchived,
+                              archivedAt: nextArchived
+                                ? new Date().toISOString()
+                                : null,
+                            });
+                          }
+                          return res;
+                        },
+                        nextArchived
+                          ? "Moved to archive."
+                          : "Restored to active workspace.",
+                      );
+                    }}
+                    className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold shadow-2xs transition disabled:opacity-60 ${
+                      activity.isArchived
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
+                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                    }`}
+                  >
+                    {activity.isArchived ? (
+                      <>
+                        <ArchiveRestore className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                        Restore {isProject ? "Project" : "Activity"}
+                      </>
+                    ) : (
+                      <>
+                        <Archive className="h-3.5 w-3.5 text-slate-500" />
+                        Archive {isProject ? "Project" : "Activity"}
+                      </>
+                    )}
+                  </button>
+                </>
+              )}
               <button
                 type="button"
                 disabled={pending}
@@ -338,6 +443,12 @@ export function ActivityDetailClient({
               "Attendance record removed.",
             )
           }
+          onToggleQrCheckIn={(enabled) =>
+            run(
+              () => toggleActivityQrCheckInAction(activity.id, enabled),
+              enabled ? "QR check-in enabled." : "QR check-in disabled.",
+            )
+          }
         />
       )}
       {tab === "DISCUSSION" && (
@@ -359,6 +470,17 @@ export function ActivityDetailClient({
           activity={activity}
           canManage={canManageClub}
           onPublished={() => router.refresh()}
+        />
+      )}
+
+      {isEditOpen && (
+        <EditActivityModal
+          activity={activity}
+          members={members}
+          canReassignOwner={canReassignOwner}
+          isOpen={isEditOpen}
+          onClose={() => setIsEditOpen(false)}
+          onSaved={() => router.refresh()}
         />
       )}
     </main>
@@ -1730,3 +1852,607 @@ function ShowcaseCopy({ activity }: { activity: ActivityDetailDTO }) {
 
 const fieldClass =
   "mt-1.5 block w-full rounded-lg border border-[#DDE1EA] bg-white px-3 py-2 text-sm font-normal text-[#111625] outline-none focus:border-[#0D3594] focus:ring-2 focus:ring-[#0D3594]/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white";
+
+
+interface EditActivityModalProps {
+  activity: ActivityDetailDTO;
+  members: MemberDTO[];
+  canReassignOwner: boolean;
+  isOpen: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+}
+
+function EditActivityModal({
+  activity,
+  members,
+  canReassignOwner,
+  isOpen,
+  onClose,
+  onSaved,
+}: EditActivityModalProps) {
+  const isProject = isProjectKind(activity.kind);
+  const [title, setTitle] = useState(activity.title);
+  const [ownerId, setOwnerId] = useState(activity.ownerId || "");
+  const [shortDescription, setShortDescription] = useState(activity.shortDescription || "");
+  const [description, setDescription] = useState(activity.description || "");
+  const [location, setLocation] = useState(activity.location || "");
+  const [startAt, setStartAt] = useState(() => isoToManilaLocal(activity.startAt));
+  const [endAt, setEndAt] = useState(() => isoToManilaLocal(activity.endAt));
+  const [allDay, setAllDay] = useState(Boolean(activity.allDay));
+  const [committee, setCommittee] = useState<string>(activity.committee || "");
+  const [capacity, setCapacity] = useState(activity.capacity ? String(activity.capacity) : "");
+  const [minMembersEnabled, setMinMembersEnabled] = useState(Boolean(activity.minMembersRequired));
+  const [minMembersRequired, setMinMembersRequired] = useState(
+    activity.minMembersRequired ? String(activity.minMembersRequired) : ""
+  );
+  const [rsvpEnabled, setRsvpEnabled] = useState(Boolean(activity.rsvpEnabled));
+  const [rsvpDeadline, setRsvpDeadline] = useState(() =>
+    activity.rsvpDeadline ? isoToManilaLocal(activity.rsvpDeadline) : ""
+  );
+  const [volunteerHoursDefault, setVolunteerHoursDefault] = useState(
+    String(activity.volunteerHoursDefault ?? 0)
+  );
+  const [qrCheckInEnabled, setQrCheckInEnabled] = useState(activity.qrCheckInEnabled ?? true);
+  const [selfCheckInEnabled, setSelfCheckInEnabled] = useState(Boolean(activity.selfCheckInEnabled));
+
+  // Project details
+  const [objective, setObjective] = useState(activity.projectDetails?.objective || "");
+  const [beneficiaryType, setBeneficiaryType] = useState(activity.projectDetails?.beneficiaryType || "");
+  const [beneficiaryTarget, setBeneficiaryTarget] = useState(
+    String(activity.projectDetails?.beneficiaryCount ?? 0)
+  );
+  const [fundingTarget, setFundingTarget] = useState(
+    String(activity.projectDetails?.fundingTotal ?? 0)
+  );
+  const [fundingSource, setFundingSource] = useState(activity.projectDetails?.fundingSource || "");
+
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!isOpen) return null;
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!title.trim() || title.trim().length < 3) {
+      setError("Title must be at least 3 characters.");
+      return;
+    }
+    if (!startAt || !endAt) {
+      setError("Please specify valid start and end dates.");
+      return;
+    }
+    if (endAt < startAt) {
+      setError("End date and time must be after the start date and time.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const basePayload = {
+        clubId: activity.clubId,
+        ownerId: ownerId || undefined,
+        title: title.trim(),
+        shortDescription: shortDescription.trim(),
+        description: description.trim(),
+        location: location.trim(),
+        startAt,
+        endAt,
+        allDay,
+        committee: committee ? (committee as any) : undefined,
+        status: activity.status,
+        minMembersEnabled,
+        minMembersRequired: minMembersEnabled && minMembersRequired ? Number(minMembersRequired) : undefined,
+        capacity: capacity ? Number(capacity) : undefined,
+        rsvpEnabled,
+        rsvpDeadline: rsvpEnabled && rsvpDeadline ? rsvpDeadline : undefined,
+        selfCheckInEnabled,
+        qrCheckInEnabled,
+        checkInWindowMinutes: activity.checkInWindowMinutes || 180,
+        volunteerHoursDefault: Number(volunteerHoursDefault) || 0,
+      };
+
+      let inputPayload: any;
+      if (activity.kind === "MEETING") {
+        inputPayload = {
+          ...basePayload,
+          kind: "MEETING",
+          meetingType: activity.meetingType || "GENERAL_ASSEMBLY",
+        };
+      } else if (isProject) {
+        inputPayload = {
+          ...basePayload,
+          kind: activity.kind,
+          objective: objective.trim(),
+          beneficiaryType: beneficiaryType.trim(),
+          beneficiaryTarget: Number(beneficiaryTarget) || 0,
+          fundingTarget: Number(fundingTarget) || 0,
+          fundingSource: fundingSource.trim(),
+          areasOfFocus: activity.projectDetails?.areasOfFocus || [],
+          sdgs: activity.projectDetails?.sdgs || [],
+          partners: (activity.projectDetails?.partners || []).map((p) => ({
+            name: p.name,
+            role: p.role,
+          })),
+        };
+        if (activity.kind === "JOINT_PROJECT" && inputPayload.partners.length === 0) {
+          inputPayload.partners = [
+            { name: "Joint Project Partner", role: "IMPLEMENTING_PARTNER" },
+          ];
+        }
+      } else {
+        inputPayload = {
+          ...basePayload,
+          kind: activity.kind,
+        };
+      }
+
+      const res = await updateActivityAction(activity.id, inputPayload);
+      if (!res.success) {
+        setError(res.error || "Failed to update activity.");
+        setSaving(false);
+        return;
+      }
+      notifyToast({
+        message: isProject ? "Project updated successfully." : "Activity updated successfully.",
+        kind: "success",
+      });
+      onSaved();
+      onClose();
+    } catch (err: any) {
+      setError(err?.message || "An unexpected error occurred.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/60 backdrop-blur-xs">
+      <div className="w-full max-w-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-6 py-4">
+          <div>
+            <h2 className="text-base font-bold text-slate-900 dark:text-white">
+              Edit {isProject ? "Project" : "Activity"}
+            </h2>
+            <p className="text-xs text-slate-500">
+              Update project details, assign project owner leadership, and configure attendance rules.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:text-slate-200 dark:hover:bg-slate-800 transition"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+          <div className="overflow-y-auto p-6 space-y-6 flex-1">
+            {error && (
+              <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">
+                {error}
+              </div>
+            )}
+
+            {/* Section 1: Leadership & Basic Info */}
+            <div className="space-y-4">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <UserCheck className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                Project Leadership & Ownership
+              </h3>
+
+              {canReassignOwner ? (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                    Bond Project Owner
+                  </label>
+                  <select
+                    value={ownerId}
+                    onChange={(e) => setOwnerId(e.target.value)}
+                    className={fieldClass}
+                  >
+                    <option value="">Select Project Owner...</option>
+                    {members.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} {m.role ? `(${m.role})` : ""} - {m.email}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    As an administrator, you can bond this project to a member. The project owner will gain full management and editing permissions over this project.
+                  </p>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 dark:border-slate-800 dark:bg-slate-900/40">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-500">Assigned Project Owner:</span>
+                    <span className="font-semibold text-slate-800 dark:text-white">
+                      {activity.ownerName || "Current Lead"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    Only club administrators have permission to reassign project ownership to another member.
+                  </p>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                  Title <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="e.g. Literacy Drive or Coastal Clean-Up"
+                  className={fieldClass}
+                />
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                    Committee
+                  </label>
+                  <select
+                    value={committee}
+                    onChange={(e) => setCommittee(e.target.value)}
+                    className={fieldClass}
+                  >
+                    <option value="">None / Unassigned</option>
+                    {COMMITTEES.map((c) => (
+                      <option key={c} value={c}>
+                        {c.replace(/_/g, " ")}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                    Location / Venue
+                  </label>
+                  <input
+                    type="text"
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    placeholder="e.g. San Pedro City Hall or Google Meet"
+                    className={fieldClass}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                  Short Description
+                </label>
+                <input
+                  type="text"
+                  maxLength={280}
+                  value={shortDescription}
+                  onChange={(e) => setShortDescription(e.target.value)}
+                  placeholder="Brief one-line summary (max 280 characters)"
+                  className={fieldClass}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                  Full Description
+                </label>
+                <textarea
+                  rows={4}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Comprehensive activity overview, agenda, reminders, and directions..."
+                  className={fieldClass}
+                />
+              </div>
+            </div>
+
+            {/* Section 2: Dates & Schedule */}
+            <div className="space-y-4 border-t border-slate-100 dark:border-slate-800 pt-5">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Clock className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                Schedule & Timeframe
+              </h3>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                    Start Date & Time (Asia/Manila) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="datetime-local"
+                    required
+                    value={startAt}
+                    onChange={(e) => setStartAt(e.target.value)}
+                    className={fieldClass}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                    End Date & Time (Asia/Manila) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="datetime-local"
+                    required
+                    value={endAt}
+                    onChange={(e) => setEndAt(e.target.value)}
+                    className={fieldClass}
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  id="edit-allday"
+                  type="checkbox"
+                  checked={allDay}
+                  onChange={(e) => setAllDay(e.target.checked)}
+                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                <label htmlFor="edit-allday" className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                  All-day event
+                </label>
+              </div>
+            </div>
+
+            {/* Section 3: Project Goals & Budget (if project) */}
+            {isProject && (
+              <div className="space-y-4 border-t border-slate-100 dark:border-slate-800 pt-5">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                  <ShieldCheck className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                  Project Goals & Impact Details
+                </h3>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                    Objective
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={objective}
+                    onChange={(e) => setObjective(e.target.value)}
+                    placeholder="What does this project aim to achieve in the community?"
+                    className={fieldClass}
+                  />
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                      Beneficiary Type
+                    </label>
+                    <input
+                      type="text"
+                      value={beneficiaryType}
+                      onChange={(e) => setBeneficiaryType(e.target.value)}
+                      placeholder="e.g. Out of school youth, Barangay 3 residents"
+                      className={fieldClass}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                      Beneficiary Target Count
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={beneficiaryTarget}
+                      onChange={(e) => setBeneficiaryTarget(e.target.value)}
+                      className={fieldClass}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                      Funding Target (PHP)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={fundingTarget}
+                      onChange={(e) => setFundingTarget(e.target.value)}
+                      className={fieldClass}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                      Funding Source
+                    </label>
+                    <input
+                      type="text"
+                      value={fundingSource}
+                      onChange={(e) => setFundingSource(e.target.value)}
+                      placeholder="e.g. Club Treasury, Corporate Sponsor, District Grant"
+                      className={fieldClass}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Section 4: Attendance & Check-In Configuration */}
+            <div className="space-y-4 border-t border-slate-100 dark:border-slate-800 pt-5">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <QrCode className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                Attendance & QR Verification Settings
+              </h3>
+
+              {/* QR Check-In Toggle */}
+              <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-900/40 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <label htmlFor="edit-qr-check-in" className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <QrCode className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                      Enable QR Attendance Check-In
+                    </label>
+                    <p className="text-[11px] text-slate-500">
+                      Generate rolling time-limited QR codes for members to scan on-site.
+                    </p>
+                  </div>
+                  <input
+                    id="edit-qr-check-in"
+                    type="checkbox"
+                    checked={qrCheckInEnabled}
+                    onChange={(e) => setQrCheckInEnabled(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  />
+                </div>
+                {!qrCheckInEnabled ? (
+                  <p className="text-[11px] font-medium text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 rounded-md p-2">
+                    QR check-in is disabled. Perfect for promotional campaigns, recruitments, or digital initiatives that do not require physical attendance check-in.
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 rounded-md p-2">
+                    QR check-in is enabled. Dynamic rolling-code sessions will be available on the Events & Attendance dashboard.
+                  </p>
+                )}
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                    Default Volunteer Hours
+                  </label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    max="24"
+                    value={volunteerHoursDefault}
+                    onChange={(e) => setVolunteerHoursDefault(e.target.value)}
+                    className={fieldClass}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                    Capacity (Optional)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={capacity}
+                    onChange={(e) => setCapacity(e.target.value)}
+                    placeholder="No limit"
+                    className={fieldClass}
+                  />
+                </div>
+              </div>
+
+              {/* RSVP Setting */}
+              <div className="space-y-2 rounded-xl border border-slate-200 p-3.5 dark:border-slate-800">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label htmlFor="edit-rsvp-toggle" className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                      Enable Member RSVPs
+                    </label>
+                    <p className="text-[11px] text-slate-500">Allow members to indicate Going, Maybe, or Can&apos;t Go.</p>
+                  </div>
+                  <input
+                    id="edit-rsvp-toggle"
+                    type="checkbox"
+                    checked={rsvpEnabled}
+                    onChange={(e) => setRsvpEnabled(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  />
+                </div>
+                {rsvpEnabled && (
+                  <div className="pt-2">
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                      RSVP Deadline (Optional)
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={rsvpDeadline}
+                      onChange={(e) => setRsvpDeadline(e.target.value)}
+                      className={fieldClass}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Self Check-in Setting */}
+              <div className="flex items-center justify-between rounded-xl border border-slate-200 p-3.5 dark:border-slate-800">
+                <div>
+                  <label htmlFor="edit-self-check-in" className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                    Allow Self Check-In
+                  </label>
+                  <p className="text-[11px] text-slate-500">Allow members to check in themselves from the web interface.</p>
+                </div>
+                <input
+                  id="edit-self-check-in"
+                  type="checkbox"
+                  checked={selfCheckInEnabled}
+                  onChange={(e) => setSelfCheckInEnabled(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                />
+              </div>
+
+              {/* Min Members Setting */}
+              <div className="space-y-2 rounded-xl border border-slate-200 p-3.5 dark:border-slate-800">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label htmlFor="edit-min-members-toggle" className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                      Minimum Members Required
+                    </label>
+                    <p className="text-[11px] text-slate-500">Set quorum or volunteer commitment target.</p>
+                  </div>
+                  <input
+                    id="edit-min-members-toggle"
+                    type="checkbox"
+                    checked={minMembersEnabled}
+                    onChange={(e) => setMinMembersEnabled(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  />
+                </div>
+                {minMembersEnabled && (
+                  <div className="pt-2">
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                      Required Count
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={minMembersRequired}
+                      onChange={(e) => setMinMembersRequired(e.target.value)}
+                      placeholder="e.g. 10"
+                      className={fieldClass}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800 px-6 py-4 bg-slate-50/50 dark:bg-slate-900/50">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={saving}
+              className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 transition"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[#0D3594] px-5 py-2 text-xs font-semibold text-white shadow-2xs hover:bg-[#0b2c7a] disabled:opacity-60 transition"
+            >
+              {saving ? "Saving..." : "Save Changes"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

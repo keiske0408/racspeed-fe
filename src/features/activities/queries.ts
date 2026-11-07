@@ -1,4 +1,4 @@
-import { isQrCheckInApplicable } from "./rules";
+import { isQrCheckInApplicable, resolveArchiveState } from "./rules";
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getGroupTasksList } from "@/features/tasks/queries";
@@ -24,11 +24,12 @@ const SIGNED_URL_TTL_SECONDS = 60 * 60;
 const SUMMARY_COLUMNS = `
   id, club_id, kind, meeting_type, title, short_description, location, start_at, end_at, all_day,
   status, committee, owner_id, min_members_required, capacity, rsvp_enabled, rsvp_deadline,
-  self_check_in_enabled, check_in_window_minutes, volunteer_hours_default, cover_storage_path,
+  self_check_in_enabled, check_in_window_minutes, volunteer_hours_default, cover_storage_path, rotary_year,
   owner:profiles!activities_owner_id_fkey(full_name),
   activity_rsvps(profile_id, response),
   attendance_records(profile_id),
   activity_comments(count), activity_media(count),
+  activity_log(action, created_at),
   tasks(status)
 `;
 
@@ -64,6 +65,9 @@ interface ActivitySummaryRow {
   tasks?: { status: string }[] | null;
   activity_comments?: { count: number }[] | null;
   activity_media?: { count: number }[] | null;
+  activity_log?: { action: string; created_at: string }[] | null;
+  is_archived?: boolean | null;
+  archived_at?: string | null;
 }
 
 interface ProfileRow {
@@ -194,6 +198,11 @@ function mapSummary(
     row.activity_rsvps || [];
   const attendance: { profile_id: string }[] = row.attendance_records || [];
   const tasks: { status: string }[] = row.tasks || [];
+  const archiveState = resolveArchiveState({
+    is_archived: row.is_archived,
+    archived_at: row.archived_at,
+    activity_log: row.activity_log,
+  });
   return {
     id: row.id,
     clubId: row.club_id,
@@ -238,6 +247,9 @@ function mapSummary(
     coverUrl: row.cover_storage_path
       ? coverUrls.get(row.cover_storage_path) || null
       : null,
+    rotaryYear: row.rotary_year || "",
+    isArchived: archiveState.isArchived,
+    archivedAt: archiveState.archivedAt,
   };
 }
 
@@ -327,7 +339,7 @@ export async function getActivityDetail(
 
   const { data: row, error } = await admin
     .from("activities")
-    .select(`${SUMMARY_COLUMNS}, description, is_published, rotary_year`)
+    .select(`${SUMMARY_COLUMNS}, description, is_published`)
     .eq("id", activityId)
     .maybeSingle();
   if (error || !row) return null;

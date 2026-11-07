@@ -1,21 +1,24 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
+  Archive,
+  ArchiveRestore,
   CalendarDays,
   CheckSquare,
+  FolderArchive,
+  Images,
   LayoutGrid,
   List,
   Plus,
   Search,
   SlidersHorizontal,
-  Images,
 } from "lucide-react";
 import { ActivityCalendar } from "./_components/activity-calendar";
 import { ActivityMoments } from "./_components/activity-moments";
-import { ActivityCard } from "./_components/activity-card";
+import { ActivityCard, formatActivityWhen } from "./_components/activity-card";
 import { ActivityStatusBadge, KindBadge } from "./_components/badges";
 import {
   ACTIVITY_KINDS,
@@ -25,25 +28,52 @@ import {
   type ActivityStatus,
   type ActivitySummaryDTO,
 } from "@/features/activities/types";
+import {
+  archiveActivityAction,
+  bulkArchiveActivitiesAction,
+} from "@/features/activities/actions";
 import type { GroupTaskDTO } from "@/lib/data/tasks-types";
-import { formatActivityWhen } from "./_components/activity-card";
+import { formatManilaDate } from "@/lib/utils/dates";
+import { notifyToast } from "@/components/shared/toast-viewport";
 
 type ViewMode = "LIST" | "BOARD" | "CALENDAR" | "TASKS" | "MOMENTS";
+type WorkspaceScope = "ACTIVE" | "ARCHIVED";
 
 export function ProjectCenterClient({
   initialActivities,
   initialTasks,
   canCreate,
+  canManageClub = false,
   currentUserId,
   currentUserName,
 }: {
   initialActivities: ActivitySummaryDTO[];
   initialTasks: GroupTaskDTO[];
   canCreate: boolean;
+  canManageClub?: boolean;
   currentUserId: string;
   currentUserName: string;
 }) {
+  const router = useRouter();
   const searchParams = useSearchParams();
+  const [pending, startTransition] = useTransition();
+
+  // Optimistic / local state for immediate archive/restore feedback
+  const [activities, setActivities] =
+    useState<ActivitySummaryDTO[]>(initialActivities);
+
+  React.useEffect(() => {
+    setActivities(initialActivities);
+  }, [initialActivities]);
+
+  const initialScopeParam = searchParams.get("scope")?.toUpperCase();
+  const [scope, setScope] = useState<WorkspaceScope>(
+    initialScopeParam === "ARCHIVED" ||
+      searchParams.get("status") === "ARCHIVED"
+      ? "ARCHIVED"
+      : "ACTIVE",
+  );
+
   const [view, setView] = useState<ViewMode>(
     searchParams.get("view") === "moments"
       ? "MOMENTS"
@@ -55,38 +85,183 @@ export function ProjectCenterClient({
   );
   const [kind, setKind] = useState(searchParams.get("kind") || "ALL");
   const [status, setStatus] = useState(
-    searchParams.get("status") ||
-      (searchParams.get("view") === "moments" ? "ALL" : "ACTIVE"),
+    searchParams.get("status") && searchParams.get("status") !== "ARCHIVED"
+      ? searchParams.get("status")!
+      : searchParams.get("view") === "moments"
+        ? "ALL"
+        : "ACTIVE",
   );
+  const [rotaryYear, setRotaryYear] = useState("ALL");
   const [query, setQuery] = useState("");
+
+  const availableRotaryYears = useMemo(() => {
+    const years = new Set<string>();
+    for (const a of activities) {
+      if (a.rotaryYear) years.add(a.rotaryYear);
+    }
+    return Array.from(years).sort().reverse();
+  }, [activities]);
+
+  const activeActivities = useMemo(
+    () => activities.filter((a) => !a.isArchived),
+    [activities],
+  );
+  const archivedActivities = useMemo(
+    () => activities.filter((a) => Boolean(a.isArchived)),
+    [activities],
+  );
+
+  // Past finished activities that are still in Active workspace and can be bulk-archived
+  const archivableFinishedIds = useMemo(
+    () =>
+      activeActivities
+        .filter(
+          (a) =>
+            ["COMPLETED", "ACCOMPLISHED", "CANCELLED"].includes(a.status) &&
+            (canManageClub || a.ownerId === currentUserId),
+        )
+        .map((a) => a.id),
+    [activeActivities, canManageClub, currentUserId],
+  );
 
   const filtered = useMemo(() => {
     const text = query.trim().toLowerCase();
-    return initialActivities.filter((activity) => {
+    const pool = scope === "ARCHIVED" ? archivedActivities : activeActivities;
+    return pool.filter((activity) => {
       if (kind !== "ALL" && activity.kind !== kind) return false;
-      if (
-        status === "ACTIVE" &&
-        ["CANCELLED", "ACCOMPLISHED"].includes(activity.status)
-      )
+      if (rotaryYear !== "ALL" && activity.rotaryYear !== rotaryYear)
         return false;
-      if (status !== "ALL" && status !== "ACTIVE" && activity.status !== status)
-        return false;
+      if (scope === "ACTIVE") {
+        if (
+          status === "ACTIVE" &&
+          ["CANCELLED", "ACCOMPLISHED"].includes(activity.status)
+        )
+          return false;
+        if (
+          status !== "ALL" &&
+          status !== "ACTIVE" &&
+          activity.status !== status
+        )
+          return false;
+      } else {
+        if (
+          status !== "ALL" &&
+          status !== "ACTIVE" &&
+          activity.status !== status
+        )
+          return false;
+      }
       if (!text) return true;
       return [
         activity.title,
         activity.shortDescription,
         activity.location,
+        activity.ownerName,
       ].some((value) => value?.toLowerCase().includes(text));
     });
-  }, [initialActivities, kind, query, status]);
+  }, [
+    activeActivities,
+    archivedActivities,
+    kind,
+    query,
+    rotaryYear,
+    scope,
+    status,
+  ]);
 
-  const projectCount = initialActivities.filter((a) =>
+  function canManageActivity(activity: ActivitySummaryDTO) {
+    return canManageClub || activity.ownerId === currentUserId;
+  }
+
+  function handleToggleArchive(activity: ActivitySummaryDTO) {
+    const nextArchived = !activity.isArchived;
+    const nowIso = new Date().toISOString();
+
+    setActivities((prev) =>
+      prev.map((item) =>
+        item.id === activity.id
+          ? {
+              ...item,
+              isArchived: nextArchived,
+              archivedAt: nextArchived ? nowIso : null,
+            }
+          : item,
+      ),
+    );
+
+    startTransition(async () => {
+      const result = await archiveActivityAction(activity.id, nextArchived);
+      if (!result.success) {
+        // Revert optimistic update
+        setActivities((prev) =>
+          prev.map((item) =>
+            item.id === activity.id
+              ? {
+                  ...item,
+                  isArchived: Boolean(activity.isArchived),
+                  archivedAt: activity.archivedAt ?? null,
+                }
+              : item,
+          ),
+        );
+        notifyToast({
+          title: "Archive failed",
+          message: result.error,
+          kind: "error",
+        });
+        return;
+      }
+      notifyToast({
+        message:
+          result.message ||
+          (nextArchived ? "Moved to archive." : "Restored to active workspace."),
+        kind: "success",
+      });
+      router.refresh();
+    });
+  }
+
+  function handleBulkArchiveFinished() {
+    if (archivableFinishedIds.length === 0) return;
+    const nowIso = new Date().toISOString();
+    const targetSet = new Set(archivableFinishedIds);
+
+    setActivities((prev) =>
+      prev.map((item) =>
+        targetSet.has(item.id)
+          ? { ...item, isArchived: true, archivedAt: nowIso }
+          : item,
+      ),
+    );
+
+    startTransition(async () => {
+      const result = await bulkArchiveActivitiesAction(archivableFinishedIds);
+      if (!result.success) {
+        setActivities(initialActivities);
+        notifyToast({
+          title: "Bulk archive failed",
+          message: result.error,
+          kind: "error",
+        });
+        return;
+      }
+      notifyToast({
+        message:
+          result.message ||
+          `Archived ${result.count} finished ${result.count === 1 ? "activity" : "activities"}.`,
+        kind: "success",
+      });
+      router.refresh();
+    });
+  }
+
+  const projectCount = activeActivities.filter((a) =>
     ["SERVICE_PROJECT", "JOINT_PROJECT"].includes(a.kind),
   ).length;
-  const upcomingCount = initialActivities.filter(
-    (a) => new Date(a.startAt) >= new Date() && a.status !== "CANCELLED",
+  const upcomingCount = activeActivities.filter((a) =>
+    ["PLANNED", "ONGOING"].includes(a.status),
   ).length;
-  const awaitingReports = initialActivities.filter(
+  const awaitingReports = activeActivities.filter(
     (a) => a.status === "AWAITING_REPORT",
   ).length;
   const planned = filtered.filter((a) => a.status === "PLANNED");
@@ -115,30 +290,44 @@ export function ProjectCenterClient({
             Project Center
           </h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            One workspace for meetings, service, tasks and attendance.
+            One workspace for meetings, service, tasks, attendance and club archives.
           </p>
         </div>
-        {canCreate && (
-          <Link
-            href="/project-center/new"
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#0D3594] px-3.5 py-2 text-sm font-semibold text-white hover:bg-[#092569]"
-          >
-            <Plus className="h-4 w-4" /> New activity
-          </Link>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {scope === "ACTIVE" && archivableFinishedIds.length > 0 && (
+            <button
+              type="button"
+              disabled={pending}
+              onClick={handleBulkArchiveFinished}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-[#161B26] dark:text-slate-200 dark:hover:bg-slate-800 transition"
+              title="Move all completed, accomplished, and cancelled activities to the archive"
+            >
+              <FolderArchive className="h-3.5 w-3.5 text-slate-500" />
+              Archive {archivableFinishedIds.length} Finished
+            </button>
+          )}
+          {canCreate && (
+            <Link
+              href="/project-center/new"
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#0D3594] px-3.5 py-2 text-sm font-semibold text-white hover:bg-[#092569]"
+            >
+              <Plus className="h-4 w-4" /> New activity
+            </Link>
+          )}
+        </div>
       </header>
 
       <section
-        className="grid grid-cols-2 gap-3 sm:grid-cols-4"
+        className="grid grid-cols-2 gap-3 sm:grid-cols-5"
         aria-label="Project Center summary"
       >
         <SummaryMetric
-          label="Upcoming"
+          label="Active & Planned"
           value={upcomingCount}
           detail="scheduled activities"
         />
         <SummaryMetric
-          label="Projects"
+          label="Active Projects"
           value={projectCount}
           detail="service initiatives"
         />
@@ -153,11 +342,20 @@ export function ProjectCenterClient({
           value={initialTasks.filter((t) => t.status !== "COMPLETED").length}
           detail="across club activities"
         />
+        <SummaryMetric
+          label="Archived"
+          value={archivedActivities.length}
+          detail="historical records"
+        />
       </section>
 
-      {awaitingReports > 0 && (
+      {awaitingReports > 0 && scope === "ACTIVE" && (
         <Link
           href={`/project-center?status=AWAITING_REPORT`}
+          onClick={() => {
+            setScope("ACTIVE");
+            setStatus("AWAITING_REPORT");
+          }}
           className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200"
         >
           <span>
@@ -170,9 +368,91 @@ export function ProjectCenterClient({
         </Link>
       )}
 
+      {scope === "ARCHIVED" && (
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
+          <div className="flex items-center gap-2.5">
+            <Archive className="h-4 w-4 text-slate-500 shrink-0" />
+            <span>
+              <strong className="text-slate-900 dark:text-white">
+                Project Center Archive:
+              </strong>{" "}
+              Archived projects and activities are preserved read-only for District 3820 reporting, Rotary Showcase reference, and historical audit trails. You can restore any item back to the active workspace at any time.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setScope("ACTIVE");
+              setStatus("ACTIVE");
+            }}
+            className="shrink-0 font-semibold text-[#0D3594] hover:underline dark:text-blue-400"
+          >
+            Back to Active Workspace
+          </button>
+        </div>
+      )}
+
       <section className="space-y-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-2 overflow-x-auto">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Active vs Archived Scope Switcher */}
+            <div
+              className="inline-flex rounded-lg border border-[#EDEDF2] bg-white p-0.5 dark:border-slate-700 dark:bg-[#161B26]"
+              role="group"
+              aria-label="Workspace scope"
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setScope("ACTIVE");
+                  if (status === "ALL") setStatus("ACTIVE");
+                }}
+                aria-pressed={scope === "ACTIVE"}
+                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                  scope === "ACTIVE"
+                    ? "bg-[#0D3594] text-white"
+                    : "text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
+                }`}
+              >
+                <span>Active</span>
+                <span
+                  className={`rounded-full px-1.5 py-0.2 text-[10px] ${
+                    scope === "ACTIVE"
+                      ? "bg-white/20 text-white"
+                      : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+                  }`}
+                >
+                  {activeActivities.length}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setScope("ARCHIVED");
+                  setStatus("ALL");
+                  if (view === "TASKS") setView("LIST");
+                }}
+                aria-pressed={scope === "ARCHIVED"}
+                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                  scope === "ARCHIVED"
+                    ? "bg-[#0D3594] text-white"
+                    : "text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
+                }`}
+              >
+                <Archive className="h-3.5 w-3.5" />
+                <span>Archived</span>
+                <span
+                  className={`rounded-full px-1.5 py-0.2 text-[10px] ${
+                    scope === "ARCHIVED"
+                      ? "bg-white/20 text-white"
+                      : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+                  }`}
+                >
+                  {archivedActivities.length}
+                </span>
+              </button>
+            </div>
+
             <label htmlFor="activity-kind-filter" className="sr-only">
               Filter by activity type
             </label>
@@ -189,6 +469,7 @@ export function ProjectCenterClient({
                 </option>
               ))}
             </select>
+
             <label htmlFor="activity-status-filter" className="sr-only">
               Filter by status
             </label>
@@ -198,23 +479,53 @@ export function ProjectCenterClient({
               onChange={(e) => setStatus(e.target.value)}
               className="min-w-36 rounded-lg border border-[#EDEDF2] bg-white px-3 py-2 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-[#161B26] dark:text-slate-200"
             >
-              <option value="ACTIVE">Active & upcoming</option>
-              <option value="ALL">All statuses</option>
+              {scope === "ACTIVE" && (
+                <option value="ACTIVE">Active & upcoming</option>
+              )}
+              <option value="ALL">
+                {scope === "ARCHIVED" ? "All archived statuses" : "All statuses"}
+              </option>
               {ACTIVITY_STATUSES.map((s) => (
                 <option key={s} value={s}>
                   {ACTIVITY_STATUS_LABELS[s]}
                 </option>
               ))}
             </select>
+
+            {availableRotaryYears.length > 0 && (
+              <>
+                <label htmlFor="activity-ry-filter" className="sr-only">
+                  Filter by Rotary Year
+                </label>
+                <select
+                  id="activity-ry-filter"
+                  value={rotaryYear}
+                  onChange={(e) => setRotaryYear(e.target.value)}
+                  className="rounded-lg border border-[#EDEDF2] bg-white px-3 py-2 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-[#161B26] dark:text-slate-200"
+                >
+                  <option value="ALL">All Rotary Years</option>
+                  {availableRotaryYears.map((ry) => (
+                    <option key={ry} value={ry}>
+                      RY {ry}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
           </div>
+
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <label className="relative flex-1 sm:w-64">
+            <label className="relative flex-1 sm:w-60">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
               <span className="sr-only">Search activities</span>
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search activities"
+                placeholder={
+                  scope === "ARCHIVED"
+                    ? "Search archived projects..."
+                    : "Search activities..."
+                }
                 className="w-full rounded-lg border border-[#EDEDF2] bg-white py-2 pl-9 pr-3 text-xs dark:border-slate-700 dark:bg-[#161B26] dark:text-white"
               />
             </label>
@@ -253,8 +564,14 @@ export function ProjectCenterClient({
           </div>
         </div>
 
-        <div className="text-xs text-slate-500">
-          Showing {filtered.length} of {initialActivities.length} activities
+        <div className="flex items-center justify-between text-xs text-slate-500">
+          <span>
+            Showing {filtered.length} of{" "}
+            {scope === "ARCHIVED"
+              ? archivedActivities.length
+              : activeActivities.length}{" "}
+            {scope === "ARCHIVED" ? "archived" : "active"} activities
+          </span>
         </div>
 
         {view === "MOMENTS" ? (
@@ -327,6 +644,8 @@ export function ProjectCenterClient({
                       key={activity.id}
                       activity={activity}
                       layout="board"
+                      canManage={canManageActivity(activity)}
+                      onToggleArchive={handleToggleArchive}
                     />
                   ))}
                   {rows.length === 0 && (
@@ -340,66 +659,150 @@ export function ProjectCenterClient({
           </div>
         ) : filtered.length ? (
           <div className="overflow-hidden rounded-xl border border-[#EDEDF2] bg-white dark:border-slate-800 dark:bg-[#161B26]">
-            <div className="hidden grid-cols-[minmax(220px,2fr)_minmax(120px,1fr)_minmax(140px,1fr)_minmax(100px,.7fr)_minmax(120px,.8fr)] gap-4 border-b border-[#EDEDF2] bg-slate-50 px-4 py-2 text-[10px] font-bold uppercase text-slate-500 dark:border-slate-800 dark:bg-slate-900/50 md:grid">
+            <div className="hidden grid-cols-[minmax(220px,2fr)_minmax(120px,1fr)_minmax(140px,1fr)_minmax(90px,.6fr)_minmax(110px,.7fr)_minmax(90px,.5fr)] gap-4 border-b border-[#EDEDF2] bg-slate-50 px-4 py-2 text-[10px] font-bold uppercase text-slate-500 dark:border-slate-800 dark:bg-slate-900/50 md:grid">
               <span>Activity</span>
               <span>Type</span>
               <span>Schedule</span>
               <span>Members</span>
               <span>Status</span>
+              <span className="text-right">Actions</span>
             </div>
-            {filtered.map((activity) => (
-              <Link
-                key={activity.id}
-                href={`/project-center/${activity.id}`}
-                className="grid gap-2 border-b border-[#EDEDF2] px-4 py-3 last:border-0 hover:bg-slate-50/80 dark:border-slate-800 dark:hover:bg-slate-800/40 md:grid-cols-[minmax(220px,2fr)_minmax(120px,1fr)_minmax(140px,1fr)_minmax(100px,.7fr)_minmax(120px,.8fr)] md:items-center md:gap-4"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-[#111625] dark:text-white">
-                    {activity.title}
+            {filtered.map((activity) => {
+              const manageable = canManageActivity(activity);
+              return (
+                <div
+                  key={activity.id}
+                  className="grid gap-2 border-b border-[#EDEDF2] px-4 py-3 last:border-0 hover:bg-slate-50/80 dark:border-slate-800 dark:hover:bg-slate-800/40 md:grid-cols-[minmax(220px,2fr)_minmax(120px,1fr)_minmax(140px,1fr)_minmax(90px,.6fr)_minmax(110px,.7fr)_minmax(90px,.5fr)] md:items-center md:gap-4"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <Link
+                        href={`/project-center/${activity.id}`}
+                        className="truncate text-sm font-semibold text-[#111625] hover:text-[#0D3594] dark:text-white dark:hover:text-blue-300"
+                      >
+                        {activity.title}
+                      </Link>
+                      {activity.rotaryYear && (
+                        <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                          RY {activity.rotaryYear}
+                        </span>
+                      )}
+                    </div>
+                    {activity.shortDescription ? (
+                      <p className="mt-0.5 truncate text-xs text-slate-500">
+                        {activity.shortDescription}
+                      </p>
+                    ) : activity.archivedAt ? (
+                      <p className="mt-0.5 text-[11px] text-slate-400">
+                        Archived on {formatManilaDate(activity.archivedAt)}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div>
+                    <KindBadge
+                      kind={activity.kind}
+                      meetingType={activity.meetingType}
+                    />
+                  </div>
+                  <p className="text-xs text-slate-600 dark:text-slate-300">
+                    {formatActivityWhen(activity)}
                   </p>
-                  {activity.shortDescription && (
-                    <p className="mt-0.5 truncate text-xs text-slate-500">
-                      {activity.shortDescription}
-                    </p>
-                  )}
+                  <p className="text-xs text-slate-600 dark:text-slate-300">
+                    {activity.rsvp.going} going
+                    {activity.minMembersRequired
+                      ? ` / ${activity.minMembersRequired} min`
+                      : ""}
+                  </p>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <ActivityStatusBadge status={activity.status} />
+                    {activity.isArchived && (
+                      <span className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                        Archived
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-end gap-2">
+                    {manageable ? (
+                      <button
+                        type="button"
+                        disabled={pending}
+                        onClick={() => handleToggleArchive(activity)}
+                        title={
+                          activity.isArchived
+                            ? "Restore project to active workspace"
+                            : "Archive this project"
+                        }
+                        className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition disabled:opacity-50 ${
+                          activity.isArchived
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
+                            : "border-slate-200 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                        }`}
+                      >
+                        {activity.isArchived ? (
+                          <>
+                            <ArchiveRestore className="h-3.5 w-3.5" />
+                            <span>Restore</span>
+                          </>
+                        ) : (
+                          <>
+                            <Archive className="h-3.5 w-3.5" />
+                            <span>Archive</span>
+                          </>
+                        )}
+                      </button>
+                    ) : (
+                      <Link
+                        href={`/project-center/${activity.id}`}
+                        className="text-xs font-semibold text-[#0D3594] hover:underline dark:text-blue-400"
+                      >
+                        View
+                      </Link>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <KindBadge
-                    kind={activity.kind}
-                    meetingType={activity.meetingType}
-                  />
-                </div>
-                <p className="text-xs text-slate-600 dark:text-slate-300">
-                  {formatActivityWhen(activity)}
-                </p>
-                <p className="text-xs text-slate-600 dark:text-slate-300">
-                  {activity.rsvp.going} going
-                  {activity.minMembersRequired
-                    ? ` / ${activity.minMembersRequired} min`
-                    : ""}
-                </p>
-                <div>
-                  <ActivityStatusBadge status={activity.status} />
-                </div>
-              </Link>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="rounded-xl border border-dashed border-slate-300 px-6 py-14 text-center dark:border-slate-700">
-            <SlidersHorizontal className="mx-auto h-6 w-6 text-slate-400" />
-            <h2 className="mt-3 text-sm font-semibold text-[#111625] dark:text-white">
-              No activities match these filters
-            </h2>
-            <p className="mt-1 text-xs text-slate-500">
-              Adjust your filters or create a new activity.
-            </p>
-            {canCreate && (
-              <Link
-                href="/project-center/new"
-                className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-[#0D3594] dark:text-blue-300"
-              >
-                <Plus className="h-3.5 w-3.5" /> Create activity
-              </Link>
+            {scope === "ARCHIVED" ? (
+              <>
+                <Archive className="mx-auto h-6 w-6 text-slate-400" />
+                <h2 className="mt-3 text-sm font-semibold text-[#111625] dark:text-white">
+                  No archived projects or activities
+                </h2>
+                <p className="mt-1 text-xs text-slate-500">
+                  When old or completed projects are archived, they will appear here for safe historical reference.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScope("ACTIVE");
+                    setStatus("ACTIVE");
+                  }}
+                  className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-[#0D3594] dark:text-blue-300"
+                >
+                  View active activities
+                </button>
+              </>
+            ) : (
+              <>
+                <SlidersHorizontal className="mx-auto h-6 w-6 text-slate-400" />
+                <h2 className="mt-3 text-sm font-semibold text-[#111625] dark:text-white">
+                  No activities match these filters
+                </h2>
+                <p className="mt-1 text-xs text-slate-500">
+                  Adjust your filters or create a new activity.
+                </p>
+                {canCreate && (
+                  <Link
+                    href="/project-center/new"
+                    className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-[#0D3594] dark:text-blue-300"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Create activity
+                  </Link>
+                )}
+              </>
             )}
           </div>
         )}

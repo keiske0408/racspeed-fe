@@ -9,6 +9,7 @@ export interface RuleResult {
 
 interface CheckInActivity {
   status: ActivityStatus;
+  isArchived?: boolean;
   selfCheckInEnabled: boolean;
   startAt: string;
   endAt: string;
@@ -48,6 +49,9 @@ export function evaluateSelfCheckIn(input: {
       reason:
         "Self check-in is turned off for this activity. Scan the QR code instead.",
     };
+  if (activity.isArchived) {
+    return { allowed: false, reason: "This activity is archived." };
+  }
   if (activity.status === "CANCELLED" || activity.status === "DRAFT") {
     return {
       allowed: false,
@@ -82,6 +86,7 @@ export function minMembersStatus(
 
 export function evaluateRsvp(input: {
   status: ActivityStatus;
+  isArchived?: boolean;
   rsvpEnabled: boolean;
   rsvpDeadline: string | null;
   startAt: string;
@@ -97,6 +102,8 @@ export function evaluateRsvp(input: {
       allowed: false,
       reason: "Only active members and aspirants can RSVP.",
     };
+  if (input.isArchived)
+    return { allowed: false, reason: "This activity is archived." };
   if (!input.rsvpEnabled)
     return { allowed: false, reason: "RSVP is not enabled for this activity." };
   if (!["PLANNED", "ONGOING"].includes(input.status)) {
@@ -193,3 +200,37 @@ export function isQrCheckInApplicable(input: {
   }
   return true;
 }
+
+export function resolveArchiveState(input: {
+  is_archived?: boolean | null;
+  archived_at?: string | null;
+  activity_log?: { action: string; created_at: string }[] | null;
+}): { isArchived: boolean; archivedAt: string | null } {
+  const archiveEvents = (input.activity_log || [])
+    .filter((entry) => entry.action === "ARCHIVED" || entry.action === "UNARCHIVED")
+    .sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
+
+  if (archiveEvents.length > 0) {
+    const latest = archiveEvents[0];
+    if (latest.action === "ARCHIVED") {
+      return {
+        isArchived: true,
+        archivedAt: input.archived_at || latest.created_at || null,
+      };
+    }
+    return { isArchived: false, archivedAt: null };
+  }
+
+  if (input.is_archived !== undefined && input.is_archived !== null) {
+    return {
+      isArchived: Boolean(input.is_archived),
+      archivedAt: input.is_archived ? input.archived_at || null : null,
+    };
+  }
+
+  return { isArchived: false, archivedAt: null };
+}
+

@@ -18,7 +18,8 @@
       "partnerships",
       "resources",
       "certificates",
-      "settings"
+      "settings",
+      "project-center"
     ],
     "allowedPermissions": [
       "MEMBER_VIEW",
@@ -39,18 +40,14 @@
       "PROJECT_SUBMIT_REPORT",
       "REPORT_APPROVE",
       "REPORT_TEMPLATE_MANAGE",
-      "NOTIFICATION_SEND",
       "CERTIFICATE_GENERATE",
       "TREASURY_VIEW",
-      "INVOICE_CREATE",
       "PAYMENT_SUBMIT",
-      "PAYMENT_VERIFY",
-      "LEDGER_ADJUST",
       "BUDGET_REQUEST",
       "BUDGET_APPROVE_PRESIDENT",
-      "DISBURSEMENT_RECORD",
       "LIQUIDATION_SUBMIT",
       "LIQUIDATION_VERIFY",
+      "NOTIFICATION_SEND",
       "AUDIT_LOG_VIEW",
       "SETTINGS_MANAGE",
       "DATA_EXPORT"

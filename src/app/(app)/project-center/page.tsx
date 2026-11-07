@@ -34,6 +34,7 @@ export default async function ProjectCenterPage() {
       initialActivities={activities}
       initialTasks={tasks}
       canCreate={canCreate}
+      canManageClub={canManageClub}
       currentUserId={context.user.id}
       currentUserName={context.user.fullName}
     />

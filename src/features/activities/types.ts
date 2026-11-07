@@ -212,6 +212,9 @@ export interface ActivitySummaryDTO {
   commentsCount: number;
   mediaCount?: number;
   coverUrl: string | null;
+  rotaryYear?: string;
+  isArchived?: boolean;
+  archivedAt?: string | null;
 }
 
 export interface ActivityProjectDetailsDTO {

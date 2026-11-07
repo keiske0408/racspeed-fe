@@ -55,7 +55,10 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="min-h-full flex flex-col bg-[#F8F9FB] dark:bg-[#0A0D14] text-[#111625] dark:text-[#F8FAFC] transition-colors duration-200">
+      <body
+        suppressHydrationWarning
+        className="min-h-full flex flex-col bg-[#F8F9FB] dark:bg-[#0A0D14] text-[#111625] dark:text-[#F8FAFC] transition-colors duration-200"
+      >
         {children}
         <PwaRegister />
       </body>

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   ACTIVITY_KINDS,
+  ACTIVITY_STATUSES,
   AREAS_OF_FOCUS,
   COMMITTEES,
   MEETING_TYPES,
@@ -40,6 +41,7 @@ const NON_PROJECT_KINDS = ACTIVITY_KINDS.filter(
 
 const baseShape = {
   clubId: uuidString,
+  ownerId: uuidString.optional(),
   title: z
     .string()
     .trim()
@@ -52,7 +54,7 @@ const baseShape = {
   endAt: localDateTime,
   allDay: z.boolean().default(false),
   committee: z.enum(COMMITTEES).optional(),
-  status: z.enum(["DRAFT", "PLANNED"]).default("PLANNED"),
+  status: z.enum(ACTIVITY_STATUSES).default("PLANNED"),
   minMembersEnabled: z.boolean().default(false),
   minMembersRequired: optionalPositiveInt,
   capacity: optionalPositiveInt,

@@ -5,6 +5,7 @@ import {
   getActivityTasks,
   isClubParticipant,
 } from "@/features/activities/queries";
+import { getClubMembersList } from "@/features/members/queries";
 import { ActivityDetailClient } from "./activity-detail-client";
 
 export const dynamic = "force-dynamic";
@@ -28,12 +29,13 @@ export default async function ActivityDetailPage({
   const canManageAttendance =
     context.isPlatformAdmin || context.permissions.has("ATTENDANCE_MANAGE");
 
-  const [detail, tasks] = await Promise.all([
+  const [detail, tasks, members] = await Promise.all([
     getActivityDetail(activityId, context.user.id, {
       canManageClub,
       canManageAttendance,
     }),
     getActivityTasks(clubId, activityId),
+    getClubMembersList(clubId),
   ]);
   if (!detail) notFound();
   if (!detail.isPublished && !detail.canManage && !context.isPlatformAdmin)
@@ -52,6 +54,8 @@ export default async function ActivityDetailPage({
       currentUserId={context.user.id}
       canCreateTasks={canManageClub || detail.canManage}
       canManageClub={canManageClub || detail.canManage}
+      isPlatformAdmin={context.isPlatformAdmin}
+      members={members}
     />
   );
 }

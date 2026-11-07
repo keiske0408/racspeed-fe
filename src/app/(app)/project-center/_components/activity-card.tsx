@@ -2,7 +2,16 @@
 
 import React from "react";
 import Link from "next/link";
-import { CheckSquare, Clock, MapPin, MessageSquare, Users, Sparkles } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  CheckSquare,
+  Clock,
+  MapPin,
+  MessageSquare,
+  Sparkles,
+  Users,
+} from "lucide-react";
 import { formatManila } from "@/lib/utils/dates";
 import {
   ACTIVITY_KIND_META,
@@ -29,6 +38,7 @@ export function formatActivityWhen(
 }
 
 export function isRsvpOpen(a: ActivitySummaryDTO, now = new Date()) {
+  if (a.isArchived) return false;
   if (!a.rsvpEnabled || !["PLANNED", "ONGOING"].includes(a.status))
     return false;
   const deadline = new Date(a.rsvpDeadline || a.startAt);
@@ -38,9 +48,13 @@ export function isRsvpOpen(a: ActivitySummaryDTO, now = new Date()) {
 export function ActivityCard({
   activity,
   layout = "grid",
+  canManage = false,
+  onToggleArchive,
 }: {
   activity: ActivitySummaryDTO;
   layout?: "grid" | "board";
+  canManage?: boolean;
+  onToggleArchive?: (activity: ActivitySummaryDTO) => void;
 }) {
   const meta = ACTIVITY_KIND_META[activity.kind];
   const minStatus = minMembersStatus(
@@ -50,7 +64,13 @@ export function ActivityCard({
   const rsvpOpen = isRsvpOpen(activity);
 
   return (
-    <div className="group relative rounded-2xl border border-[#EDEDF2] dark:border-slate-800 bg-white dark:bg-[#161B26] overflow-hidden hover:shadow-md hover:border-slate-300 dark:hover:border-slate-700 transition">
+    <div
+      className={`group relative rounded-2xl border overflow-hidden hover:shadow-md transition ${
+        activity.isArchived
+          ? "border-slate-200/80 dark:border-slate-800/80 bg-slate-50/70 dark:bg-[#131722] opacity-90"
+          : "border-[#EDEDF2] dark:border-slate-800 bg-white dark:bg-[#161B26] hover:border-slate-300 dark:hover:border-slate-700"
+      }`}
+    >
       {layout === "grid" &&
         (activity.coverUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -66,6 +86,12 @@ export function ActivityCard({
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 flex-wrap">
             <KindBadge kind={activity.kind} meetingType={activity.meetingType} />
+            {activity.isArchived && (
+              <span className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                <Archive className="h-2.5 w-2.5" />
+                Archived
+              </span>
+            )}
             {activity.qrCheckInEnabled === false && (
               <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
                 <Sparkles className="h-2.5 w-2.5 text-amber-500" />
@@ -142,6 +168,34 @@ export function ActivityCard({
             <span className="ml-auto text-emerald-600 font-semibold">
               Checked in
             </span>
+          )}
+          {canManage && onToggleArchive && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onToggleArchive(activity);
+              }}
+              title={
+                activity.isArchived
+                  ? "Restore to Active Workspace"
+                  : "Archive Activity"
+              }
+              className="relative z-10 ml-auto inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition"
+            >
+              {activity.isArchived ? (
+                <>
+                  <ArchiveRestore className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+                  Restore
+                </>
+              ) : (
+                <>
+                  <Archive className="h-3 w-3 text-slate-500" />
+                  Archive
+                </>
+              )}
+            </button>
           )}
         </div>
 

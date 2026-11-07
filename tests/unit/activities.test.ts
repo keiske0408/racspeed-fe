@@ -8,6 +8,7 @@ import {
   evaluateSelfCheckIn,
   isQrCheckInApplicable,
   minMembersStatus,
+  resolveArchiveState,
 } from "@/features/activities/rules";
 import {
   DEFAULT_REWARD_POINTS,
@@ -309,5 +310,85 @@ describe("QR attendance applicability and toggle", () => {
         category: "SERVICE PROJECT",
       })
     ).toBe(true);
+  });
+  it("accepts an explicit ownerId and permits statuses like ONGOING or COMPLETED", () => {
+    const parsed = createActivitySchema.safeParse({
+      ...base,
+      kind: "SERVICE_PROJECT",
+      ownerId: "00000000-0000-0000-0000-000000000099",
+      status: "ONGOING",
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.ownerId).toBe("00000000-0000-0000-0000-000000000099");
+      expect(parsed.data.status).toBe("ONGOING");
+    }
+  });
+  it("resolves archive state from explicit columns or activity_log audit trail and blocks RSVP/check-in when archived", () => {
+    expect(
+      resolveArchiveState({
+        is_archived: true,
+        archived_at: "2026-11-05T10:00:00Z",
+      }),
+    ).toEqual({
+      isArchived: true,
+      archivedAt: "2026-11-05T10:00:00Z",
+    });
+
+    expect(
+      resolveArchiveState({
+        activity_log: [
+          { action: "CREATED", created_at: "2026-10-01T08:00:00Z" },
+          { action: "ARCHIVED", created_at: "2026-11-01T09:00:00Z" },
+        ],
+      }),
+    ).toEqual({
+      isArchived: true,
+      archivedAt: "2026-11-01T09:00:00Z",
+    });
+
+    expect(
+      resolveArchiveState({
+        activity_log: [
+          { action: "ARCHIVED", created_at: "2026-11-01T09:00:00Z" },
+          { action: "UNARCHIVED", created_at: "2026-11-02T12:00:00Z" },
+        ],
+      }),
+    ).toEqual({
+      isArchived: false,
+      archivedAt: null,
+    });
+
+    expect(
+      evaluateRsvp({
+        status: "PLANNED",
+        isArchived: true,
+        rsvpEnabled: true,
+        rsvpDeadline: null,
+        startAt: "2026-11-07T09:00:00.000Z",
+        capacity: 10,
+        goingCount: 2,
+        currentResponse: null,
+        nextResponse: "GOING",
+        isParticipant: true,
+        now: new Date("2026-11-01T00:00:00Z"),
+      }).allowed,
+    ).toBe(false);
+
+    expect(
+      evaluateSelfCheckIn({
+        activity: {
+          status: "PLANNED",
+          isArchived: true,
+          selfCheckInEnabled: true,
+          startAt: "2026-11-07T09:00:00.000Z",
+          endAt: "2026-11-07T12:00:00.000Z",
+          checkInWindowMinutes: 180,
+        },
+        now: new Date("2026-11-07T09:15:00.000Z"),
+        isParticipant: true,
+        alreadyCheckedIn: false,
+      }).allowed,
+    ).toBe(false);
   });
 });

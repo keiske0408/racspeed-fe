@@ -327,8 +327,8 @@ export function BroadcastsClient({
               <option value="" disabled>
                 Select scheduled event / project...
               </option>
-              {sources.map((src) => (
-                <option key={src.id} value={src.id}>
+              {sources.map((src, index) => (
+                <option key={`${src.id}-${index}`} value={src.id}>
                   [{src.type.toUpperCase()}] {src.title} ({src.dateStr})
                 </option>
               ))}
