@@ -18,9 +18,20 @@ interface PartnershipsStore {
 
 const STORAGE_FILE = path.join(process.cwd(), "src", "lib", "data", "partnerships-store.json");
 
+export const LEGACY_ID_MAP: Record<string, string> = {
+  "sc-1": "00000000-0000-0000-0001-000000000001",
+  "sc-2": "00000000-0000-0000-0001-000000000002",
+  "sc-3": "00000000-0000-0000-0001-000000000003",
+  "sc-4": "00000000-0000-0000-0001-000000000004",
+};
+
+export function normalizeSisterClubId(id: string): string {
+  return LEGACY_ID_MAP[id] || id;
+}
+
 export const SEED_SISTER_CLUBS: StoredSisterClub[] = [
   {
-    id: "sc-1",
+    id: "00000000-0000-0000-0001-000000000001",
     partnerClubName: "Rotaract Club of Manila Metro",
     district: "3810",
     country: "Philippines",
@@ -35,7 +46,7 @@ export const SEED_SISTER_CLUBS: StoredSisterClub[] = [
     initiativesCount: 3,
   },
   {
-    id: "sc-2",
+    id: "00000000-0000-0000-0001-000000000002",
     partnerClubName: "Rotaract Club of Taipei Diamond",
     district: "3521",
     country: "Taiwan",
@@ -50,7 +61,7 @@ export const SEED_SISTER_CLUBS: StoredSisterClub[] = [
     initiativesCount: 2,
   },
   {
-    id: "sc-3",
+    id: "00000000-0000-0000-0001-000000000003",
     partnerClubName: "Rotary Club of San Pedro East (Sponsor Club)",
     district: "3820",
     country: "Philippines",
@@ -65,7 +76,7 @@ export const SEED_SISTER_CLUBS: StoredSisterClub[] = [
     initiativesCount: 3,
   },
   {
-    id: "sc-4",
+    id: "00000000-0000-0000-0001-000000000004",
     partnerClubName: "Rotaract Club of Bangkok South",
     district: "3350",
     country: "Thailand",
@@ -84,7 +95,7 @@ export const SEED_SISTER_CLUBS: StoredSisterClub[] = [
 export const SEED_INITIATIVES: StoredInitiative[] = [
   {
     id: "init-fallback-1",
-    sisterClubId: "sc-1",
+    sisterClubId: "00000000-0000-0000-0001-000000000001",
     title: "Dual-Club Coastal Mangrove Reforestation Drive",
     description: "Joint youth environmental conservation drive at Las Piñas-Parañaque Wetland Park planting 500 propagules.",
     jointVolunteers: 35,
@@ -94,7 +105,7 @@ export const SEED_INITIATIVES: StoredInitiative[] = [
   },
   {
     id: "init-fallback-2",
-    sisterClubId: "sc-1",
+    sisterClubId: "00000000-0000-0000-0001-000000000001",
     title: "Metro-Laguna Youth Leadership Academy (RYLA)",
     description: "Weekend leadership workshop and vocational skill sessions for 50 public high school student council leaders.",
     jointVolunteers: 20,
@@ -104,7 +115,7 @@ export const SEED_INITIATIVES: StoredInitiative[] = [
   },
   {
     id: "init-fallback-3",
-    sisterClubId: "sc-1",
+    sisterClubId: "00000000-0000-0000-0001-000000000001",
     title: "Basic Literacy Book & School Supplies Distribution",
     description: "Donation drive targeting 300 elementary school students in underserved coastal communities.",
     jointVolunteers: 15,
@@ -114,7 +125,7 @@ export const SEED_INITIATIVES: StoredInitiative[] = [
   },
   {
     id: "init-fallback-4",
-    sisterClubId: "sc-2",
+    sisterClubId: "00000000-0000-0000-0001-000000000002",
     title: "Cross-Strait Virtual Cultural Exchange & Fellowship Forum",
     description: "Online forum exploring technology adoption and micro-grants in community service.",
     jointVolunteers: 40,
@@ -124,7 +135,7 @@ export const SEED_INITIATIVES: StoredInitiative[] = [
   },
   {
     id: "init-fallback-5",
-    sisterClubId: "sc-2",
+    sisterClubId: "00000000-0000-0000-0001-000000000002",
     title: "Global Grant Water Filtration Feasibility Study",
     description: "Joint proposal drafting for clean potable water facilities in rural Laguna communities.",
     jointVolunteers: 12,
@@ -134,7 +145,7 @@ export const SEED_INITIATIVES: StoredInitiative[] = [
   },
   {
     id: "init-fallback-6",
-    sisterClubId: "sc-3",
+    sisterClubId: "00000000-0000-0000-0001-000000000003",
     title: "Annual End Polio Now Bike & Walkathon",
     description: "Fundraising walk for Rotary International PolioPlus fund with 150 community participants.",
     jointVolunteers: 60,
@@ -144,7 +155,7 @@ export const SEED_INITIATIVES: StoredInitiative[] = [
   },
   {
     id: "init-fallback-7",
-    sisterClubId: "sc-3",
+    sisterClubId: "00000000-0000-0000-0001-000000000003",
     title: "Clean Water Installation at San Antonio Elementary",
     description: "Installation of 3 multi-stage UV water dispensers for 800 elementary students.",
     jointVolunteers: 25,
@@ -154,7 +165,7 @@ export const SEED_INITIATIVES: StoredInitiative[] = [
   },
   {
     id: "init-fallback-8",
-    sisterClubId: "sc-3",
+    sisterClubId: "00000000-0000-0000-0001-000000000003",
     title: "Vocational Career Clinic for Graduating Scholars",
     description: "Resume writing and mock interview prep conducted by Rotarian business leaders.",
     jointVolunteers: 18,
@@ -164,7 +175,7 @@ export const SEED_INITIATIVES: StoredInitiative[] = [
   },
   {
     id: "init-fallback-9",
-    sisterClubId: "sc-4",
+    sisterClubId: "00000000-0000-0000-0001-000000000004",
     title: "Twin Club Friendship Itinerary Alignment",
     description: "Planning bilateral club delegation visits for upcoming District 3820 DISAS.",
     jointVolunteers: 10,
@@ -209,6 +220,11 @@ export function readPartnershipsStore(): PartnershipsStore {
     // If file exists but customClubs is empty, seed initial clubs
     if (customClubs.length === 0) {
       customClubs = [...SEED_SISTER_CLUBS];
+    } else {
+      customClubs = customClubs.map((club: any) => ({
+        ...club,
+        id: normalizeSisterClubId(club.id),
+      }));
     }
 
     // If initiatives are empty, seed initial initiatives
@@ -217,6 +233,7 @@ export function readPartnershipsStore(): PartnershipsStore {
     } else {
       initiatives = initiatives.map((init: any) => ({
         ...init,
+        sisterClubId: normalizeSisterClubId(init.sisterClubId),
         status: (init.status as InitiativeStatus) || "IN_PROGRESS",
       }));
     }

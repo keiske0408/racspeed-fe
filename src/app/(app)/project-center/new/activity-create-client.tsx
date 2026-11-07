@@ -8,6 +8,7 @@ import {
   ArrowRight,
   ClipboardList,
   HeartHandshake,
+  Plus,
   Users,
   X,
 } from "lucide-react";
@@ -67,6 +68,7 @@ export function ActivityCreateClient({
   canCreateEvent,
   canCreateProject,
   partnerClubs,
+  members = [],
 }: {
   clubId?: string;
   initialKind: string | null;
@@ -79,6 +81,12 @@ export function ActivityCreateClient({
     name: string;
     district: string;
     country: string;
+  }[];
+  members?: {
+    id: string;
+    fullName: string;
+    role?: string;
+    avatarUrl?: string | null;
   }[];
 }) {
   const router = useRouter();
@@ -100,7 +108,28 @@ export function ActivityCreateClient({
       );
     return initialPartner ? [initialPartner.id] : [];
   });
+  const [selectedPartnerDropdown, setSelectedPartnerDropdown] = useState("");
+  const [committeeMembers, setCommitteeMembers] = useState<
+    { profileId: string; role: "COMMITTEE" | "CO_CHAIR" | "VOLUNTEER" }[]
+  >([]);
+  const [selectedMemberId, setSelectedMemberId] = useState("");
+  const [selectedRole, setSelectedRole] = useState<"COMMITTEE" | "CO_CHAIR" | "VOLUNTEER">("COMMITTEE");
   const [isPending, startTransition] = useTransition();
+
+  function addCommitteeMember() {
+    if (!selectedMemberId) return;
+    if (committeeMembers.some((c) => c.profileId === selectedMemberId)) return;
+    setCommitteeMembers((prev) => [
+      ...prev,
+      { profileId: selectedMemberId, role: selectedRole },
+    ]);
+    setSelectedMemberId("");
+    setSelectedRole("COMMITTEE");
+  }
+
+  function removeCommitteeMember(profileId: string) {
+    setCommitteeMembers((prev) => prev.filter((c) => c.profileId !== profileId));
+  }
   const selectedPartnerClubs = selectedPartnerIds.flatMap((partnerId) => {
     const partner = partnerClubs.find((club) => club.id === partnerId);
     return partner ? [partner] : [];
@@ -148,6 +177,15 @@ export function ActivityCreateClient({
         ) === index,
     );
 
+    if (kind === "JOINT_PROJECT" && selectedPartners.length === 0 && partners.length === 0) {
+      notifyToast({
+        title: "Partnership required",
+        message: "Please select at least one partner club or collaborating organization for a joint project.",
+        kind: "error",
+      });
+      return;
+    }
+
     const payload = {
       clubId,
       kind,
@@ -171,6 +209,7 @@ export function ActivityCreateClient({
       qrCheckInEnabled: qrCheckIn,
       checkInWindowMinutes: Number(data.get("checkInWindowMinutes") || 180),
       volunteerHoursDefault: Number(data.get("volunteerHoursDefault") || 0),
+      committeeMembers,
       ...(kind === "MEETING"
         ? { meetingType: String(data.get("meetingType") || "GENERAL_ASSEMBLY") }
         : {}),
@@ -338,7 +377,7 @@ export function ActivityCreateClient({
             />
           </Field>
           {kind === "MEETING" && (
-            <Field label="Meeting type">
+            <Field label="Meeting type" required>
               <select
                 name="meetingType"
                 defaultValue="GENERAL_ASSEMBLY"
@@ -371,6 +410,87 @@ export function ActivityCreateClient({
                 className={inputClass}
               />
             </Field>
+          </div>
+
+          {/* Project Committee & Team */}
+          <div className="space-y-3 rounded-xl border border-[#EDEDF2] bg-white p-4 dark:border-slate-800 dark:bg-[#161B26]">
+            <div>
+              <h3 className="text-xs font-bold text-[#111625] dark:text-white flex items-center gap-1.5">
+                <Users className="h-4 w-4 text-[#0D3594] dark:text-blue-400" />
+                Project Committee &amp; Team
+              </h3>
+              <p className="mt-0.5 text-[11px] text-slate-500">
+                Appoint committee members to coordinate, assign tasks, and lead this project. They will automatically be notified.
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <select
+                value={selectedMemberId}
+                onChange={(e) => setSelectedMemberId(e.target.value)}
+                className={`flex-1 ${inputClass}`}
+              >
+                <option value="">Select a member or officer to appoint...</option>
+                {members
+                  .filter((m) => !committeeMembers.some((c) => c.profileId === m.id))
+                  .map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.fullName} {m.role ? `(${m.role.replaceAll("_", " ")})` : ""}
+                    </option>
+                  ))}
+              </select>
+
+              <select
+                value={selectedRole}
+                onChange={(e) =>
+                  setSelectedRole(
+                    e.target.value as "COMMITTEE" | "CO_CHAIR" | "VOLUNTEER",
+                  )
+                }
+                className={`w-full sm:w-36 ${inputClass}`}
+              >
+                <option value="COMMITTEE">Committee</option>
+                <option value="CO_CHAIR">Co-Chair</option>
+                <option value="VOLUNTEER">Volunteer</option>
+              </select>
+
+              <button
+                type="button"
+                disabled={!selectedMemberId}
+                onClick={addCommitteeMember}
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#0D3594] px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-900 disabled:opacity-50 transition cursor-pointer"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add Member
+              </button>
+            </div>
+
+            {committeeMembers.length > 0 && (
+              <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                {committeeMembers.map((cm) => {
+                  const member = members.find((m) => m.id === cm.profileId);
+                  return (
+                    <div
+                      key={cm.profileId}
+                      className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-800 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200"
+                    >
+                      <span className="font-semibold">{member?.fullName || "Member"}</span>
+                      <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-800 dark:bg-blue-900/60 dark:text-blue-300">
+                        {cm.role.replaceAll("_", " ")}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeCommitteeMember(cm.profileId)}
+                        className="text-slate-400 hover:text-rose-600 p-0.5 rounded cursor-pointer"
+                        aria-label="Remove committee member"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Starts" required>
@@ -488,19 +608,30 @@ export function ActivityCreateClient({
                 ))}
               </div>
             </Field>
-            <Field label="Partnerships" required={kind === "JOINT_PROJECT"}>
+            <Field
+              label="Partnerships (Sister / Partner Clubs)"
+              required={kind === "JOINT_PROJECT"}
+              hint={
+                kind === "JOINT_PROJECT"
+                  ? "Select one or more sister or partner clubs co-implementing this project."
+                  : "Optionally link any sister or partner clubs collaborating on this activity."
+              }
+            >
               <div className="mb-2 flex flex-wrap gap-2">
                 {selectedPartnerClubs.map((partner) => (
                   <div
                     key={partner.id}
-                    className="inline-flex max-w-full items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-xs text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100"
+                    className="inline-flex max-w-full items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100"
                   >
                     <input
                       type="hidden"
                       name="sisterClubId"
                       value={partner.id}
                     />
-                    <span className="min-w-0 break-words">{partner.name}</span>
+                    <span className="min-w-0 break-words font-medium">{partner.name}</span>
+                    <span className="text-[10px] text-emerald-700 dark:text-emerald-300">
+                      (D{partner.district})
+                    </span>
                     <button
                       type="button"
                       aria-label={`Remove partner ${partner.name}`}
@@ -512,7 +643,7 @@ export function ActivityCreateClient({
                           ),
                         )
                       }
-                      className="shrink-0 rounded p-1 hover:bg-emerald-100 focus-visible:ring-2 focus-visible:ring-emerald-600 dark:hover:bg-emerald-900"
+                      className="shrink-0 rounded p-1 hover:bg-emerald-100 focus-visible:ring-2 focus-visible:ring-emerald-600 dark:hover:bg-emerald-900 cursor-pointer text-emerald-800 dark:text-emerald-200"
                     >
                       <X className="h-3.5 w-3.5" aria-hidden="true" />
                     </button>
@@ -521,23 +652,30 @@ export function ActivityCreateClient({
               </div>
               <select
                 aria-label="Add partnership"
-                value=""
-                required={
-                  kind === "JOINT_PROJECT" && selectedPartnerIds.length === 0
-                }
-                disabled={selectedPartnerIds.length >= 20}
+                value={selectedPartnerDropdown}
+                disabled={partnerClubs.filter((c) => !selectedPartnerIds.includes(c.id)).length === 0}
                 onChange={(event) => {
                   const partnerId = event.target.value;
-                  if (partnerId)
+                  if (partnerId) {
                     setSelectedPartnerIds((previous) =>
                       previous.includes(partnerId)
                         ? previous
                         : [...previous, partnerId],
                     );
+                    setSelectedPartnerDropdown("");
+                  }
                 }}
                 className={inputClass}
               >
-                <option value="">Add from all partnerships</option>
+                <option value="">
+                  {partnerClubs.filter((c) => !selectedPartnerIds.includes(c.id)).length === 0
+                    ? partnerClubs.length === 0
+                      ? "No partner clubs registered yet"
+                      : "All available partner clubs added"
+                    : selectedPartnerIds.length === 0
+                      ? "+ Select a sister or partner club..."
+                      : `+ Add another partner club (${partnerClubs.filter((c) => !selectedPartnerIds.includes(c.id)).length} remaining)...`}
+                </option>
                 {partnerClubs
                   .filter((club) => !selectedPartnerIds.includes(club.id))
                   .map((club) => (
@@ -555,24 +693,22 @@ export function ActivityCreateClient({
                 </Link>
               )}
             </Field>
-            {kind !== "JOINT_PROJECT" && (
-              <Field
-                label="Partner organizations"
-                hint="Add partners later from the activity detail page."
-              >
-                <input
-                  name="partnerName"
-                  maxLength={200}
-                  placeholder="Partner organization name"
-                  className={inputClass}
-                />
-                <input
-                  type="hidden"
-                  name="partnerRole"
-                  value="IMPLEMENTING_PARTNER"
-                />
-              </Field>
-            )}
+            <Field
+              label="Additional partner organizations"
+              hint="External non-Rotary partners, NGOs, LGUs, or corporate co-organizers."
+            >
+              <input
+                name="partnerName"
+                maxLength={200}
+                placeholder="Partner organization name"
+                className={inputClass}
+              />
+              <input
+                type="hidden"
+                name="partnerRole"
+                value="IMPLEMENTING_PARTNER"
+              />
+            </Field>
           </section>
         )}
 
@@ -715,7 +851,7 @@ function Field({
     <label className="block space-y-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200">
       <span>
         {label}
-        {required && <span className="ml-1 text-rose-600">*</span>}
+        {required && <span className="text-rose-500 font-bold ml-0.5">*</span>}
       </span>
       {children}
       {hint && (

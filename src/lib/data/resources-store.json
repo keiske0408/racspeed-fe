@@ -1,36 +1,47 @@
 [
   {
-    "id": "res-001",
+    "id": "res-1794054186799-yt1ds",
     "clubId": "00000000-0000-0000-0000-000000000001",
-    "title": "Rotaract Club of San Pedro East — Official Facebook Page",
-    "description": "Primary public Facebook page for general announcements, project highlights, recruitment drives, and community outreach photos.",
-    "url": "https://facebook.com/rotaractsanpedroeast",
+    "title": "RACSPE Documentation Drive",
+    "description": "",
+    "url": "https://drive.google.com/drive/u/2/folders/1Ue10B_Xhh9Jbo5Gj2a_WueEZ1bysFZiN?fbclid=IwY2xjawVb9k9leHRuA2FlbQIxMABwZG9mBWJyaWQRMWplaFlaVjJwMlJrZDlrdmhzcnRjBmFwcF9pZBAyMjIwMzkxNzg4MjAwODkyAAEfLrbLyH5JeZry0DGcOh5KMkzILH8ImHuwUkOaCdpO7wpxTKS9AcAzuVkHn3E_aem_rZEZiZYYOrPN4BIQbcqWgQ",
     "category": "SOCIAL_MEDIA",
     "isPinned": true,
+    "createdAt": "2026-11-07T12:23:06.800Z",
+    "updatedAt": "2026-11-07T12:23:06.800Z"
+  },
+  {
+    "id": "res-001",
+    "clubId": "00000000-0000-0000-0000-000000000001",
+    "title": "RACSPE 2026 Calendar",
+    "description": "Updates of upcoming events",
+    "url": "https://docs.google.com/spreadsheets/d/1oHnjhK5HIanNndO4HJ0IZf3PtK3QtK3j-ja-5FqR1mw/edit",
+    "category": "DRIVE_DOCUMENTS",
+    "isPinned": true,
     "createdAt": "2026-10-24T14:48:38.263Z",
-    "updatedAt": "2026-10-24T14:48:38.265Z"
+    "updatedAt": "2026-11-07T12:17:49.835Z"
   },
   {
     "id": "res-002",
     "clubId": "00000000-0000-0000-0000-000000000001",
     "title": "Rotary International District 3820 Official Portal",
     "description": "District guidelines, District Governor monthly letters, event calendars, and district assembly directives.",
-    "url": "https://rotary3820.org",
+    "url": "https://www.rotary.org/",
     "category": "DISTRICT_PORTAL",
     "isPinned": true,
     "createdAt": "2026-10-24T14:48:38.265Z",
-    "updatedAt": "2026-10-24T14:48:38.265Z"
+    "updatedAt": "2026-11-07T12:16:30.094Z"
   },
   {
     "id": "res-003",
     "clubId": "00000000-0000-0000-0000-000000000001",
-    "title": "MyRotary & Club Central Portal",
-    "description": "Rotary International global database for club citation goals, officer appointments, and Rotary Foundation contributions.",
-    "url": "https://my.rotary.org",
-    "category": "DISTRICT_PORTAL",
+    "title": "RACSPE Community Project Drive",
+    "description": "Club documentations of community pictures",
+    "url": "https://drive.google.com/drive/u/2/folders/1omb6bIfeAQ7EyIVKj20QiUEM5iDrPdAa?fbclid=IwY2xjawVb9k9leHRuA2FlbQIxMABwZG9mBWJyaWQRMWplaFlaVjJwMlJrZDlrdmhzcnRjBmFwcF9pZBAyMjIwMzkxNzg4MjAwODkyAAEfLrbLyH5JeZry0DGcOh5KMkzILH8ImHuwUkOaCdpO7wpxTKS9AcAzuVkHn3E_aem_rZEZiZYYOrPN4BIQbcqWgQ",
+    "category": "DRIVE_DOCUMENTS",
     "isPinned": false,
     "createdAt": "2026-10-24T14:48:38.265Z",
-    "updatedAt": "2026-10-24T14:48:38.265Z"
+    "updatedAt": "2026-11-07T12:19:07.945Z"
   },
   {
     "id": "res-004",
@@ -48,10 +59,10 @@
     "clubId": "00000000-0000-0000-0000-000000000001",
     "title": "District 3820 Monthly Reporting Google Drive",
     "description": "Central cloud repository for project completion reports, attendance sheets, and liquidation vouchers.",
-    "url": "https://drive.google.com",
+    "url": "https://drive.google.com/drive/folders/1k-p3Ht32i2zKgmkxqjLrKgeCy00OFTS9",
     "category": "DRIVE_DOCUMENTS",
     "isPinned": false,
     "createdAt": "2026-10-24T14:48:38.265Z",
-    "updatedAt": "2026-10-24T14:48:38.265Z"
+    "updatedAt": "2026-11-07T12:21:30.338Z"
   }
 ]

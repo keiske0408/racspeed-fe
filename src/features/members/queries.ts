@@ -14,6 +14,7 @@ export interface MemberDTO {
   rotaryId?: string;
   isPlatformAdmin: boolean;
   crmStage?: string;
+  avatarUrl?: string | null;
 }
 
 export async function getClubMembersList(
@@ -152,6 +153,7 @@ export async function getClubMembersList(
         rotaryId: mem?.rotary_id || undefined,
         isPlatformAdmin: Boolean(p.is_platform_admin),
         crmStage,
+        avatarUrl: p.avatar_url || null,
       };
     });
   } catch (err) {

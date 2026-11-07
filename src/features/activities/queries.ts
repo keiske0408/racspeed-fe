@@ -283,12 +283,49 @@ export async function listActivities(
       return [];
     }
     const rows = data as unknown as ActivitySummaryRow[];
-    const coverUrls = await signPaths(
-      rows
+    const rowsNeedingCover = rows.filter(
+      (row) =>
+        !row.cover_storage_path && (row.activity_media?.[0]?.count ?? 0) > 0,
+    );
+
+    const fallbackPaths = new Map<string, string>();
+    if (rowsNeedingCover.length > 0) {
+      try {
+        const { data: mediaRows } = await admin
+          .from("activity_media")
+          .select("activity_id, storage_path, is_featured")
+          .in(
+            "activity_id",
+            rowsNeedingCover.map((r) => r.id),
+          )
+          .order("is_featured", { ascending: false })
+          .order("sort_order", { ascending: true });
+
+        for (const m of mediaRows || []) {
+          if (!fallbackPaths.has(m.activity_id) && m.storage_path) {
+            fallbackPaths.set(m.activity_id, m.storage_path);
+          }
+        }
+      } catch (err) {
+        console.warn("Could not load fallback media covers:", err);
+      }
+    }
+
+    const allPathsToSign = [
+      ...rows
         .map((row) => row.cover_storage_path)
         .filter((path): path is string => Boolean(path)),
-    );
-    return rows.map((row) => mapSummary(row, userId, coverUrls));
+      ...Array.from(fallbackPaths.values()),
+    ];
+    const coverUrls = await signPaths(allPathsToSign);
+    return rows.map((row) => {
+      const summary = mapSummary(row, userId, coverUrls);
+      if (!summary.coverUrl && fallbackPaths.has(row.id)) {
+        const fallbackPath = fallbackPaths.get(row.id)!;
+        summary.coverUrl = coverUrls.get(fallbackPath) || null;
+      }
+      return summary;
+    });
   } catch (err) {
     console.warn("Could not load activities:", err);
     return [];
@@ -428,6 +465,10 @@ export async function getActivityDetail(
     activityRow.cover_storage_path || "",
   ]);
   const summary = mapSummary(activityRow, userId, urls);
+  if (!summary.coverUrl && mediaRows.length > 0) {
+    const fallbackPath = mediaRows[0].storage_path;
+    summary.coverUrl = urls.get(fallbackPath) || null;
+  }
   const r = activityRow;
 
   const teamRows = (team.data || []) as unknown as ActivityTeamRow[];

@@ -391,4 +391,28 @@ describe("QR attendance applicability and toggle", () => {
       }).allowed,
     ).toBe(false);
   });
+
+  it("enforces that hard delete is only permitted for archived activities", () => {
+    // Active project must not be eligible for hard deletion
+    const activeProject = {
+      is_archived: false,
+      archived_at: null,
+    };
+    expect(resolveArchiveState(activeProject).isArchived).toBe(false);
+
+    // Explicitly archived project is eligible for permanent hard deletion
+    const archivedProject = {
+      is_archived: true,
+      archived_at: "2026-11-05T12:00:00Z",
+    };
+    expect(resolveArchiveState(archivedProject).isArchived).toBe(true);
+
+    // Audit trail archived project is eligible for permanent hard deletion
+    const auditArchivedProject = {
+      activity_log: [
+        { action: "ARCHIVED", created_at: "2026-11-05T12:00:00Z" },
+      ],
+    };
+    expect(resolveArchiveState(auditArchivedProject).isArchived).toBe(true);
+  });
 });

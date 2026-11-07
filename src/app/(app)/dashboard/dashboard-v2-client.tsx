@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowRight,
+  Bell,
   CalendarDays,
   Check,
   Clock3,
@@ -31,6 +32,16 @@ import {
 } from "../project-center/_components/activity-card";
 import { RsvpButtons } from "../project-center/_components/rsvp-buttons";
 
+export interface DashboardNotificationDTO {
+  id: string;
+  title: string;
+  message: string;
+  type: string;
+  link_url: string | null;
+  is_read: boolean;
+  created_at: string;
+}
+
 interface Metrics {
   activeMembers: number;
   aspirants: number;
@@ -48,12 +59,14 @@ export function DashboardV2Client({
   upcoming,
   highlights,
   leaderboard,
+  recentNotifications = [],
 }: {
   user: { id: string; fullName: string; email: string } | null;
   metrics: Metrics;
   upcoming: ActivitySummaryDTO[];
   highlights: ActivitySummaryDTO[];
   leaderboard: LeaderboardEntry[];
+  recentNotifications?: DashboardNotificationDTO[];
 }) {
   const router = useRouter();
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -167,28 +180,43 @@ export function DashboardV2Client({
                 key={activity.id}
                 className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
               >
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <KindBadge
-                      kind={activity.kind}
-                      meetingType={activity.meetingType}
-                    />
-                    <ActivityStatusBadge status={activity.status} />
-                  </div>
-                  <Link
-                    href={`/project-center/${activity.id}`}
-                    className="mt-2 block truncate text-sm font-bold text-[#111625] hover:text-[#0D3594] dark:text-white dark:hover:text-blue-300"
-                  >
-                    {activity.title}
-                  </Link>
-                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
-                    <span className="inline-flex items-center gap-1">
-                      <Clock3 className="h-3 w-3" />
-                      {formatActivityWhen(activity)}
-                    </span>
-                    {activity.location && (
-                      <span className="truncate">{activity.location}</span>
-                    )}
+                <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+                  {activity.coverUrl && (
+                    <Link
+                      href={`/project-center/${activity.id}`}
+                      className="shrink-0 group"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={activity.coverUrl}
+                        alt=""
+                        className="h-16 w-20 sm:h-18 sm:w-24 shrink-0 rounded-xl object-cover border border-[#EDEDF2] dark:border-slate-800 shadow-2xs group-hover:opacity-90 transition"
+                      />
+                    </Link>
+                  )}
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <KindBadge
+                        kind={activity.kind}
+                        meetingType={activity.meetingType}
+                      />
+                      <ActivityStatusBadge status={activity.status} />
+                    </div>
+                    <Link
+                      href={`/project-center/${activity.id}`}
+                      className="mt-1.5 block truncate text-sm font-bold text-[#111625] hover:text-[#0D3594] dark:text-white dark:hover:text-blue-300"
+                    >
+                      {activity.title}
+                    </Link>
+                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                      <span className="inline-flex items-center gap-1">
+                        <Clock3 className="h-3 w-3" />
+                        {formatActivityWhen(activity)}
+                      </span>
+                      {activity.location && (
+                        <span className="truncate">{activity.location}</span>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -232,6 +260,52 @@ export function DashboardV2Client({
         </div>
 
         <aside className="space-y-4">
+          <section className="rounded-xl border border-[#EDEDF2] bg-white p-4 dark:border-slate-800 dark:bg-[#161B26]">
+            <header className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Bell className="h-4 w-4 text-[#0D3594] dark:text-blue-400" />
+                <h2 className="text-sm font-bold text-[#111625] dark:text-white">
+                  Project & Activity Updates
+                </h2>
+              </div>
+              {recentNotifications.filter((n) => !n.is_read).length > 0 && (
+                <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-[#0D3594] dark:bg-blue-900/40 dark:text-blue-300">
+                  {recentNotifications.filter((n) => !n.is_read).length} new
+                </span>
+              )}
+            </header>
+            <div className="mt-3 space-y-2">
+              {recentNotifications.length > 0 ? (
+                recentNotifications.slice(0, 4).map((notif) => (
+                  <Link
+                    key={notif.id}
+                    href={notif.link_url || "/project-center"}
+                    className="group block rounded-lg border border-[#EDEDF2] p-2.5 hover:border-blue-300 hover:bg-blue-50/40 dark:border-slate-800 dark:hover:border-blue-700/50 dark:hover:bg-slate-800/50 transition"
+                  >
+                    <div className="flex items-start justify-between gap-1.5">
+                      <h3 className="text-xs font-semibold text-slate-900 dark:text-white group-hover:text-[#0D3594] dark:group-hover:text-blue-300 transition line-clamp-1">
+                        {notif.title}
+                      </h3>
+                      {!notif.is_read && (
+                        <span className="h-2 w-2 rounded-full bg-blue-600 shrink-0 mt-1" />
+                      )}
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-slate-500 line-clamp-2">
+                      {notif.message}
+                    </p>
+                    <span className="mt-1 block text-[10px] text-slate-400">
+                      {formatManila(notif.created_at, "MMM d, h:mm a")}
+                    </span>
+                  </Link>
+                ))
+              ) : (
+                <p className="py-3 text-center text-xs text-slate-400">
+                  You&apos;re all caught up! Project updates and committee alerts appear here.
+                </p>
+              )}
+            </div>
+          </section>
+
           <section className="rounded-xl border border-[#EDEDF2] bg-white p-4 dark:border-slate-800 dark:bg-[#161B26]">
             <header className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">

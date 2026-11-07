@@ -84,6 +84,11 @@ export function PartnershipsClient({
   const [showEditClubModal, setShowEditClubModal] = useState(false);
   const [showAllInitiativesModal, setShowAllInitiativesModal] = useState(false);
 
+  const [addPartnershipType, setAddPartnershipType] =
+    useState<PartnershipType>("SISTER_CLUB_MOA");
+  const [editPartnershipType, setEditPartnershipType] =
+    useState<PartnershipType>("SISTER_CLUB_MOA");
+
   const [editingClub, setEditingClub] = useState<SisterClubDTO | null>(null);
   const [initiativesViewFilter, setInitiativesViewFilter] =
     useState<string>("ALL");
@@ -108,32 +113,37 @@ export function PartnershipsClient({
     e.preventDefault();
     setIsSubmitting(true);
     const formData = new FormData(e.currentTarget);
+    const partnershipType =
+      (formData.get("partnershipType") as PartnershipType) ||
+      "SISTER_CLUB_MOA";
+    const isProjectPartner = partnershipType === "PROJECT_PARTNER";
 
     try {
       const res = await createSisterClubAction(formData);
       if (res.success) {
         notifyToast({
-          message: res.message || "Sister club registered successfully.",
+          message: res.message || "Partner club registered successfully.",
           kind: "success",
         });
         const newClub: SisterClubDTO = res.club || {
-          id: res.partnerId || `sc-${Date.now()}`,
+          id: res.partnerId || crypto.randomUUID(),
           partnerClubName: formData.get("partnerClubName") as string,
           district: formData.get("district") as string,
           country: (formData.get("country") as string) || "Philippines",
-          partnershipType:
-            (formData.get("partnershipType") as PartnershipType) ||
-            "SISTER_CLUB_MOA",
-          agreementSignedDate:
-            (formData.get("agreementSignedDate") as string) ||
-            new Date().toISOString().split("T")[0],
-          renewalDate: (formData.get("renewalDate") as string) || "2027-06-30",
+          partnershipType,
+          agreementSignedDate: isProjectPartner
+            ? ""
+            : (formData.get("agreementSignedDate") as string) ||
+              new Date().toISOString().split("T")[0],
+          renewalDate: isProjectPartner
+            ? ""
+            : (formData.get("renewalDate") as string) || "2027-06-30",
           liaisonOfficerName:
             (formData.get("liaisonOfficerName") as string) ||
             "Designated Liaison",
           liaisonEmail: (formData.get("liaisonEmail") as string) || "",
           liaisonPhone: (formData.get("liaisonPhone") as string) || "",
-          status: "ACTIVE",
+          status: isProjectPartner ? "PENDING_MOA" : "ACTIVE",
           notes: (formData.get("notes") as string) || "",
           initiativesCount: 0,
           initiatives: [],
@@ -161,6 +171,7 @@ export function PartnershipsClient({
   // Edit Sister Club
   function handleOpenEditClub(club: SisterClubDTO) {
     setEditingClub(club);
+    setEditPartnershipType(club.partnershipType);
     setShowEditClubModal(true);
   }
 
@@ -288,7 +299,10 @@ export function PartnershipsClient({
             <span>View All Projects ({allInitiativesCount})</span>
           </button>
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={() => {
+              setAddPartnershipType("SISTER_CLUB_MOA");
+              setShowAddModal(true);
+            }}
             className="inline-flex items-center gap-2 py-2 px-3.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs shadow-xs transition cursor-pointer shrink-0"
           >
             <Plus className="w-4 h-4" />
@@ -431,24 +445,37 @@ export function PartnershipsClient({
 
                 {/* Agreement Metadata */}
                 <div className="mt-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 space-y-1.5 text-xs text-slate-500 dark:text-slate-400">
-                  <div className="flex items-center justify-between">
-                    <span className="flex items-center gap-1.5">
-                      <FileCheck className="w-3.5 h-3.5 text-slate-400" />{" "}
-                      Agreement Signed:
-                    </span>
-                    <span className="font-semibold text-slate-700 dark:text-slate-200">
-                      {club.agreementSignedDate}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="flex items-center gap-1.5">
-                      <Calendar className="w-3.5 h-3.5 text-slate-400" />{" "}
-                      Renewal Date:
-                    </span>
-                    <span className="font-semibold text-slate-700 dark:text-slate-200">
-                      {club.renewalDate}
-                    </span>
-                  </div>
+                  {club.partnershipType === "PROJECT_PARTNER" ? (
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
+                        <FileCheck className="w-3.5 h-3.5" /> MOA Status:
+                      </span>
+                      <span className="font-semibold text-amber-700 dark:text-amber-300">
+                        Potential Partner (No Signed MOA Required)
+                      </span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <span className="flex items-center gap-1.5">
+                          <FileCheck className="w-3.5 h-3.5 text-slate-400" />{" "}
+                          Agreement Signed:
+                        </span>
+                        <span className="font-semibold text-slate-700 dark:text-slate-200">
+                          {club.agreementSignedDate || "Pending MOA"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5 text-slate-400" />{" "}
+                          Renewal Date:
+                        </span>
+                        <span className="font-semibold text-slate-700 dark:text-slate-200">
+                          {club.renewalDate || "None"}
+                        </span>
+                      </div>
+                    </>
+                  )}
                   <div className="flex items-center justify-between">
                     <span className="flex items-center gap-1.5">
                       <Award className="w-3.5 h-3.5 text-slate-400" /> Joint
@@ -601,7 +628,7 @@ export function PartnershipsClient({
             <form onSubmit={handleAddSisterClub} className="mt-4 space-y-3.5">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Partner Club Name *
+                  Partner Club Name <span className="text-rose-500 font-bold ml-0.5">*</span>
                 </label>
                 <input
                   type="text"
@@ -615,7 +642,7 @@ export function PartnershipsClient({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Rotary District *
+                    Rotary District <span className="text-rose-500 font-bold ml-0.5">*</span>
                   </label>
                   <input
                     type="text"
@@ -627,7 +654,7 @@ export function PartnershipsClient({
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Country *
+                    Country <span className="text-rose-500 font-bold ml-0.5">*</span>
                   </label>
                   <input
                     type="text"
@@ -641,11 +668,14 @@ export function PartnershipsClient({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Partnership Category *
+                  Partnership Category <span className="text-rose-500 font-bold ml-0.5">*</span>
                 </label>
                 <select
                   name="partnershipType"
-                  defaultValue="SISTER_CLUB_MOA"
+                  value={addPartnershipType}
+                  onChange={(e) =>
+                    setAddPartnershipType(e.target.value as PartnershipType)
+                  }
                   className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
                 >
                   <option value="SISTER_CLUB_MOA">
@@ -655,7 +685,7 @@ export function PartnershipsClient({
                     District Twin Club (District-level)
                   </option>
                   <option value="PROJECT_PARTNER">
-                    Collaborative Project Partner
+                    Collaborative Project Partner (Potential / Alliance)
                   </option>
                   <option value="SPONSOR_ROTARY_CLUB">
                     Sponsor Rotary Club
@@ -663,30 +693,44 @@ export function PartnershipsClient({
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Agreement Signed Date
-                  </label>
-                  <input
-                    type="date"
-                    name="agreementSignedDate"
-                    defaultValue={new Date().toISOString().split("T")[0]}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                  />
+              {addPartnershipType === "PROJECT_PARTNER" ? (
+                <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 text-xs text-amber-800 dark:text-amber-200 flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold text-amber-900 dark:text-amber-100">
+                      Prospective Collaborative Partner
+                    </p>
+                    <p className="text-[11.5px] text-amber-700 dark:text-amber-300 mt-0.5 leading-relaxed">
+                      Collaborative project partners are potential project alliances without signed bilateral MOAs or expiration dates. You can formalize an official agreement later as joint activities progress.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Renewal / Expiration Date
-                  </label>
-                  <input
-                    type="date"
-                    name="renewalDate"
-                    defaultValue="2027-06-30"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                  />
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Agreement Signed Date
+                    </label>
+                    <input
+                      type="date"
+                      name="agreementSignedDate"
+                      defaultValue={new Date().toISOString().split("T")[0]}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Renewal / Expiration Date
+                    </label>
+                    <input
+                      type="date"
+                      name="renewalDate"
+                      defaultValue="2027-06-30"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
@@ -784,7 +828,7 @@ export function PartnershipsClient({
             >
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Partner Club Name *
+                  Partner Club Name <span className="text-rose-500 font-bold ml-0.5">*</span>
                 </label>
                 <input
                   type="text"
@@ -798,7 +842,7 @@ export function PartnershipsClient({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Rotary District *
+                    Rotary District <span className="text-rose-500 font-bold ml-0.5">*</span>
                   </label>
                   <input
                     type="text"
@@ -810,7 +854,7 @@ export function PartnershipsClient({
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Country *
+                    Country <span className="text-rose-500 font-bold ml-0.5">*</span>
                   </label>
                   <input
                     type="text"
@@ -825,11 +869,14 @@ export function PartnershipsClient({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Partnership Category *
+                    Partnership Category <span className="text-rose-500 font-bold ml-0.5">*</span>
                   </label>
                   <select
                     name="partnershipType"
-                    defaultValue={editingClub.partnershipType}
+                    value={editPartnershipType}
+                    onChange={(e) =>
+                      setEditPartnershipType(e.target.value as PartnershipType)
+                    }
                     className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
                   >
                     <option value="SISTER_CLUB_MOA">
@@ -839,7 +886,7 @@ export function PartnershipsClient({
                       District Twin Club (District-level)
                     </option>
                     <option value="PROJECT_PARTNER">
-                      Collaborative Project Partner
+                      Collaborative Project Partner (Potential / Alliance)
                     </option>
                     <option value="SPONSOR_ROTARY_CLUB">
                       Sponsor Rotary Club
@@ -848,7 +895,7 @@ export function PartnershipsClient({
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Partnership Status *
+                    Partnership Status <span className="text-rose-500 font-bold ml-0.5">*</span>
                   </label>
                   <select
                     name="status"
@@ -862,30 +909,44 @@ export function PartnershipsClient({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Agreement Signed Date
-                  </label>
-                  <input
-                    type="date"
-                    name="agreementSignedDate"
-                    defaultValue={editingClub.agreementSignedDate}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                  />
+              {editPartnershipType === "PROJECT_PARTNER" ? (
+                <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 text-xs text-amber-800 dark:text-amber-200 flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold text-amber-900 dark:text-amber-100">
+                      Prospective Collaborative Partner
+                    </p>
+                    <p className="text-[11.5px] text-amber-700 dark:text-amber-300 mt-0.5 leading-relaxed">
+                      Collaborative project partners are potential alliances without signed bilateral MOAs or expiration dates.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Renewal / Expiration Date
-                  </label>
-                  <input
-                    type="date"
-                    name="renewalDate"
-                    defaultValue={editingClub.renewalDate}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                  />
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Agreement Signed Date
+                    </label>
+                    <input
+                      type="date"
+                      name="agreementSignedDate"
+                      defaultValue={editingClub.agreementSignedDate}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Renewal / Expiration Date
+                    </label>
+                    <input
+                      type="date"
+                      name="renewalDate"
+                      defaultValue={editingClub.renewalDate}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">

@@ -36,6 +36,7 @@ export default async function DashboardPage() {
     budgetsRes,
     retentionRes,
     leaderboard,
+    notificationsRes,
   ] = await Promise.all([
     listActivities(clubId, user?.id || ""),
     admin
@@ -68,6 +69,14 @@ export default async function DashboardPage() {
       .eq("type", "RETENTION_NUDGE")
       .eq("is_read", false),
     getEngagementLeaderboard(clubId, rotaryYear),
+    user
+      ? admin
+          .from("notifications")
+          .select("id, title, message, type, link_url, is_read, created_at")
+          .eq("profile_id", user.id)
+          .order("created_at", { ascending: false })
+          .limit(6)
+      : Promise.resolve({ data: [], error: null }),
   ]);
 
   const upcoming = activities
@@ -133,6 +142,7 @@ export default async function DashboardPage() {
       upcoming={upcoming}
       highlights={highlights}
       leaderboard={leaderboard}
+      recentNotifications={(notificationsRes.data || []) as any[]}
     />
   );
 }

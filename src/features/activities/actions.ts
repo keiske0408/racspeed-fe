@@ -9,10 +9,16 @@ import { manilaLocalToISO } from "@/lib/utils/dates";
 import { rotaryYearFor } from "@/lib/utils/rotary-year";
 import { awardEngagementPoints } from "@/lib/services/rewards";
 import {
+  dispatchNotification,
+  type NotificationType,
+} from "@/lib/services/notifications/dispatch";
+import type { TeamRole } from "./types";
+import {
   createTask,
   type TaskCommittee,
   type TaskPriority,
 } from "@/lib/data/tasks-storage";
+import { readPartnershipsStore } from "@/lib/data/partnerships-storage";
 import {
   ALLOWED_MEDIA_TYPES,
   MAX_MEDIA_BYTES,
@@ -21,11 +27,12 @@ import {
   resolveMinMembers,
   rsvpSchema,
   teamMemberSchema,
+  UUID_PATTERN,
   uuidString,
   type CreateActivityData,
   type CreateActivityInput,
 } from "./schemas";
-import { canTransition, evaluateRsvp, evaluateSelfCheckIn, isQrCheckInApplicable } from "./rules";
+import { canTransition, evaluateRsvp, evaluateSelfCheckIn, isQrCheckInApplicable, resolveArchiveState } from "./rules";
 import {
   getActivityMediaPage,
   isClubParticipant,
@@ -48,6 +55,66 @@ function revalidateActivity(activityId?: string) {
   revalidatePath("/partnerships");
   if (activityId) revalidatePath(`/project-center/${activityId}`);
   revalidatePath("/dashboard");
+}
+
+async function notifyProjectAudience({
+  activityId,
+  clubId,
+  title,
+  message,
+  type = "GENERAL",
+  excludeProfileIds = [],
+  dedupePrefix,
+}: {
+  activityId: string;
+  clubId: string;
+  title: string;
+  message: string;
+  type?: NotificationType;
+  excludeProfileIds?: string[];
+  dedupePrefix: string;
+}) {
+  try {
+    const admin = createAdminClient();
+    const [teamRes, rsvpRes, followerRes] = await Promise.all([
+      admin.from("activity_team").select("profile_id").eq("activity_id", activityId),
+      admin
+        .from("activity_rsvps")
+        .select("profile_id")
+        .eq("activity_id", activityId)
+        .eq("response", "GOING"),
+      admin.from("activity_followers").select("profile_id").eq("activity_id", activityId),
+    ]);
+
+    const recipientSet = new Set<string>();
+    for (const row of teamRes.data || []) recipientSet.add(row.profile_id);
+    for (const row of rsvpRes.data || []) recipientSet.add(row.profile_id);
+    for (const row of followerRes.data || []) recipientSet.add(row.profile_id);
+
+    for (const id of excludeProfileIds) {
+      recipientSet.delete(id);
+    }
+
+    if (recipientSet.size === 0) return;
+
+    await Promise.all(
+      Array.from(recipientSet).map((profileId) =>
+        dispatchNotification({
+          profileId,
+          clubId,
+          title,
+          message,
+          type,
+          linkUrl: `/project-center/${activityId}`,
+          dedupeKey: `${dedupePrefix}_${profileId}`,
+          sendPush: true,
+          sendEmail: false,
+        }),
+      ),
+    );
+  } catch (err) {
+    console.warn("Could not dispatch project audience notifications:", err);
+  }
 }
 
 async function logActivity(
@@ -221,12 +288,31 @@ async function validateProjectPartners(data: CreateActivityData) {
     ]),
   ];
   if (partnerIds.length === 0) return null;
+
+  const uuidPartnerIds = partnerIds.filter((id) => UUID_PATTERN.test(id));
   const { data: registeredPartners, error } = await createAdminClient()
     .from("sister_clubs")
     .select("id")
     .eq("home_club_id", data.clubId)
-    .in("id", partnerIds);
-  if (error || registeredPartners?.length !== partnerIds.length) {
+    .in("id", uuidPartnerIds);
+
+  const registeredIdSet = new Set(
+    (registeredPartners || []).map((p: { id: string }) => p.id),
+  );
+
+  try {
+    const store = readPartnershipsStore();
+    if (store && Array.isArray(store.customClubs)) {
+      for (const club of store.customClubs) {
+        registeredIdSet.add(club.id);
+      }
+    }
+  } catch {
+    // ignore if store is mocked or unavailable
+  }
+
+  const allFound = partnerIds.every((id) => registeredIdSet.has(id));
+  if (!allFound || error) {
     return "The selected partners are not all registered to this club.";
   }
   return null;
@@ -282,17 +368,57 @@ export async function createActivityAction(
     };
   }
 
-  await Promise.all([
-    admin.from("activity_team").insert({
+  const teamInserts: {
+    activity_id: string;
+    profile_id: string;
+    team_role: TeamRole;
+  }[] = [
+    {
       activity_id: created.id,
       profile_id: ownerId,
       team_role: "CHAIR",
-    }),
-    admin
-      .from("activity_followers")
-      .insert({ activity_id: created.id, profile_id: user.id }),
+    },
+  ];
+
+  const followerIds = new Set<string>([user.id, ownerId]);
+  for (const cm of data.committeeMembers || []) {
+    if (cm.profileId !== ownerId) {
+      teamInserts.push({
+        activity_id: created.id,
+        profile_id: cm.profileId,
+        team_role: (cm.role as TeamRole) || "COMMITTEE",
+      });
+      followerIds.add(cm.profileId);
+    }
+  }
+
+  await Promise.all([
+    admin.from("activity_team").insert(teamInserts),
+    admin.from("activity_followers").upsert(
+      Array.from(followerIds).map((profile_id) => ({
+        activity_id: created.id,
+        profile_id,
+      })),
+    ),
     syncProjectRelations(created.id, data),
   ]);
+
+  // Dispatch notifications to appointed committee members
+  for (const cm of data.committeeMembers || []) {
+    if (cm.profileId !== user.id) {
+      dispatchNotification({
+        profileId: cm.profileId,
+        clubId: data.clubId,
+        title: "Appointed to Project Committee",
+        message: `You were appointed to the committee for "${data.title}" as ${(cm.role || "COMMITTEE").replaceAll("_", " ")}.`,
+        type: "GENERAL",
+        linkUrl: `/project-center/${created.id}`,
+        dedupeKey: `committee_add_${created.id}_${cm.profileId}`,
+        sendPush: true,
+      }).catch((e) => console.warn("Failed committee notif:", e));
+    }
+  }
+
   await logActivity(created.id, user.id, "CREATED", { kind: data.kind });
 
   revalidateActivity(created.id);
@@ -471,6 +597,76 @@ export async function archiveActivityAction(
   };
 }
 
+export async function hardDeleteActivityAction(
+  activityId: string,
+): Promise<ActionResult> {
+  const access = await loadActivityAccess(activityId);
+  if (!access) return { success: false, error: "Activity not found." };
+  if (!access.canManage && !access.user.isPlatformAdmin) {
+    return {
+      success: false,
+      error: "Only project owners, club officers, or platform administrators can permanently delete this project.",
+    };
+  }
+
+  const admin = createAdminClient();
+
+  // Ensure activity is archived before hard delete
+  const { data: actRow } = await admin
+    .from("activities")
+    .select("is_archived, archived_at, activity_log(action, created_at)")
+    .eq("id", activityId)
+    .maybeSingle();
+
+  const archiveState = resolveArchiveState(
+    (actRow as unknown as Parameters<typeof resolveArchiveState>[0]) || {},
+  );
+  if (!archiveState.isArchived) {
+    return {
+      success: false,
+      error: "Only archived projects can be permanently deleted. Please archive the project first.",
+    };
+  }
+
+  // 1. Purge any uploaded media files from Supabase storage
+  try {
+    const { data: mediaFiles } = await admin
+      .from("activity_media")
+      .select("storage_path")
+      .eq("activity_id", activityId);
+
+    if (mediaFiles && mediaFiles.length > 0) {
+      const paths = mediaFiles
+        .map((m) => m.storage_path)
+        .filter((p) => Boolean(p));
+      if (paths.length > 0) {
+        await admin.storage.from(MEDIA_BUCKET).remove(paths);
+      }
+    }
+  } catch (err) {
+    console.warn("Storage media purge on hard delete fallback:", err);
+  }
+
+  // 2. Delete the activity row (foreign keys on all child tables have ON DELETE CASCADE)
+  const { error } = await admin
+    .from("activities")
+    .delete()
+    .eq("id", activityId);
+
+  if (error) {
+    return {
+      success: false,
+      error: `Failed to permanently delete activity: ${error.message}`,
+    };
+  }
+
+  revalidateActivity(activityId);
+  return {
+    success: true,
+    message: `'${access.activity.title}' has been permanently deleted.`,
+  };
+}
+
 export async function bulkArchiveActivitiesAction(
   activityIds: string[],
 ): Promise<ActionResult<{ count: number }>> {
@@ -600,6 +796,40 @@ export async function setRsvpAction(input: {
     responded_at: new Date().toISOString(),
   });
   if (error) return { success: false, error: error.message };
+
+  if (parsed.data.response === "GOING") {
+    // Add to project followers so they receive project updates
+    await admin.from("activity_followers").upsert({
+      activity_id: parsed.data.activityId,
+      profile_id: access.user.id,
+    });
+
+    // Notify user of unlock confirmation
+    dispatchNotification({
+      profileId: access.user.id,
+      clubId: access.activity.club_id,
+      title: `You're going to "${access.activity.title}"!`,
+      message: "Inside project tasks, discussion threads, and team updates are now unlocked.",
+      type: "ACTIVITY_REMINDER",
+      linkUrl: `/project-center/${parsed.data.activityId}`,
+      dedupeKey: `rsvp_unlocked_${parsed.data.activityId}_${access.user.id}`,
+      sendPush: false,
+    }).catch((e) => console.warn("RSVP unlock notif error:", e));
+
+    // Notify project owner of new attendee
+    if (access.activity.owner_id && access.activity.owner_id !== access.user.id) {
+      dispatchNotification({
+        profileId: access.activity.owner_id,
+        clubId: access.activity.club_id,
+        title: "New RSVP: Going",
+        message: `${access.user.fullName || "A member"} confirmed attendance for "${access.activity.title}".`,
+        type: "GENERAL",
+        linkUrl: `/project-center/${parsed.data.activityId}?tab=roster`,
+        dedupeKey: `rsvp_owner_${parsed.data.activityId}_${access.user.id}`,
+        sendPush: true,
+      }).catch((e) => console.warn("RSVP owner notif error:", e));
+    }
+  }
 
   revalidateActivity(parsed.data.activityId);
   return { success: true, message: "RSVP saved." };
@@ -840,6 +1070,23 @@ export async function addCommentAction(input: {
     activity_id: parsed.data.activityId,
     profile_id: access.user.id,
   });
+
+  const commenterName = access.user.fullName || "A member";
+  const preview =
+    parsed.data.body.length > 80
+      ? parsed.data.body.slice(0, 80) + "..."
+      : parsed.data.body;
+
+  notifyProjectAudience({
+    activityId: parsed.data.activityId,
+    clubId: access.activity.club_id,
+    title: `New comment in ${access.activity.title}`,
+    message: `${commenterName}: "${preview}"`,
+    type: "COMMENT",
+    excludeProfileIds: [access.user.id],
+    dedupePrefix: `comment_${data.id}`,
+  }).catch((e) => console.warn("Failed comment notification:", e));
+
   revalidateActivity(parsed.data.activityId);
   return { success: true, commentId: data.id };
 }
@@ -1117,7 +1364,7 @@ export async function toggleReactionAction(
   const admin = createAdminClient();
   const { data: comment } = await admin
     .from("activity_comments")
-    .select("id")
+    .select("id, author_id")
     .eq("id", commentId)
     .eq("activity_id", activityId)
     .maybeSingle();
@@ -1129,9 +1376,26 @@ export async function toggleReactionAction(
     .select("emoji")
     .match(match)
     .maybeSingle();
-  if (existing)
+  if (existing) {
     await admin.from("activity_comment_reactions").delete().match(match);
-  else await admin.from("activity_comment_reactions").insert(match);
+  } else {
+    await admin.from("activity_comment_reactions").insert(match);
+
+    // Notify comment author about reaction if they didn't react to their own comment
+    if (comment.author_id && comment.author_id !== access.user.id) {
+      const reactorName = access.user.fullName || "A member";
+      dispatchNotification({
+        profileId: comment.author_id,
+        clubId: access.activity.club_id,
+        title: "Reaction on your comment",
+        message: `${reactorName} reacted ${emoji} to your comment in "${access.activity.title}".`,
+        type: "COMMENT",
+        linkUrl: `/project-center/${activityId}?tab=comments`,
+        dedupeKey: `react_${commentId}_${access.user.id}_${emoji}`,
+        sendPush: true,
+      }).catch((e) => console.warn("Failed reaction notification:", e));
+    }
+  }
 
   revalidateActivity(activityId);
   return { success: true };
@@ -1511,6 +1775,34 @@ export async function createActivityTaskAction(
   });
   if (error)
     console.warn("Could not sync activity task to Supabase:", error.message);
+
+  // 1. Notify assignees directly
+  for (const assignee of assignees || []) {
+    if (assignee.id !== access.user.id) {
+      dispatchNotification({
+        profileId: assignee.id,
+        clubId: access.activity.club_id,
+        title: `Task assigned: ${created.title}`,
+        message: `You were assigned to "${created.title}" in ${access.activity.title}. Due: ${created.dueDate}.`,
+        type: "GENERAL",
+        linkUrl: `/project-center/${parsed.data.activityId}?tab=tasks`,
+        dedupeKey: `task_assign_${created.id}_${assignee.id}`,
+        sendPush: true,
+      }).catch((e) => console.warn("Failed assignee task notif:", e));
+    }
+  }
+
+  // 2. Notify other committee & going members about the new task
+  const assignedIds = (assignees || []).map((a) => a.id);
+  notifyProjectAudience({
+    activityId: parsed.data.activityId,
+    clubId: access.activity.club_id,
+    title: `New task in ${access.activity.title}`,
+    message: `Task "${created.title}" was added for ${(created.committee || "CLUB_SERVICE").replaceAll("_", " ")}.`,
+    type: "GENERAL",
+    excludeProfileIds: [access.user.id, ...assignedIds],
+    dedupePrefix: `task_new_${created.id}`,
+  }).catch((e) => console.warn("Failed task audience notif:", e));
 
   await logActivity(parsed.data.activityId, access.user.id, "TASK_CREATED", {
     title: created.title,

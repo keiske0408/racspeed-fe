@@ -6,6 +6,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
   Archive,
+  Lock,
   ArchiveRestore,
   ArrowLeft,
   CalendarDays,
@@ -39,6 +40,7 @@ import {
   publishProjectReportAction,
   revokeAttendanceAction,
   selfCheckInAction,
+  setRsvpAction,
   setCoverMediaAction,
   startActivityQrSessionAction,
   toggleActivityQrCheckInAction,
@@ -48,7 +50,7 @@ import {
   uploadActivityMediaAction,
 } from "@/features/activities/actions";
 import { updateTaskStatusAction } from "@/features/tasks/actions";
-import { archiveActivityAction, updateActivityAction } from "@/features/activities/actions";
+import { archiveActivityAction, hardDeleteActivityAction, updateActivityAction } from "@/features/activities/actions";
 import type { MemberDTO } from "@/features/members/queries";
 import {
   isProjectKind,
@@ -120,9 +122,70 @@ export function ActivityDetailClient({
   );
   const [pending, startTransition] = useTransition();
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  async function handleHardDelete() {
+    setIsDeleting(true);
+    try {
+      const res = await hardDeleteActivityAction(activity.id);
+      if (!res.success) {
+        notifyToast({
+          title: "Delete failed",
+          message: res.error || "Could not delete activity.",
+          kind: "error",
+        });
+        setIsDeleting(false);
+        return;
+      }
+      notifyToast({
+        title: "Project permanently deleted",
+        message:
+          res.message || `'${activity.title}' has been permanently deleted.`,
+        kind: "success",
+      });
+      setIsDeleteModalOpen(false);
+      router.push("/project-center");
+    } catch (err) {
+      notifyToast({
+        title: "Error",
+        message: err instanceof Error ? err.message : "Something went wrong.",
+        kind: "error",
+      });
+      setIsDeleting(false);
+    }
+  }
   const canEdit =
     canManageClub || activity.canManage || activity.ownerId === currentUserId;
   const canReassignOwner = isPlatformAdmin || canManageClub;
+  const isOwnerOrOfficer =
+    canManageClub || isPlatformAdmin || activity.canManage || activity.ownerId === currentUserId;
+  const isCommitteeMember = (activity.team || []).some(
+    (t) => t.profileId === currentUserId,
+  );
+  const isGoing = activity.myRsvp === "GOING" || Boolean(activity.checkedIn);
+  const isUnlocked = isOwnerOrOfficer || isCommitteeMember || isGoing;
+
+  function handleUnlockGoing() {
+    startTransition(async () => {
+      setActivity({ myRsvp: "GOING" });
+      const res = await setRsvpAction({ activityId: activity.id, response: "GOING" });
+      if (!res.success) {
+        notifyToast({
+          title: "RSVP failed",
+          message: res.error || "Could not update RSVP status.",
+          kind: "error",
+        });
+        return;
+      }
+      notifyToast({
+        title: "Project Unlocked! 🎉",
+        message: "You are marked as Going. Inside information, tasks, and discussions are now accessible.",
+        kind: "success",
+      });
+      router.refresh();
+    });
+  }
 
   const isProject = isProjectKind(activity.kind);
   const canRsvp = isRsvpOpen(activity);
@@ -173,21 +236,33 @@ export function ActivityDetailClient({
             </span>
           </div>
           {canEdit && (
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() =>
-                run(async () => {
-                  const res = await archiveActivityAction(activity.id, false);
-                  if (res.success) setActivity({ isArchived: false, archivedAt: null });
-                  return res;
-                }, "Restored to active workspace.")
-              }
-              className="inline-flex items-center gap-1.5 self-start sm:self-auto shrink-0 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60 transition"
-            >
-              <ArchiveRestore className="h-3.5 w-3.5" />
-              Restore to Active
-            </button>
+            <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+              <button
+                type="button"
+                disabled={pending || isDeleting}
+                onClick={() =>
+                  run(async () => {
+                    const res = await archiveActivityAction(activity.id, false);
+                    if (res.success) setActivity({ isArchived: false, archivedAt: null });
+                    return res;
+                  }, "Restored to active workspace.")
+                }
+                className="inline-flex items-center gap-1.5 shrink-0 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60 transition"
+              >
+                <ArchiveRestore className="h-3.5 w-3.5" />
+                Restore to Active
+              </button>
+              <button
+                type="button"
+                disabled={pending || isDeleting}
+                onClick={() => setIsDeleteModalOpen(true)}
+                className="inline-flex items-center gap-1.5 shrink-0 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-60 transition shadow-2xs"
+                title="Permanently remove project and media files"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Hard Delete
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -311,6 +386,18 @@ export function ActivityDetailClient({
                       </>
                     )}
                   </button>
+                  {activity.isArchived && (
+                    <button
+                      type="button"
+                      disabled={pending || isDeleting}
+                      onClick={() => setIsDeleteModalOpen(true)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300 shadow-2xs transition disabled:opacity-60"
+                      title="Permanently remove project and media files"
+                    >
+                      <Trash2 className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
+                      Hard Delete
+                    </button>
+                  )}
                 </>
               )}
               <button
@@ -396,6 +483,31 @@ export function ActivityDetailClient({
         </section>
       )}
 
+      {!isUnlocked && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50/80 p-4 dark:border-amber-900/60 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="rounded-lg bg-amber-200/80 p-2 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300 shrink-0">
+              <Lock className="h-4 w-4" />
+            </div>
+            <div>
+              <p className="text-xs font-bold">Project inside info is locked</p>
+              <p className="text-xs text-amber-800/80 dark:text-amber-300/80 mt-0.5">
+                RSVP as <strong>Going</strong> to unlock tasks, team discussions, full attendance roster, media updates, and receive project notifications.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={handleUnlockGoing}
+            className="inline-flex items-center justify-center gap-1.5 shrink-0 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 disabled:opacity-60 transition"
+          >
+            <Check className="h-3.5 w-3.5" />
+            RSVP Going to Unlock
+          </button>
+        </div>
+      )}
+
       <nav
         className="flex gap-1 overflow-x-auto border-b border-[#EDEDF2] dark:border-slate-800"
         aria-label="Activity sections"
@@ -410,68 +522,122 @@ export function ActivityDetailClient({
           >
             <Icon className="h-3.5 w-3.5" />
             {label}
-            {id === "TASKS" && tasks.length > 0
-              ? ` ${tasks.length}`
-              : id === "DISCUSSION" && activity.comments.length > 0
-                ? ` ${activity.comments.length}`
-                : ""}
+            {!isUnlocked && id !== "OVERVIEW" ? (
+              <Lock className="h-3 w-3 text-amber-500 ml-0.5" />
+            ) : (
+              <>
+                {id === "TASKS" && tasks.length > 0
+                  ? ` ${tasks.length}`
+                  : id === "DISCUSSION" && activity.comments.length > 0
+                    ? ` ${activity.comments.length}`
+                    : ""}
+              </>
+            )}
           </button>
         ))}
       </nav>
 
       {tab === "OVERVIEW" && (
-        <OverviewPanel activity={activity} isProject={isProject} />
-      )}
-      {tab === "TASKS" && (
-        <TasksPanel
+        <OverviewPanel
           activity={activity}
-          tasks={tasks}
-          canCreate={canCreateTasks}
-          onTaskCreated={() => router.refresh()}
+          isProject={isProject}
+          isUnlocked={isUnlocked}
+          onUnlock={handleUnlockGoing}
+          pending={pending}
         />
       )}
-      {tab === "ATTENDANCE" && (
-        <AttendancePanel
-          activity={activity}
-          canManage={activity.canManageAttendance}
-          onSelfCheckIn={() =>
-            run(() => selfCheckInAction(activity.id), "Check-in recorded.")
-          }
-          onRevoke={(id) =>
-            run(
-              () => revokeAttendanceAction(activity.id, id),
-              "Attendance record removed.",
-            )
-          }
-          onToggleQrCheckIn={(enabled) =>
-            run(
-              () => toggleActivityQrCheckInAction(activity.id, enabled),
-              enabled ? "QR check-in enabled." : "QR check-in disabled.",
-            )
-          }
-        />
-      )}
-      {tab === "DISCUSSION" && (
-        <DiscussionPanel
-          activity={activity}
-          currentUserId={currentUserId}
-          onRefresh={() => router.refresh()}
-        />
-      )}
-      {tab === "MEDIA" && (
-        <MediaPanel
-          activity={activity}
-          canManage={canManageClub}
-          onRefresh={() => router.refresh()}
-        />
-      )}
-      {tab === "REPORT" && isProject && (
-        <ReportPanel
-          activity={activity}
-          canManage={canManageClub}
-          onPublished={() => router.refresh()}
-        />
-      )}
+      {tab === "TASKS" &&
+        (isUnlocked ? (
+          <TasksPanel
+            activity={activity}
+            tasks={tasks}
+            canCreate={canCreateTasks}
+            members={members}
+            onTaskCreated={() => router.refresh()}
+          />
+        ) : (
+          <LockedTabPanel
+            tabName="Project Tasks"
+            description="Task assignments, committee deliverables, and workflows are unlocked for confirmed participants and committee members."
+            onUnlock={handleUnlockGoing}
+            pending={pending}
+          />
+        ))}
+      {tab === "ATTENDANCE" &&
+        (isUnlocked ? (
+          <AttendancePanel
+            activity={activity}
+            canManage={activity.canManageAttendance}
+            onSelfCheckIn={() =>
+              run(() => selfCheckInAction(activity.id), "Check-in recorded.")
+            }
+            onRevoke={(id) =>
+              run(
+                () => revokeAttendanceAction(activity.id, id),
+                "Attendance record removed.",
+              )
+            }
+            onToggleQrCheckIn={(enabled) =>
+              run(
+                () => toggleActivityQrCheckInAction(activity.id, enabled),
+                enabled ? "QR check-in enabled." : "QR check-in disabled.",
+              )
+            }
+          />
+        ) : (
+          <LockedTabPanel
+            tabName="Attendance & Check-in"
+            description="The full attendee roster, QR scanner, and check-in records are unlocked for confirmed participants."
+            onUnlock={handleUnlockGoing}
+            pending={pending}
+          />
+        ))}
+      {tab === "DISCUSSION" &&
+        (isUnlocked ? (
+          <DiscussionPanel
+            activity={activity}
+            currentUserId={currentUserId}
+            onRefresh={() => router.refresh()}
+          />
+        ) : (
+          <LockedTabPanel
+            tabName="Discussion Group"
+            description="Internal comments, team threads, and reaction updates are restricted to confirmed attendees and committee members."
+            onUnlock={handleUnlockGoing}
+            pending={pending}
+          />
+        ))}
+      {tab === "MEDIA" &&
+        (isUnlocked ? (
+          <MediaPanel
+            activity={activity}
+            canManage={canManageClub}
+            onRefresh={() => router.refresh()}
+          />
+        ) : (
+          <LockedTabPanel
+            tabName="Project Media"
+            description="Project photo documentation, cover galleries, and uploaded media assets are unlocked for participants."
+            onUnlock={handleUnlockGoing}
+            pending={pending}
+          />
+        ))}
+      {tab === "REPORT" &&
+        isProject &&
+        (isUnlocked ? (
+          <ReportPanel
+            activity={activity}
+            canManage={canManageClub}
+            onPublished={() => router.refresh()}
+          />
+        ) : (
+          <LockedTabPanel
+            tabName="Accomplishment Report"
+            description="Detailed reporting metrics, volunteer hours, and project impacts are unlocked for participants."
+            onUnlock={handleUnlockGoing}
+            pending={pending}
+          />
+        ))}
 
       {isEditOpen && (
         <EditActivityModal
@@ -483,16 +649,115 @@ export function ActivityDetailClient({
           onSaved={() => router.refresh()}
         />
       )}
+
+      {isDeleteModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="hard-delete-dialog-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-in fade-in duration-150"
+        >
+          <div className="w-full max-w-md rounded-2xl border border-rose-200 bg-white p-6 shadow-2xl dark:border-rose-900/50 dark:bg-[#161B26]">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div className="flex-1">
+                <h3
+                  id="hard-delete-dialog-title"
+                  className="text-base font-bold text-slate-900 dark:text-white"
+                >
+                  Permanently delete this {isProject ? "project" : "activity"}?
+                </h3>
+                <p className="mt-1.5 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                  This is a <strong>permanent hard delete</strong> and cannot be undone.
+                  All associated project details, tasks, check-in records,
+                  uploaded photos in storage, and reports for{" "}
+                  <strong>&ldquo;{activity.title}&rdquo;</strong> will be
+                  completely wiped.
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setIsDeleteModalOpen(false)}
+                className="rounded-lg border border-slate-200 px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleHardDelete}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-60 shadow-xs transition"
+              >
+                {isDeleting ? (
+                  <>Deleting...</>
+                ) : (
+                  <>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Permanently Delete
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
+  );
+}
+
+function LockedTabPanel({
+  tabName,
+  description,
+  onUnlock,
+  pending,
+}: {
+  tabName: string;
+  description: string;
+  onUnlock: () => void;
+  pending: boolean;
+}) {
+  return (
+    <div className="rounded-2xl border border-dashed border-amber-300 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20 p-8 sm:p-12 text-center">
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400 mb-3 shadow-xs">
+        <Lock className="h-6 w-6" />
+      </div>
+      <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+        {tabName} is locked
+      </h3>
+      <p className="mx-auto mt-2 max-w-md text-xs sm:text-sm text-slate-600 dark:text-slate-400">
+        {description}
+      </p>
+      <div className="mt-5 flex justify-center">
+        <button
+          type="button"
+          disabled={pending}
+          onClick={onUnlock}
+          className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-xs font-bold text-white shadow-md hover:bg-emerald-700 disabled:opacity-60 transition cursor-pointer"
+        >
+          <Check className="h-4 w-4" /> RSVP Going to Unlock
+        </button>
+      </div>
+    </div>
   );
 }
 
 function OverviewPanel({
   activity,
   isProject,
+  isUnlocked = true,
+  onUnlock,
+  pending = false,
 }: {
   activity: ActivityDetailDTO;
   isProject: boolean;
+  isUnlocked?: boolean;
+  onUnlock?: () => void;
+  pending?: boolean;
 }) {
   const details = activity.projectDetails;
   return (
@@ -506,6 +771,57 @@ function OverviewPanel({
             activity.shortDescription ||
             "No description has been added."}
         </p>
+
+        {activity.team && activity.team.length > 0 && (
+          <div className="mt-6 border-t border-[#EDEDF2] pt-5 dark:border-slate-800">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-1.5">
+              <Users className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+              Project Committee & Leads ({activity.team.length})
+            </h3>
+            <div className="grid gap-2.5 sm:grid-cols-2">
+              {activity.team.map((member) => (
+                <div
+                  key={member.profileId}
+                  className="flex items-center gap-2.5 rounded-lg border border-[#EDEDF2] bg-slate-50/60 p-2.5 dark:border-slate-800 dark:bg-slate-900/40"
+                >
+                  <Avatar name={member.fullName} url={member.avatarUrl} size={30} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold text-[#111625] dark:text-white truncate">
+                      {member.fullName}
+                    </p>
+                    <span className="inline-block text-[10px] font-medium text-[#0D3594] dark:text-blue-300">
+                      {member.role.replace("_", " ")}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {!isUnlocked && (
+          <div className="mt-6 rounded-xl border border-dashed border-amber-300 dark:border-amber-900/60 bg-amber-50/60 dark:bg-amber-950/20 p-5 text-center">
+            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 mb-2">
+              <Lock className="h-5 w-5" />
+            </div>
+            <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+              Inside Project Information is Restricted
+            </h4>
+            <p className="mt-1 text-xs text-slate-600 dark:text-slate-400 max-w-sm mx-auto">
+              RSVP as <strong>Going</strong> to unlock task workflows, private discussion group, participant roster, and real-time project notifications.
+            </p>
+            {onUnlock && (
+              <button
+                type="button"
+                disabled={pending}
+                onClick={onUnlock}
+                className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 disabled:opacity-60 transition cursor-pointer"
+              >
+                <Check className="h-3.5 w-3.5" /> RSVP Going to Unlock
+              </button>
+            )}
+          </div>
+        )}
         {isProject && details && (
           <>
             <h3 className="mt-6 text-xs font-bold uppercase text-slate-500">
@@ -668,11 +984,13 @@ function TasksPanel({
   activity,
   tasks,
   canCreate,
+  members = [],
   onTaskCreated,
 }: {
   activity: ActivityDetailDTO;
   tasks: GroupTaskDTO[];
   canCreate: boolean;
+  members?: MemberDTO[];
   onTaskCreated: () => void;
 }) {
   const [showForm, setShowForm] = useState(false);
@@ -713,6 +1031,8 @@ function TasksPanel({
             const data = new FormData(event.currentTarget);
             setError(null);
             startTransition(async () => {
+              const assigneeId = String(data.get("assigneeId") || "");
+              const assigneeIds = assigneeId ? [assigneeId] : [];
               const result = await createActivityTaskAction({
                 activityId: activity.id,
                 title: String(data.get("title") || ""),
@@ -723,7 +1043,7 @@ function TasksPanel({
                 priority: String(data.get("priority") || "MEDIUM") as
                   "LOW" | "MEDIUM" | "HIGH" | "URGENT",
                 dueDate: String(data.get("dueDate") || ""),
-                assigneeIds: [],
+                assigneeIds,
               });
               if (!result.success) {
                 setError(result.error);
@@ -759,6 +1079,30 @@ function TasksPanel({
               <option>LOW</option>
               <option>HIGH</option>
               <option>URGENT</option>
+            </select>
+          </label>
+          <label className="text-xs font-semibold sm:col-span-2">
+            Assign to Committee Member or Officer
+            <select name="assigneeId" className={fieldClass}>
+              <option value="">-- Unassigned --</option>
+              {activity.team && activity.team.length > 0 && (
+                <optgroup label="Project Committee & Team">
+                  {activity.team.map((m) => (
+                    <option key={m.profileId} value={m.profileId}>
+                      {m.fullName} ({m.role.replace("_", " ")})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {members && members.length > 0 && (
+                <optgroup label="Club Members & Officers">
+                  {members.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name || m.email || "Member"} {m.role ? `(${m.role})` : ""}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </label>
           <label className="text-xs font-semibold sm:col-span-2">
@@ -856,8 +1200,16 @@ function TaskCard({
           {task.description}
         </p>
       )}
+      {task.assignedMemberNames && task.assignedMemberNames.length > 0 && (
+        <div className="mt-2 flex items-center gap-1.5 text-[10px] font-medium text-slate-600 dark:text-slate-300">
+          <Users className="h-3 w-3 text-slate-400 shrink-0" />
+          <span className="truncate">
+            {task.assignedMemberNames.join(", ")}
+          </span>
+        </div>
+      )}
       <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500">
-        <span>{task.priority}</span>
+        <span className="font-semibold text-slate-600 dark:text-slate-400">{task.priority}</span>
         <span>Due {formatManila(`${task.dueDate}T04:00:00Z`, "MMM d")}</span>
       </div>
     </article>
@@ -1176,7 +1528,7 @@ function DiscussionPanel({
                     {reaction.emoji} {reaction.count}
                   </button>
                 ))}
-                {["👍", "❤️", "🎉"].map((emoji) => (
+                {["👍", "❤️", "🎉", "🔥", "👏", "🙌"].map((emoji) => (
                   <button
                     key={emoji}
                     type="button"
@@ -1224,121 +1576,256 @@ function MediaPanel({
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [isDragging, setIsDragging] = useState(false);
+  const [caption, setCaption] = useState("");
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  const handleFilesAdded = (files: FileList | File[]) => {
+    setError(null);
+    const validFiles = Array.from(files).filter((file) =>
+      file.type.startsWith("image/"),
+    );
+    if (validFiles.length === 0) {
+      setError("Please select valid image files (JPG, PNG, WebP, GIF).");
+      return;
+    }
+    setSelectedFiles((prev) => {
+      const existingSignatures = new Set(prev.map((f) => `${f.name}_${f.size}`));
+      const newUnique = validFiles.filter(
+        (f) => !existingSignatures.has(`${f.name}_${f.size}`),
+      );
+      return [...prev, ...newUnique];
+    });
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDragging) setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFilesAdded(e.dataTransfer.files);
+    }
+  };
+
+  const removeFile = (index: number) => {
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSubmitUpload = () => {
+    if (selectedFiles.length === 0) return;
+    setError(null);
+    startTransition(async () => {
+      try {
+        const result = await uploadActivityPhotos({
+          files: selectedFiles,
+          activityId: activity.id,
+          caption,
+          upload: uploadActivityMediaAction,
+          onProgress: setUploadProgress,
+        });
+        setSelectedFiles(
+          result.failures.map((failure) => failure.file),
+        );
+        if (result.failures.length === 0) {
+          setCaption("");
+          if (fileInputRef.current) fileInputRef.current.value = "";
+        } else {
+          setError(
+            result.failures
+              .map((failure) => `${failure.file.name}: ${failure.error}`)
+              .join(" "),
+          );
+        }
+        if (result.uploaded > 0) {
+          const saved = Math.max(
+            0,
+            Math.round(
+              (1 - result.uploadedBytes / result.originalBytes) * 100,
+            ),
+          );
+          notifyToast({
+            message: `${result.uploaded} photo(s) uploaded${saved ? `, ${saved}% smaller` : ""}.`,
+            kind: "success",
+          });
+          onRefresh();
+        }
+      } catch (error) {
+        setError(
+          error instanceof Error
+            ? error.message
+            : "Upload failed. Please retry.",
+        );
+      } finally {
+        setUploadProgress(null);
+      }
+    });
+  };
+
   return (
     <section className="space-y-4">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-sm font-bold text-[#111625] dark:text-white">
-            Project media
+            Project media & moments
           </h2>
           <p className="mt-1 text-xs text-slate-500">
-            Photos are stored privately and served as signed links to club
-            members.
+            Photos are stored privately and served as signed links to club members.
           </p>
         </div>
-        {canManage && (
-          <form
-            className="flex flex-wrap items-center gap-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              const form = event.currentTarget;
-              const caption = String(new FormData(form).get("caption") || "");
-              setError(null);
-              startTransition(async () => {
-                try {
-                  const result = await uploadActivityPhotos({
-                    files: selectedFiles,
-                    activityId: activity.id,
-                    caption,
-                    upload: uploadActivityMediaAction,
-                    onProgress: setUploadProgress,
-                  });
-                  setSelectedFiles(
-                    result.failures.map((failure) => failure.file),
-                  );
-                  form.reset();
-                  if (result.failures.length) {
-                    setError(
-                      result.failures
-                        .map(
-                          (failure) => `${failure.file.name}: ${failure.error}`,
-                        )
-                        .join(" "),
-                    );
-                    const captionInput = form.elements.namedItem("caption");
-                    if (captionInput instanceof HTMLInputElement)
-                      captionInput.value = caption;
-                  }
-                  if (result.uploaded > 0) {
-                    const saved = Math.max(
-                      0,
-                      Math.round(
-                        (1 - result.uploadedBytes / result.originalBytes) * 100,
-                      ),
-                    );
-                    notifyToast({
-                      message: `${result.uploaded} photo(s) uploaded${saved ? `, ${saved}% smaller` : ""}.`,
-                      kind: "success",
-                    });
-                    onRefresh();
-                  }
-                } catch (error) {
-                  setError(
-                    error instanceof Error
-                      ? error.message
-                      : "Upload failed. Please retry.",
-                  );
-                } finally {
-                  setUploadProgress(null);
-                }
-              });
-            }}
-          >
-            <label className="sr-only" htmlFor="activity-media">
-              Choose photos
-            </label>
-            <input
-              id="activity-media"
-              name="files"
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif"
-              multiple
-              required={selectedFiles.length === 0}
-              disabled={pending}
-              onChange={(event) => {
-                setSelectedFiles(Array.from(event.target.files || []));
-                setError(null);
-              }}
-              className="max-w-52 text-[11px] file:mr-2 file:rounded-md file:border-0 file:bg-slate-100 file:px-2 file:py-1.5 file:text-[11px] file:font-semibold dark:file:bg-slate-800"
-            />
-            <input
-              name="caption"
-              aria-label="Photo caption"
-              disabled={pending}
-              placeholder="Caption (optional)"
-              maxLength={280}
-              className="w-40 rounded-lg border border-[#EDEDF2] bg-white px-2.5 py-2 text-xs dark:border-slate-700 dark:bg-slate-900"
-            />
-            <button
-              disabled={pending || selectedFiles.length === 0}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-[#0D3594] px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
-            >
-              <Upload className="h-3.5 w-3.5" />{" "}
-              {error && selectedFiles.length ? "Retry photos" : "Upload"}
-            </button>
-          </form>
-        )}
       </header>
-      {(uploadProgress || selectedFiles.length > 0) && (
-        <p role="status" aria-live="polite" className="text-xs text-slate-500">
-          {uploadProgress || `${selectedFiles.length} photo(s) selected`}
-        </p>
+
+      {canManage && (
+        <div
+          onDragEnter={handleDragOver}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          className={`relative rounded-2xl border-2 border-dashed p-6 transition-all duration-200 text-center ${
+            isDragging
+              ? "border-blue-500 bg-blue-50/80 dark:border-blue-400 dark:bg-blue-950/40 ring-4 ring-blue-500/10 scale-[1.005]"
+              : "border-slate-300 hover:border-slate-400 bg-slate-50/50 dark:border-slate-700 dark:hover:border-slate-600 dark:bg-[#161B26]/60"
+          }`}
+        >
+          <input
+            ref={fileInputRef}
+            id="activity-media-dropzone"
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            multiple
+            disabled={pending}
+            className="sr-only"
+            onChange={(e) => {
+              if (e.target.files) handleFilesAdded(e.target.files);
+            }}
+          />
+
+          <div className="flex flex-col items-center justify-center space-y-2">
+            <div
+              className={`flex h-12 w-12 items-center justify-center rounded-full transition-colors ${
+                isDragging
+                  ? "bg-blue-600 text-white"
+                  : "bg-blue-100 text-[#0D3594] dark:bg-blue-900/40 dark:text-blue-300"
+              }`}
+            >
+              <Upload className="h-6 w-6" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs sm:text-sm font-semibold text-[#111625] dark:text-white">
+                Drag &amp; drop event photos here, or{" "}
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="text-[#0D3594] font-bold underline hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 focus:outline-hidden cursor-pointer"
+                >
+                  browse files
+                </button>
+              </p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Supports JPG, PNG, WebP, GIF (up to 5MB each)
+              </p>
+            </div>
+          </div>
+
+          {selectedFiles.length > 0 && (
+            <div className="mt-5 pt-4 border-t border-slate-200 dark:border-slate-700/80 text-left space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                  {selectedFiles.length} photo{selectedFiles.length > 1 ? "s" : ""} selected for upload
+                </span>
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => {
+                    setSelectedFiles([]);
+                    if (fileInputRef.current) fileInputRef.current.value = "";
+                  }}
+                  className="text-[11px] text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400"
+                >
+                  Clear all
+                </button>
+              </div>
+
+              {/* Preview thumbnails / file chips */}
+              <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto p-1">
+                {selectedFiles.map((file, idx) => (
+                  <div
+                    key={`${file.name}-${idx}`}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700 shadow-2xs dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                  >
+                    <ImagePlus className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                    <span className="max-w-[120px] sm:max-w-[180px] truncate">
+                      {file.name}
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      ({(file.size / 1024 / 1024).toFixed(1)}MB)
+                    </span>
+                    <button
+                      type="button"
+                      disabled={pending}
+                      onClick={() => removeFile(idx)}
+                      className="text-slate-400 hover:text-rose-600 p-0.5 rounded cursor-pointer"
+                      aria-label={`Remove ${file.name}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Caption and Submit */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
+                <input
+                  type="text"
+                  value={caption}
+                  disabled={pending}
+                  onChange={(e) => setCaption(e.target.value)}
+                  placeholder="Caption for these photos (optional)"
+                  maxLength={280}
+                  className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:border-[#0D3594] focus:outline-hidden dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder-slate-500"
+                />
+                <button
+                  type="button"
+                  disabled={pending || selectedFiles.length === 0}
+                  onClick={handleSubmitUpload}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#0D3594] px-4 py-2 text-xs font-semibold text-white hover:bg-blue-900 disabled:opacity-60 transition shadow-2xs cursor-pointer"
+                >
+                  <Upload className="h-3.5 w-3.5" />
+                  {pending
+                    ? "Uploading..."
+                    : `Upload ${selectedFiles.length} photo${selectedFiles.length > 1 ? "s" : ""}`}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {uploadProgress && (
+            <div className="mt-3 text-xs font-medium text-blue-600 dark:text-blue-400 animate-pulse">
+              {uploadProgress}
+            </div>
+          )}
+
+          {error && (
+            <div className="mt-3 text-xs text-rose-600 dark:text-rose-400" role="alert">
+              {error}
+            </div>
+          )}
+        </div>
       )}
-      {error && (
-        <p role="alert" className="text-xs text-rose-600">
-          {error}
-        </p>
-      )}
+
       {activity.media.length ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {activity.media.map((photo) => (

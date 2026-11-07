@@ -39,6 +39,11 @@ const NON_PROJECT_KINDS = ACTIVITY_KINDS.filter(
   "MEETING" | (typeof PROJECT_KINDS)[number]
 >[];
 
+export const committeeMemberInputSchema = z.object({
+  profileId: uuidString,
+  role: z.enum(TEAM_ROLES).default("COMMITTEE"),
+});
+
 const baseShape = {
   clubId: uuidString,
   ownerId: uuidString.optional(),
@@ -64,6 +69,7 @@ const baseShape = {
   qrCheckInEnabled: z.boolean().default(true),
   checkInWindowMinutes: z.coerce.number().int().min(0).max(1440).default(180),
   volunteerHoursDefault: z.coerce.number().min(0).max(24).default(0),
+  committeeMembers: z.array(committeeMemberInputSchema).max(50).default([]),
 };
 
 const meetingSchema = z.object({

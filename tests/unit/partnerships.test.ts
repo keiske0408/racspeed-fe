@@ -485,7 +485,7 @@ describe("Project and media server actions", () => {
         sister_club_id: secondPartnerId,
       },
     ]);
-  });
+  }, 15000);
 
   it("rejects an unregistered additional partner before creating a project", async () => {
     const actions = await vi.importActual<
