@@ -7,6 +7,7 @@ import {
   ArchiveRestore,
   CheckSquare,
   Clock,
+  FileCheck2,
   MapPin,
   MessageSquare,
   Sparkles,
@@ -15,10 +16,12 @@ import {
 import { formatManila } from "@/lib/utils/dates";
 import {
   ACTIVITY_KIND_META,
+  isProjectKind,
   type ActivitySummaryDTO,
 } from "@/features/activities/types";
 import { minMembersStatus } from "@/features/activities/rules";
 import { ActivityStatusBadge, KindBadge, ProgressBar } from "./badges";
+import { CompactLifecycleIndicator } from "./project-lifecycle-guide";
 import { RsvpButtons } from "./rsvp-buttons";
 
 export function formatActivityWhen(
@@ -62,16 +65,24 @@ export function ActivityCard({
     activity.minMembersRequired,
   );
   const rsvpOpen = isRsvpOpen(activity);
+  const isFinished =
+    activity.status === "ACCOMPLISHED" || activity.status === "COMPLETED";
 
   return (
     <div
       className={`group relative rounded-2xl border overflow-hidden hover:shadow-md transition ${
         activity.isArchived
           ? "border-slate-200/80 dark:border-slate-800/80 bg-slate-50/70 dark:bg-[#131722] opacity-90"
-          : "border-[#EDEDF2] dark:border-slate-800 bg-white dark:bg-[#161B26] hover:border-slate-300 dark:hover:border-slate-700"
+          : isFinished
+            ? "border-emerald-300/90 dark:border-emerald-500/40 bg-emerald-50/40 dark:bg-emerald-950/15 hover:border-emerald-400 dark:hover:border-emerald-400/60 ring-1 ring-emerald-500/15"
+            : "border-[#EDEDF2] dark:border-slate-800 bg-white dark:bg-[#161B26] hover:border-slate-300 dark:hover:border-slate-700"
       }`}
     >
+      {isFinished && !activity.isArchived && (
+        <div className="h-1.5 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600" />
+      )}
       {layout === "grid" &&
+        !isFinished &&
         (activity.coverUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -99,7 +110,13 @@ export function ActivityCard({
               </span>
             )}
           </div>
-          <ActivityStatusBadge status={activity.status} />
+          <div className="flex flex-col items-end gap-1">
+            <ActivityStatusBadge status={activity.status} />
+            <CompactLifecycleIndicator
+              kind={activity.kind}
+              status={activity.status}
+            />
+          </div>
         </div>
         <div>
           <h3 className="text-sm font-bold text-[#111625] dark:text-white leading-snug line-clamp-2 group-hover:text-[#0D3594] dark:group-hover:text-blue-300">
@@ -149,7 +166,7 @@ export function ActivityCard({
           </div>
         ) : null}
 
-        <div className="flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400">
+        <div className="flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-100 dark:border-slate-800/80">
           <span className="inline-flex items-center gap-1" title="Going">
             <Users className="w-3.5 h-3.5" /> {activity.rsvp.going}
           </span>
@@ -165,38 +182,62 @@ export function ActivityCard({
             </span>
           )}
           {activity.checkedIn && (
-            <span className="ml-auto text-emerald-600 font-semibold">
+            <span className="text-emerald-600 font-semibold">
               Checked in
             </span>
           )}
-          {canManage && onToggleArchive && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onToggleArchive(activity);
-              }}
-              title={
-                activity.isArchived
-                  ? "Restore to Active Workspace"
-                  : "Archive Activity"
-              }
-              className="relative z-10 ml-auto inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition"
-            >
-              {activity.isArchived ? (
-                <>
-                  <ArchiveRestore className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
-                  Restore
-                </>
-              ) : (
-                <>
-                  <Archive className="h-3 w-3 text-slate-500" />
-                  Archive
-                </>
+          <div className="relative z-10 ml-auto flex items-center gap-1.5">
+            {isProjectKind(activity.kind) &&
+              !activity.isArchived &&
+              ["ONGOING", "AWAITING_REPORT"].includes(activity.status) && (
+                <Link
+                  href={`/project-center/${activity.id}?tab=REPORT`}
+                  className="inline-flex items-center gap-1 rounded-md bg-[#0D3594] px-2 py-1 text-[10px] font-bold text-white hover:bg-[#092569] transition"
+                >
+                  <FileCheck2 className="h-3 w-3" />
+                  Report
+                </Link>
               )}
-            </button>
-          )}
+            {isProjectKind(activity.kind) &&
+              !activity.isArchived &&
+              activity.status === "ACCOMPLISHED" && (
+                <Link
+                  href={`/project-center/${activity.id}?tab=REPORT`}
+                  className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-100/80 px-2 py-1 text-[10px] font-bold text-emerald-800 hover:bg-emerald-200/80 dark:border-emerald-500/40 dark:bg-emerald-500/20 dark:text-emerald-200 transition"
+                >
+                  <Sparkles className="h-3 w-3" />
+                  Report ✓
+                </Link>
+              )}
+            {canManage && onToggleArchive && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onToggleArchive(activity);
+                }}
+                title={
+                  activity.isArchived
+                    ? "Restore to Active Workspace"
+                    : "Archive Activity"
+                }
+                className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition"
+              >
+                {activity.isArchived ? (
+                  <>
+                    <ArchiveRestore className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+                    Restore
+                  </>
+                ) : (
+                  <>
+                    <Archive className="h-3 w-3 text-slate-500" />
+                    Archive
+                  </>
+                )}
+              </button>
+            )}
+          </div>
         </div>
 
         {rsvpOpen && layout === "grid" && (

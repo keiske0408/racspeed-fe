@@ -6,8 +6,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   Archive,
   ArchiveRestore,
+  ArrowRight,
   CalendarDays,
+  CheckCircle2,
   CheckSquare,
+  ClipboardCheck,
+  FileCheck2,
   FolderArchive,
   Images,
   LayoutGrid,
@@ -15,17 +19,20 @@ import {
   Plus,
   Search,
   SlidersHorizontal,
+  Sparkles,
   Trash2,
 } from "lucide-react";
 import { ActivityCalendar } from "./_components/activity-calendar";
 import { ActivityMoments } from "./_components/activity-moments";
 import { ActivityCard, formatActivityWhen } from "./_components/activity-card";
 import { ActivityStatusBadge, KindBadge } from "./_components/badges";
+import { CompactLifecycleIndicator } from "./_components/project-lifecycle-guide";
 import {
   ACTIVITY_KINDS,
   ACTIVITY_KIND_META,
   ACTIVITY_STATUSES,
   ACTIVITY_STATUS_LABELS,
+  isProjectKind,
   type ActivityStatus,
   type ActivitySummaryDTO,
 } from "@/features/activities/types";
@@ -140,21 +147,33 @@ export function ProjectCenterClient({
       if (rotaryYear !== "ALL" && activity.rotaryYear !== rotaryYear)
         return false;
       if (scope === "ACTIVE") {
-        if (
-          status === "ACTIVE" &&
-          ["CANCELLED", "ACCOMPLISHED"].includes(activity.status)
-        )
+        if (status === "ACTIVE" && activity.status === "CANCELLED") {
           return false;
+        }
+        if (
+          status === "FINISHED" &&
+          !["COMPLETED", "ACCOMPLISHED"].includes(activity.status)
+        ) {
+          return false;
+        }
         if (
           status !== "ALL" &&
           status !== "ACTIVE" &&
+          status !== "FINISHED" &&
           activity.status !== status
         )
           return false;
       } else {
         if (
+          status === "FINISHED" &&
+          !["COMPLETED", "ACCOMPLISHED"].includes(activity.status)
+        ) {
+          return false;
+        }
+        if (
           status !== "ALL" &&
           status !== "ACTIVE" &&
+          status !== "FINISHED" &&
           activity.status !== status
         )
           return false;
@@ -296,20 +315,28 @@ export function ProjectCenterClient({
   }
 
   const activeWorkspaceActivities = activeActivities.filter(
-    (a) => !["CANCELLED", "ACCOMPLISHED"].includes(a.status),
+    (a) => a.status !== "CANCELLED",
   );
   const serviceProjectCount = activeWorkspaceActivities.filter((a) =>
     ["SERVICE_PROJECT", "JOINT_PROJECT"].includes(a.kind),
   ).length;
-  const ongoingActiveCount = activeWorkspaceActivities.filter(
+  const ongoingActiveCount = activeActivities.filter(
     (a) => a.status === "ONGOING",
   ).length;
-  const plannedActiveCount = activeWorkspaceActivities.filter(
+  const plannedActiveCount = activeActivities.filter(
     (a) => a.status === "PLANNED",
   ).length;
   const awaitingReports = activeActivities.filter(
     (a) => a.status === "AWAITING_REPORT",
   ).length;
+  const finishedActiveCount = activeActivities.filter((a) =>
+    ["COMPLETED", "ACCOMPLISHED"].includes(a.status),
+  ).length;
+  const projectsNeedingReport = activeActivities.filter(
+    (a) =>
+      isProjectKind(a.kind) &&
+      ["ONGOING", "AWAITING_REPORT"].includes(a.status),
+  );
   const planned = filtered.filter((a) => a.status === "PLANNED");
   const ongoing = filtered.filter((a) => a.status === "ONGOING");
   const reporting = filtered.filter((a) => a.status === "AWAITING_REPORT");
@@ -355,13 +382,13 @@ export function ProjectCenterClient({
       <header className="flex flex-col gap-4 border-b border-[#EDEDF2] dark:border-slate-800 pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            <CalendarDays className="h-3.5 w-3.5" /> Club operations
+            <CalendarDays className="h-3.5 w-3.5" /> Club operations &amp; project lifecycle
           </div>
           <h1 className="mt-1 text-2xl font-bold text-[#111625] dark:text-white">
             Project Center
           </h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            One workspace for meetings, service, tasks, attendance and club archives.
+            Plan club activities, track live execution, and publish service projects as accomplished.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -370,7 +397,7 @@ export function ProjectCenterClient({
               type="button"
               disabled={pending}
               onClick={handleBulkArchiveFinished}
-              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-[#161B26] dark:text-slate-200 dark:hover:bg-slate-800 transition"
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-[#161B26] dark:text-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
               title="Move all completed, accomplished, and cancelled activities to the archive"
             >
               <FolderArchive className="h-3.5 w-3.5 text-slate-500" />
@@ -380,7 +407,7 @@ export function ProjectCenterClient({
           {canCreate && (
             <Link
               href="/project-center/new"
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#0D3594] px-3.5 py-2 text-sm font-semibold text-white hover:bg-[#092569]"
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#0D3594] px-3.5 py-2 text-sm font-semibold text-white hover:bg-[#092569] shadow-xs transition"
             >
               <Plus className="h-4 w-4" /> New activity
             </Link>
@@ -388,55 +415,132 @@ export function ProjectCenterClient({
         </div>
       </header>
 
+      {/* Interactive 5-Stage Lifecycle Pipeline Filter Cards */}
       <section
-        className="grid grid-cols-2 gap-3 sm:grid-cols-5"
-        aria-label="Project Center summary"
+        className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"
+        aria-label="Project Center lifecycle pipeline"
       >
         <SummaryMetric
-          label="Active Projects"
+          label="All Active"
+          stepBadge={`${serviceProjectCount} projects`}
           value={activeWorkspaceActivities.length}
-          detail={`${ongoingActiveCount} ongoing · ${plannedActiveCount} planned`}
+          detail={`${tasksList.filter((t) => t.status !== "COMPLETED").length} open tasks`}
+          active={scope === "ACTIVE" && status === "ACTIVE"}
+          onClick={() => {
+            setScope("ACTIVE");
+            setStatus("ACTIVE");
+          }}
         />
         <SummaryMetric
-          label="Service & Joint"
-          value={serviceProjectCount}
-          detail="community & twin club service"
+          label="1. Planned"
+          stepBadge="Step 1"
+          value={plannedActiveCount}
+          detail="Schedule & RSVPs"
+          tone="blue"
+          active={scope === "ACTIVE" && status === "PLANNED"}
+          onClick={() => {
+            setScope("ACTIVE");
+            setStatus("PLANNED");
+          }}
         />
         <SummaryMetric
-          label="Awaiting report"
+          label="2. Ongoing"
+          stepBadge="Step 2"
+          value={ongoingActiveCount}
+          detail="Live execution & photos"
+          tone="amber"
+          active={scope === "ACTIVE" && status === "ONGOING"}
+          onClick={() => {
+            setScope("ACTIVE");
+            setStatus("ONGOING");
+          }}
+        />
+        <SummaryMetric
+          label="3. Awaiting Report"
+          stepBadge="Step 3"
           value={awaitingReports}
-          detail="chair follow-up"
-          tone={awaitingReports ? "amber" : "default"}
-        />
-        <SummaryMetric
-          label="Open tasks"
-          value={tasksList.filter((t) => t.status !== "COMPLETED").length}
-          detail="across club activities"
-        />
-        <SummaryMetric
-          label="Archived"
-          value={archivedActivities.length}
-          detail="historical records"
-        />
-      </section>
-
-      {awaitingReports > 0 && scope === "ACTIVE" && (
-        <Link
-          href={`/project-center?status=AWAITING_REPORT`}
+          detail="Ready to publish report"
+          tone={awaitingReports > 0 ? "orange" : "default"}
+          active={scope === "ACTIVE" && status === "AWAITING_REPORT"}
           onClick={() => {
             setScope("ACTIVE");
             setStatus("AWAITING_REPORT");
           }}
-          className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200"
+        />
+        <SummaryMetric
+          label="4. Accomplished"
+          stepBadge="Step 4"
+          value={finishedActiveCount}
+          detail={`${archivedActivities.length} in archive`}
+          tone="emerald"
+          active={scope === "ACTIVE" && status === "FINISHED"}
+          onClick={() => {
+            setScope("ACTIVE");
+            setStatus("FINISHED");
+          }}
+        />
+      </section>
+
+      {/* Guided Completion Flow & Action Spotlight */}
+      {scope === "ACTIVE" && (
+        <section
+          aria-label="How to complete a service project"
+          className="rounded-2xl border border-[#E4E7EF] bg-gradient-to-r from-slate-50/90 via-white to-emerald-50/40 p-4 dark:border-slate-800 dark:from-[#161B26] dark:via-[#161B26] dark:to-emerald-950/15"
         >
-          <span>
-            <strong>
-              {awaitingReports} project{awaitingReports === 1 ? "" : "s"}
-            </strong>{" "}
-            need an accomplishment report.
-          </span>
-          <span className="font-semibold">Review reports</span>
-        </Link>
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1 rounded-md bg-[#0D3594]/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#0D3594] dark:bg-blue-500/15 dark:text-blue-300">
+                  <Sparkles className="h-3 w-3" /> Project Completion Guide
+                </span>
+                <div className="hidden sm:flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                  <span>1. Planned</span>
+                  <ArrowRight className="h-3 w-3 text-slate-400" />
+                  <span>2. Ongoing</span>
+                  <ArrowRight className="h-3 w-3 text-slate-400" />
+                  <span>3. Awaiting Report</span>
+                  <ArrowRight className="h-3 w-3 text-slate-400" />
+                  <span className="text-emerald-700 dark:text-emerald-300 font-bold">
+                    4. Accomplished (Publish Report)
+                  </span>
+                </div>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-300">
+                To mark a service project as finished, open its{" "}
+                <strong>Report</strong> tab, attach at least 1 photo, complete
+                the 6 Rotary Showcase fields, and click{" "}
+                <strong>Publish as accomplished</strong>.
+              </p>
+            </div>
+            {projectsNeedingReport.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {projectsNeedingReport.slice(0, 2).map((proj) => (
+                  <Link
+                    key={proj.id}
+                    href={`/project-center/${proj.id}?tab=REPORT`}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-[#0D3594] px-3 py-2 text-xs font-bold text-white shadow-2xs hover:bg-[#092569] transition"
+                  >
+                    <FileCheck2 className="h-3.5 w-3.5" />
+                    <span className="max-w-[180px] truncate">
+                      Complete: {proj.title}
+                    </span>
+                    <ArrowRight className="h-3 w-3" />
+                  </Link>
+                ))}
+                {awaitingReports > 0 && status !== "AWAITING_REPORT" && (
+                  <button
+                    type="button"
+                    onClick={() => setStatus("AWAITING_REPORT")}
+                    className="inline-flex items-center gap-1 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900 hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200 cursor-pointer"
+                  >
+                    <ClipboardCheck className="h-3.5 w-3.5" />
+                    {awaitingReports} Awaiting Report
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </section>
       )}
 
       {scope === "ARCHIVED" && (
@@ -476,11 +580,11 @@ export function ProjectCenterClient({
                 type="button"
                 onClick={() => {
                   setScope("ACTIVE");
-                  if (status === "ALL") setStatus("ACTIVE");
+                  setStatus("ACTIVE");
                 }}
-                aria-pressed={scope === "ACTIVE"}
-                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition ${
-                  scope === "ACTIVE"
+                aria-pressed={scope === "ACTIVE" && status !== "FINISHED"}
+                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
+                  scope === "ACTIVE" && status !== "FINISHED"
                     ? "bg-[#0D3594] text-white"
                     : "text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
                 }`}
@@ -488,12 +592,43 @@ export function ProjectCenterClient({
                 <span>Active</span>
                 <span
                   className={`rounded-full px-1.5 py-0.2 text-[10px] ${
-                    scope === "ACTIVE"
+                    scope === "ACTIVE" && status !== "FINISHED"
                       ? "bg-white/20 text-white"
                       : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
                   }`}
                 >
-                  {activeWorkspaceActivities.length}
+                  {
+                    activeWorkspaceActivities.filter(
+                      (a) =>
+                        a.status !== "ACCOMPLISHED" && a.status !== "COMPLETED",
+                    ).length
+                  }
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setScope("ACTIVE");
+                  setStatus("FINISHED");
+                  if (view === "TASKS") setView("LIST");
+                }}
+                aria-pressed={scope === "ACTIVE" && status === "FINISHED"}
+                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
+                  scope === "ACTIVE" && status === "FINISHED"
+                    ? "bg-emerald-600 text-white shadow-2xs"
+                    : "text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-500/10"
+                }`}
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                <span>Accomplished</span>
+                <span
+                  className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                    scope === "ACTIVE" && status === "FINISHED"
+                      ? "bg-white/25 text-white"
+                      : "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300"
+                  }`}
+                >
+                  {accomplished.length}
                 </span>
               </button>
               <button
@@ -504,7 +639,7 @@ export function ProjectCenterClient({
                   if (view === "TASKS") setView("LIST");
                 }}
                 aria-pressed={scope === "ARCHIVED"}
-                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
                   scope === "ARCHIVED"
                     ? "bg-[#0D3594] text-white"
                     : "text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
@@ -556,6 +691,7 @@ export function ProjectCenterClient({
               <option value="ALL">
                 {scope === "ARCHIVED" ? "All archived statuses" : "All statuses"}
               </option>
+              <option value="FINISHED">Accomplished &amp; Completed</option>
               {ACTIVITY_STATUSES.map((s) => (
                 <option key={s} value={s}>
                   {ACTIVITY_STATUS_LABELS[s]}
@@ -732,65 +868,128 @@ export function ProjectCenterClient({
           <div className="grid gap-4 xl:grid-cols-4">
             {(
               [
-                ["PLANNED", planned],
-                ["ONGOING", ongoing],
-                ["AWAITING_REPORT", reporting],
-                ["ACCOMPLISHED", accomplished],
-              ] as [ActivityStatus, ActivitySummaryDTO[]][]
-            ).map(([column, rows]) => (
-              <section
-                key={column}
-                className="min-w-0 rounded-xl bg-slate-50/80 p-2.5 dark:bg-slate-900/50"
-              >
-                <header className="flex items-center justify-between px-1 pb-2">
-                  <div className="flex items-center gap-2">
-                    <ActivityStatusBadge status={column} />
-                    <span className="text-xs font-semibold text-slate-500">
-                      {rows.length}
-                    </span>
-                  </div>
-                </header>
-                <div className="space-y-2">
-                  {rows.map((activity) => (
-                    <ActivityCard
-                      key={activity.id}
-                      activity={activity}
-                      layout="board"
-                      canManage={canManageActivity(activity)}
-                      onToggleArchive={handleToggleArchive}
-                    />
-                  ))}
-                  {rows.length === 0 && (
-                    <p className="px-2 py-6 text-center text-xs text-slate-400">
-                      Nothing here
+                ["PLANNED", planned, "Step 1", "Scheduled & preparing"],
+                ["ONGOING", ongoing, "Step 2", "Active execution"],
+                ["AWAITING_REPORT", reporting, "Step 3", "Needs report to finish"],
+                ["ACCOMPLISHED", accomplished, "Step 4", "Verified & completed"],
+              ] as [ActivityStatus, ActivitySummaryDTO[], string, string][]
+            ).map(([column, rows, stepLabel, subtitle]) => {
+              const isAccomplishedCol = column === "ACCOMPLISHED";
+              return (
+                <section
+                  key={column}
+                  className={`min-w-0 rounded-xl border p-3 ${
+                    isAccomplishedCol
+                      ? "border-emerald-300/90 bg-emerald-50/50 ring-1 ring-emerald-500/15 dark:border-emerald-500/35 dark:bg-emerald-950/20"
+                      : "border-[#EDEDF2] bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/50"
+                  }`}
+                >
+                  <header
+                    className={`mb-2.5 border-b px-1 pb-2 ${
+                      isAccomplishedCol
+                        ? "border-emerald-200 dark:border-emerald-500/25"
+                        : "border-slate-200/70 dark:border-slate-800"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
+                            isAccomplishedCol
+                              ? "bg-emerald-200/80 text-emerald-900 dark:bg-emerald-500/25 dark:text-emerald-200"
+                              : "bg-slate-200/80 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+                          }`}
+                        >
+                          {stepLabel}
+                        </span>
+                        <ActivityStatusBadge status={column} />
+                      </div>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-bold shadow-2xs ${
+                          isAccomplishedCol
+                            ? "bg-emerald-600 text-white dark:bg-emerald-500"
+                            : "bg-white text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                        }`}
+                      >
+                        {rows.length}
+                      </span>
+                    </div>
+                    <p
+                      className={`mt-1 text-[10px] ${
+                        isAccomplishedCol
+                          ? "font-medium text-emerald-700 dark:text-emerald-300"
+                          : "text-slate-500 dark:text-slate-400"
+                      }`}
+                    >
+                      {subtitle}
                     </p>
-                  )}
-                </div>
-              </section>
-            ))}
+                  </header>
+                  <div className="space-y-2.5">
+                    {rows.map((activity) => (
+                      <ActivityCard
+                        key={activity.id}
+                        activity={activity}
+                        layout="board"
+                        canManage={canManageActivity(activity)}
+                        onToggleArchive={handleToggleArchive}
+                      />
+                    ))}
+                    {rows.length === 0 && (
+                      <p className="px-2 py-6 text-center text-xs text-slate-400">
+                        No items in this stage
+                      </p>
+                    )}
+                  </div>
+                </section>
+              );
+            })}
           </div>
         ) : filtered.length ? (
-          <div className="overflow-hidden rounded-xl border border-[#EDEDF2] bg-white dark:border-slate-800 dark:bg-[#161B26]">
-            <div className="hidden grid-cols-[minmax(220px,2fr)_minmax(120px,1fr)_minmax(140px,1fr)_minmax(90px,.6fr)_minmax(110px,.7fr)_minmax(90px,.5fr)] gap-4 border-b border-[#EDEDF2] bg-slate-50 px-4 py-2 text-[10px] font-bold uppercase text-slate-500 dark:border-slate-800 dark:bg-slate-900/50 md:grid">
-              <span>Activity</span>
-              <span>Type</span>
-              <span>Schedule</span>
-              <span>Members</span>
-              <span>Status</span>
-              <span className="text-right">Actions</span>
-            </div>
-            {filtered.map((activity) => {
+          (() => {
+            const activeFiltered = filtered.filter(
+              (a) => a.status !== "ACCOMPLISHED" && a.status !== "COMPLETED",
+            );
+            const finishedFiltered = filtered.filter(
+              (a) => a.status === "ACCOMPLISHED" || a.status === "COMPLETED",
+            );
+            const showSplitSections =
+              scope === "ACTIVE" &&
+              (status === "ACTIVE" || status === "ALL") &&
+              finishedFiltered.length > 0;
+
+            const renderRow = (activity: ActivitySummaryDTO) => {
               const manageable = canManageActivity(activity);
+              const isProjectItem = isProjectKind(activity.kind);
+              const isFinished =
+                activity.status === "ACCOMPLISHED" ||
+                activity.status === "COMPLETED";
+              const needsReportCompletion =
+                isProjectItem &&
+                (activity.status === "ONGOING" ||
+                  activity.status === "AWAITING_REPORT" ||
+                  activity.status === "COMPLETED");
+
               return (
                 <div
                   key={activity.id}
-                  className="grid gap-2 border-b border-[#EDEDF2] px-4 py-3 last:border-0 hover:bg-slate-50/80 dark:border-slate-800 dark:hover:bg-slate-800/40 md:grid-cols-[minmax(220px,2fr)_minmax(120px,1fr)_minmax(140px,1fr)_minmax(90px,.6fr)_minmax(110px,.7fr)_minmax(90px,.5fr)] md:items-center md:gap-4"
+                  className={`grid gap-2.5 border-b px-4 py-3.5 last:border-0 transition md:grid-cols-[minmax(220px,2fr)_minmax(115px,.9fr)_minmax(130px,.9fr)_minmax(85px,.55fr)_minmax(150px,1.05fr)_minmax(155px,1fr)] md:items-center md:gap-4 ${
+                    isFinished && !activity.isArchived
+                      ? "border-emerald-200/80 border-l-4 border-l-emerald-500 bg-emerald-50/45 hover:bg-emerald-50/80 dark:border-emerald-500/20 dark:border-l-emerald-500 dark:bg-emerald-950/15 dark:hover:bg-emerald-950/30"
+                      : "border-[#EDEDF2] hover:bg-slate-50/80 dark:border-slate-800 dark:hover:bg-slate-800/40"
+                  }`}
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
+                      {isFinished && !activity.isArchived && (
+                        <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                      )}
                       <Link
                         href={`/project-center/${activity.id}`}
-                        className="truncate text-sm font-semibold text-[#111625] hover:text-[#0D3594] dark:text-white dark:hover:text-blue-300"
+                        className={`truncate text-sm font-semibold ${
+                          isFinished && !activity.isArchived
+                            ? "text-emerald-950 hover:text-emerald-700 dark:text-emerald-100 dark:hover:text-emerald-300"
+                            : "text-[#111625] hover:text-[#0D3594] dark:text-white dark:hover:text-blue-300"
+                        }`}
                       >
                         {activity.title}
                       </Link>
@@ -801,7 +1000,7 @@ export function ProjectCenterClient({
                       )}
                     </div>
                     {activity.shortDescription ? (
-                      <p className="mt-0.5 truncate text-xs text-slate-500">
+                      <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
                         {activity.shortDescription}
                       </p>
                     ) : activity.archivedAt ? (
@@ -825,16 +1024,57 @@ export function ProjectCenterClient({
                       ? ` / ${activity.minMembersRequired} min`
                       : ""}
                   </p>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <ActivityStatusBadge status={activity.status} />
-                    {activity.isArchived && (
-                      <span className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                        Archived
-                      </span>
-                    )}
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <ActivityStatusBadge status={activity.status} />
+                      {activity.isArchived && (
+                        <span className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                          Archived
+                        </span>
+                      )}
+                    </div>
+                    <CompactLifecycleIndicator
+                      kind={activity.kind}
+                      status={activity.status}
+                    />
                   </div>
-                  <div className="flex items-center justify-end gap-1.5">
-                    {manageable ? (
+                  <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                    {needsReportCompletion && !activity.isArchived && (
+                      <Link
+                        href={`/project-center/${activity.id}?tab=REPORT`}
+                        title="Open Accomplishment Report to complete this project"
+                        className="inline-flex items-center gap-1 rounded-lg bg-[#0D3594] px-2.5 py-1.5 text-xs font-semibold text-white shadow-2xs transition hover:bg-[#092569]"
+                      >
+                        <FileCheck2 className="h-3.5 w-3.5" />
+                        <span>Complete Report</span>
+                      </Link>
+                    )}
+                    {isProjectItem &&
+                      activity.status === "ACCOMPLISHED" &&
+                      !activity.isArchived && (
+                        <Link
+                          href={`/project-center/${activity.id}?tab=REPORT`}
+                          className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-600 px-2.5 py-1.5 text-xs font-bold text-white shadow-2xs transition hover:bg-emerald-700 dark:border-emerald-500/40 dark:bg-emerald-600"
+                        >
+                          <Sparkles className="h-3.5 w-3.5" />
+                          <span>View Report ✓</span>
+                        </Link>
+                      )}
+                    {!needsReportCompletion &&
+                      !(isProjectItem && activity.status === "ACCOMPLISHED") && (
+                        <Link
+                          href={`/project-center/${activity.id}`}
+                          className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${
+                            isFinished
+                              ? "border-emerald-300 bg-emerald-100/80 text-emerald-800 hover:bg-emerald-200/80 dark:border-emerald-500/40 dark:bg-emerald-500/20 dark:text-emerald-200"
+                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                          }`}
+                        >
+                          <span>{isFinished ? "Completed ✓" : "Open"}</span>
+                          <ArrowRight className="h-3 w-3" />
+                        </Link>
+                      )}
+                    {manageable && (
                       <>
                         <button
                           type="button"
@@ -845,10 +1085,10 @@ export function ProjectCenterClient({
                               ? "Restore project to active workspace"
                               : "Archive this project"
                           }
-                          className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition disabled:opacity-50 ${
+                          className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs font-semibold transition disabled:opacity-50 cursor-pointer ${
                             activity.isArchived
                               ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
-                              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                              : "border-slate-200 bg-white text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700"
                           }`}
                         >
                           {activity.isArchived ? (
@@ -857,10 +1097,7 @@ export function ProjectCenterClient({
                               <span>Restore</span>
                             </>
                           ) : (
-                            <>
-                              <Archive className="h-3.5 w-3.5" />
-                              <span>Archive</span>
-                            </>
+                            <Archive className="h-3.5 w-3.5" />
                           )}
                         </button>
                         {activity.isArchived && (
@@ -869,25 +1106,121 @@ export function ProjectCenterClient({
                             disabled={pending}
                             onClick={() => handleHardDelete(activity)}
                             title="Permanently delete this archived project"
-                            className="inline-flex items-center justify-center rounded-lg border border-rose-200 bg-rose-50 p-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-400 transition disabled:opacity-50"
+                            className="inline-flex items-center justify-center rounded-lg border border-rose-200 bg-rose-50 p-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-400 transition disabled:opacity-50 cursor-pointer"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         )}
                       </>
-                    ) : (
-                      <Link
-                        href={`/project-center/${activity.id}`}
-                        className="text-xs font-semibold text-[#0D3594] hover:underline dark:text-blue-400"
-                      >
-                        View
-                      </Link>
                     )}
                   </div>
                 </div>
               );
-            })}
-          </div>
+            };
+
+            if (!showSplitSections) {
+              return (
+                <div
+                  className={`overflow-hidden rounded-xl border shadow-2xs ${
+                    status === "FINISHED" || status === "ACCOMPLISHED" || status === "COMPLETED"
+                      ? "border-emerald-300 bg-white ring-1 ring-emerald-500/15 dark:border-emerald-500/35 dark:bg-[#161B26]"
+                      : "border-[#EDEDF2] bg-white dark:border-slate-800 dark:bg-[#161B26]"
+                  }`}
+                >
+                  {(status === "FINISHED" ||
+                    status === "ACCOMPLISHED" ||
+                    status === "COMPLETED") && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-200 bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-3 text-white">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="h-4 w-4 shrink-0" />
+                        <span className="text-xs font-bold">
+                          Accomplished Projects &amp; Completed Activities
+                        </span>
+                        <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold">
+                          {filtered.length} completed
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-emerald-100">
+                        Verified club &amp; District 3820 impact records
+                      </span>
+                    </div>
+                  )}
+                  <div className="hidden grid-cols-[minmax(220px,2fr)_minmax(115px,.9fr)_minmax(130px,.9fr)_minmax(85px,.55fr)_minmax(150px,1.05fr)_minmax(155px,1fr)] gap-4 border-b border-[#EDEDF2] bg-slate-50 px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-900/50 md:grid">
+                    <span>Activity / Project</span>
+                    <span>Type</span>
+                    <span>Schedule</span>
+                    <span>Members</span>
+                    <span>Stage &amp; Progress</span>
+                    <span className="text-right">Next Action</span>
+                  </div>
+                  {filtered.map(renderRow)}
+                </div>
+              );
+            }
+
+            return (
+              <div className="space-y-6">
+                {/* Section 1: Active & Upcoming Activities */}
+                <div className="overflow-hidden rounded-xl border border-[#EDEDF2] bg-white shadow-2xs dark:border-slate-800 dark:bg-[#161B26]">
+                  <div className="flex items-center justify-between border-b border-[#EDEDF2] bg-slate-50/90 px-4 py-2.5 dark:border-slate-800 dark:bg-slate-900/60">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-[#0D3594] dark:bg-blue-400" />
+                      <h2 className="text-xs font-bold text-[#111625] dark:text-white">
+                        Active &amp; Upcoming Pipeline (Planned, Ongoing &amp; Awaiting Report)
+                      </h2>
+                      <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-[#0D3594] dark:bg-blue-500/20 dark:text-blue-300">
+                        {activeFiltered.length}
+                      </span>
+                    </div>
+                  </div>
+                  {activeFiltered.length > 0 ? (
+                    <>
+                      <div className="hidden grid-cols-[minmax(220px,2fr)_minmax(115px,.9fr)_minmax(130px,.9fr)_minmax(85px,.55fr)_minmax(150px,1.05fr)_minmax(155px,1fr)] gap-4 border-b border-[#EDEDF2] bg-slate-50/50 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-900/30 md:grid">
+                        <span>Activity / Project</span>
+                        <span>Type</span>
+                        <span>Schedule</span>
+                        <span>Members</span>
+                        <span>Stage &amp; Progress</span>
+                        <span className="text-right">Next Action</span>
+                      </div>
+                      {activeFiltered.map(renderRow)}
+                    </>
+                  ) : (
+                    <p className="px-4 py-8 text-center text-xs text-slate-500">
+                      All active projects and activities are completed! Check the Accomplished section below.
+                    </p>
+                  )}
+                </div>
+
+                {/* Section 2: Dedicated Accomplished & Completed Section (Highlighted Green) */}
+                <div className="overflow-hidden rounded-xl border-2 border-emerald-300/90 bg-white shadow-sm ring-1 ring-emerald-500/10 dark:border-emerald-500/40 dark:bg-[#161B26]">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-200 bg-gradient-to-r from-emerald-600 via-emerald-600 to-teal-600 px-4 py-3 text-white dark:border-emerald-500/30">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 shrink-0" />
+                      <h2 className="text-xs sm:text-sm font-bold">
+                        Accomplished Projects &amp; Completed Activities
+                      </h2>
+                      <span className="rounded-full bg-white/25 px-2 py-0.5 text-[10px] font-bold text-white">
+                        {finishedFiltered.length} accomplished
+                      </span>
+                    </div>
+                    <span className="text-[11px] font-medium text-emerald-50">
+                      ✓ Verified &amp; logged in club impact records
+                    </span>
+                  </div>
+                  <div className="hidden grid-cols-[minmax(220px,2fr)_minmax(115px,.9fr)_minmax(130px,.9fr)_minmax(85px,.55fr)_minmax(150px,1.05fr)_minmax(155px,1fr)] gap-4 border-b border-emerald-100 bg-emerald-50/70 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-950/30 dark:text-emerald-300 md:grid">
+                    <span>Accomplished Project / Activity</span>
+                    <span>Type</span>
+                    <span>Date Completed</span>
+                    <span>Turnout</span>
+                    <span>Status</span>
+                    <span className="text-right">Report / Action</span>
+                  </div>
+                  {finishedFiltered.map(renderRow)}
+                </div>
+              </div>
+            );
+          })()
         ) : (
           <div className="rounded-xl border border-dashed border-slate-300 px-6 py-14 text-center dark:border-slate-700">
             {scope === "ARCHIVED" ? (
@@ -940,24 +1273,80 @@ function SummaryMetric({
   label,
   value,
   detail,
+  stepBadge,
   tone = "default",
+  active = false,
+  onClick,
 }: {
   label: string;
   value: number;
   detail: string;
-  tone?: "default" | "amber";
+  stepBadge?: string;
+  tone?: "default" | "blue" | "amber" | "orange" | "emerald";
+  active?: boolean;
+  onClick?: () => void;
 }) {
+  const toneStyles: Record<
+    NonNullable<typeof tone>,
+    { card: string; activeRing: string; value: string; badge: string }
+  > = {
+    default: {
+      card: "border-[#EDEDF2] bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-[#161B26] dark:hover:border-slate-700",
+      activeRing: "ring-2 ring-[#0D3594] border-[#0D3594] dark:ring-blue-400",
+      value: "text-[#111625] dark:text-white",
+      badge: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+    },
+    blue: {
+      card: "border-blue-200/80 bg-blue-50/40 hover:border-blue-300 dark:border-blue-500/20 dark:bg-blue-500/5",
+      activeRing: "ring-2 ring-blue-600 border-blue-600 dark:ring-blue-400",
+      value: "text-blue-700 dark:text-blue-300",
+      badge: "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300",
+    },
+    amber: {
+      card: "border-amber-200/80 bg-amber-50/50 hover:border-amber-300 dark:border-amber-500/20 dark:bg-amber-500/5",
+      activeRing: "ring-2 ring-amber-500 border-amber-500 dark:ring-amber-400",
+      value: "text-amber-700 dark:text-amber-300",
+      badge: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300",
+    },
+    orange: {
+      card: "border-orange-200/80 bg-orange-50/50 hover:border-orange-300 dark:border-orange-500/20 dark:bg-orange-500/5",
+      activeRing: "ring-2 ring-orange-500 border-orange-500 dark:ring-orange-400",
+      value: "text-orange-700 dark:text-orange-300",
+      badge: "bg-orange-100 text-orange-800 dark:bg-orange-500/20 dark:text-orange-300",
+    },
+    emerald: {
+      card: "border-emerald-200/80 bg-emerald-50/50 hover:border-emerald-300 dark:border-emerald-500/20 dark:bg-emerald-500/5",
+      activeRing: "ring-2 ring-emerald-600 border-emerald-600 dark:ring-emerald-400",
+      value: "text-emerald-700 dark:text-emerald-300",
+      badge: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300",
+    },
+  };
+
+  const s = toneStyles[tone];
+
   return (
-    <div
-      className={`rounded-xl border p-3.5 ${tone === "amber" ? "border-amber-200 bg-amber-50/70 dark:border-amber-500/20 dark:bg-amber-500/5" : "border-[#EDEDF2] bg-white dark:border-slate-800 dark:bg-[#161B26]"}`}
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`group rounded-xl border p-3.5 text-left transition cursor-pointer ${s.card} ${active ? s.activeRing : ""}`}
     >
-      <p className="text-[11px] font-semibold text-slate-500">{label}</p>
-      <p
-        className={`mt-1 text-2xl font-bold ${tone === "amber" ? "text-amber-700 dark:text-amber-300" : "text-[#111625] dark:text-white"}`}
-      >
-        {value}
+      <div className="flex items-center justify-between gap-1.5">
+        <p className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+          {label}
+        </p>
+        {stepBadge && (
+          <span
+            className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${s.badge}`}
+          >
+            {stepBadge}
+          </span>
+        )}
+      </div>
+      <p className={`mt-1 text-2xl font-bold ${s.value}`}>{value}</p>
+      <p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
+        {detail}
       </p>
-      <p className="mt-0.5 text-[10px] text-slate-500">{detail}</p>
-    </div>
+    </button>
   );
 }

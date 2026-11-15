@@ -38,20 +38,22 @@ const STATUS_CLASSES: Record<ActivityStatus, string> = {
   ONGOING:
     "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20",
   COMPLETED:
-    "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/20",
+    "bg-emerald-100/90 text-emerald-800 border-emerald-400/70 shadow-2xs dark:bg-emerald-500/20 dark:text-emerald-200 dark:border-emerald-500/40 font-bold",
   AWAITING_REPORT:
     "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-500/10 dark:text-orange-300 dark:border-orange-500/20",
   ACCOMPLISHED:
-    "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/20",
+    "bg-emerald-500 text-white border-emerald-600 shadow-2xs dark:bg-emerald-500/25 dark:text-emerald-200 dark:border-emerald-400/50 font-bold",
   CANCELLED:
     "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-300 dark:border-rose-500/20",
 };
 
 export function ActivityStatusBadge({ status }: { status: ActivityStatus }) {
+  const isFinished = status === "ACCOMPLISHED" || status === "COMPLETED";
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 rounded-md border text-[11px] font-semibold ${STATUS_CLASSES[status]}`}
+      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md border text-[11px] font-semibold ${STATUS_CLASSES[status]}`}
     >
+      {isFinished && <span aria-hidden="true">✓</span>}
       {ACTIVITY_STATUS_LABELS[status]}
     </span>
   );
