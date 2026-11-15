@@ -314,10 +314,14 @@ export function ProjectCenterClient({
     });
   }
 
+  // Unarchived activities still in progress or upcoming (NOT yet accomplished/completed/cancelled)
+  const inProgressPipelineActivities = activeActivities.filter(
+    (a) => !["COMPLETED", "ACCOMPLISHED", "CANCELLED"].includes(a.status),
+  );
   const activeWorkspaceActivities = activeActivities.filter(
     (a) => a.status !== "CANCELLED",
   );
-  const serviceProjectCount = activeWorkspaceActivities.filter((a) =>
+  const serviceProjectCount = inProgressPipelineActivities.filter((a) =>
     ["SERVICE_PROJECT", "JOINT_PROJECT"].includes(a.kind),
   ).length;
   const ongoingActiveCount = activeActivities.filter(
@@ -421,10 +425,10 @@ export function ProjectCenterClient({
         aria-label="Project Center lifecycle pipeline"
       >
         <SummaryMetric
-          label="All Active"
+          label="Active & Upcoming"
           stepBadge={`${serviceProjectCount} projects`}
-          value={activeWorkspaceActivities.length}
-          detail={`${tasksList.filter((t) => t.status !== "COMPLETED").length} open tasks`}
+          value={inProgressPipelineActivities.length}
+          detail="Planned, Ongoing & Awaiting Report"
           active={scope === "ACTIVE" && status === "ACTIVE"}
           onClick={() => {
             setScope("ACTIVE");
@@ -589,7 +593,7 @@ export function ProjectCenterClient({
                     : "text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
                 }`}
               >
-                <span>Active</span>
+                <span>Active &amp; Upcoming</span>
                 <span
                   className={`rounded-full px-1.5 py-0.2 text-[10px] ${
                     scope === "ACTIVE" && status !== "FINISHED"
@@ -597,12 +601,7 @@ export function ProjectCenterClient({
                       : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
                   }`}
                 >
-                  {
-                    activeWorkspaceActivities.filter(
-                      (a) =>
-                        a.status !== "ACCOMPLISHED" && a.status !== "COMPLETED",
-                    ).length
-                  }
+                  {inProgressPipelineActivities.length}
                 </span>
               </button>
               <button
@@ -628,7 +627,7 @@ export function ProjectCenterClient({
                       : "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300"
                   }`}
                 >
-                  {accomplished.length}
+                  {finishedActiveCount}
                 </span>
               </button>
               <button
@@ -676,28 +675,27 @@ export function ProjectCenterClient({
               ))}
             </select>
 
-            <label htmlFor="activity-status-filter" className="sr-only">
-              Filter by status
-            </label>
-            <select
-              id="activity-status-filter"
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              className="rounded-lg border border-[#EDEDF2] bg-white px-2.5 py-2 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-[#161B26] dark:text-slate-200"
-            >
-              {scope === "ACTIVE" && (
-                <option value="ACTIVE">Active & upcoming</option>
-              )}
-              <option value="ALL">
-                {scope === "ARCHIVED" ? "All archived statuses" : "All statuses"}
-              </option>
-              <option value="FINISHED">Accomplished &amp; Completed</option>
-              {ACTIVITY_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {ACTIVITY_STATUS_LABELS[s]}
-                </option>
-              ))}
-            </select>
+            {scope === "ARCHIVED" && (
+              <>
+                <label htmlFor="activity-status-filter" className="sr-only">
+                  Filter by status
+                </label>
+                <select
+                  id="activity-status-filter"
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                  className="rounded-lg border border-[#EDEDF2] bg-white px-2.5 py-2 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-[#161B26] dark:text-slate-200"
+                >
+                  <option value="ALL">All archived statuses</option>
+                  <option value="FINISHED">Accomplished &amp; Completed</option>
+                  {ACTIVITY_STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {ACTIVITY_STATUS_LABELS[s]}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
 
             {availableRotaryYears.length > 0 && (
               <>
@@ -773,11 +771,13 @@ export function ProjectCenterClient({
 
         <div className="flex items-center justify-between text-xs text-slate-500">
           <span>
-            Showing {filtered.length} of{" "}
             {scope === "ARCHIVED"
-              ? archivedActivities.length
-              : activeActivities.length}{" "}
-            {scope === "ARCHIVED" ? "archived" : "active"} activities
+              ? `Showing ${filtered.length} of ${archivedActivities.length} archived activities`
+              : status === "ACTIVE"
+                ? `${inProgressPipelineActivities.length} active & upcoming (Planned, Ongoing, Awaiting Report) · ${finishedActiveCount} accomplished`
+                : status === "FINISHED"
+                  ? `Showing ${filtered.length} accomplished / completed`
+                  : `Showing ${filtered.length} in ${ACTIVITY_STATUS_LABELS[status as ActivityStatus] || status}`}
           </span>
         </div>
 
