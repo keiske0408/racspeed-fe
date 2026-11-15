@@ -48,6 +48,7 @@ import {
   deleteCommentAction,
   manualCheckInMemberAction,
   publishProjectReportAction,
+  saveProjectReportDraftAction,
   revokeActivityQrSessionAction,
   revokeAttendanceAction,
   selfCheckInAction,
@@ -71,9 +72,14 @@ import {
   ACTIVITY_STATUSES,
   ACTIVITY_STATUS_LABELS,
   COMMITTEES,
+  type ActivityStatus,
 } from "@/features/activities/types";
 import {
+  allowedTransitions,
+  deduplicateActivityLog,
   DEFAULT_QR_EXPIRATION_MINUTES,
+  evaluateReportReadiness,
+  formatActivityLogEntry,
   minMembersStatus,
   QR_EXPIRATION_OPTIONS,
   type QrSessionStatus,
@@ -89,6 +95,10 @@ import {
 } from "../_components/badges";
 import { RsvpButtons } from "../_components/rsvp-buttons";
 import { formatActivityWhen, isRsvpOpen } from "../_components/activity-card";
+import {
+  computeActivityReportReadiness,
+  ProjectLifecycleBanner,
+} from "../_components/project-lifecycle-guide";
 
 type Tab =
   "OVERVIEW" | "TASKS" | "ATTENDANCE" | "DISCUSSION" | "MEDIA" | "REPORT";
@@ -293,7 +303,36 @@ export function ActivityDetailClient({
           )}
         </div>
       )}
-      <section className="overflow-hidden rounded-2xl border border-[#EDEDF2] bg-white dark:border-slate-800 dark:bg-[#161B26]">
+      <section
+        className={`overflow-hidden rounded-2xl border transition ${
+          activity.status === "ACCOMPLISHED" || activity.status === "COMPLETED"
+            ? "border-2 border-emerald-400/90 bg-gradient-to-br from-emerald-50/45 via-white to-white shadow-sm ring-1 ring-emerald-500/15 dark:border-emerald-500/50 dark:from-emerald-950/20 dark:via-[#161B26] dark:to-[#161B26]"
+            : "border-[#EDEDF2] bg-white dark:border-slate-800 dark:bg-[#161B26]"
+        }`}
+      >
+        {(activity.status === "ACCOMPLISHED" ||
+          activity.status === "COMPLETED") && (
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-gradient-to-r from-emerald-600 via-emerald-600 to-teal-600 px-4 py-2.5 text-white">
+            <div className="flex items-center gap-2 text-xs font-bold">
+              <Check className="h-4 w-4 shrink-0 rounded-full bg-white/20 p-0.5" />
+              <span>
+                {activity.status === "ACCOMPLISHED"
+                  ? "Project Accomplished & Verified — Official Impact Report Published"
+                  : "Activity Completed & Logged in Club Records"}
+              </span>
+            </div>
+            {isProject && (
+              <button
+                type="button"
+                onClick={() => setTab("REPORT")}
+                className="inline-flex items-center gap-1 rounded-lg bg-white/20 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-white/30 transition cursor-pointer"
+              >
+                <Sparkles className="h-3 w-3" />
+                View Accomplishment Report →
+              </button>
+            )}
+          </div>
+        )}
         {activity.coverUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -301,11 +340,12 @@ export function ActivityDetailClient({
             alt=""
             className="h-44 w-full object-cover sm:h-56"
           />
-        ) : (
+        ) : activity.status !== "ACCOMPLISHED" &&
+          activity.status !== "COMPLETED" ? (
           <div
             className={`h-1.5 w-full ${ACTIVITY_KIND_META[activity.kind].dotClass}`}
           />
-        )}
+        ) : null}
         <div className="space-y-4 p-4 sm:p-6">
           <div className="flex flex-wrap items-center gap-2">
             <KindBadge
@@ -466,6 +506,38 @@ export function ActivityDetailClient({
         </div>
       </section>
 
+      <ProjectLifecycleBanner
+        activity={activity}
+        canManage={canEdit}
+        pending={pending}
+        activeTab={tab}
+        onStatusChange={(nextStatus, openReportAfter) => {
+          startTransition(async () => {
+            setActivity({ status: nextStatus });
+            const res = await updateActivityStatusAction(activity.id, nextStatus);
+            if (!res.success) {
+              setActivity({ status: activity.status });
+              notifyToast({
+                title: "Status update failed",
+                message: res.error,
+                kind: "error",
+              });
+              return;
+            }
+            notifyToast({
+              title: "Lifecycle updated",
+              message: `Moved to ${ACTIVITY_STATUS_LABELS[nextStatus]}.`,
+              kind: "success",
+            });
+            if (openReportAfter) {
+              setTab("REPORT");
+            }
+            router.refresh();
+          });
+        }}
+        onNavigateTab={(nextTab) => setTab(nextTab)}
+      />
+
       {minStatus.required && (
         <section className="rounded-xl border border-[#EDEDF2] bg-white p-4 dark:border-slate-800 dark:bg-[#161B26]">
           <div className="flex items-center justify-between gap-3 text-xs">
@@ -521,37 +593,61 @@ export function ActivityDetailClient({
         className="flex gap-1 overflow-x-auto border-b border-[#EDEDF2] dark:border-slate-800"
         aria-label="Activity sections"
       >
-        {tabs.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setTab(id)}
-            aria-current={tab === id ? "page" : undefined}
-            className={`inline-flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2.5 text-xs font-semibold transition ${tab === id ? "border-[#0D3594] text-[#0D3594] dark:text-blue-300" : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"}`}
-          >
-            <Icon className="h-3.5 w-3.5" />
-            {label}
-            {!isUnlocked && id !== "OVERVIEW" ? (
-              <Lock className="h-3 w-3 text-amber-500 ml-0.5" />
-            ) : (
-              <>
-                {id === "TASKS" && tasks.length > 0
-                  ? ` ${tasks.length}`
-                  : id === "DISCUSSION" && activity.comments.length > 0
-                    ? ` ${activity.comments.length}`
-                    : ""}
-              </>
-            )}
-          </button>
-        ))}
+        {tabs.map(({ id, label, icon: Icon }) => {
+          const reportReadiness =
+            id === "REPORT" && isProject
+              ? computeActivityReportReadiness(activity)
+              : null;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTab(id)}
+              aria-current={tab === id ? "page" : undefined}
+              className={`inline-flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2.5 text-xs font-semibold transition cursor-pointer ${tab === id ? "border-[#0D3594] text-[#0D3594] dark:text-blue-300" : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"}`}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {label}
+              {!isUnlocked && id !== "OVERVIEW" ? (
+                <Lock className="h-3 w-3 text-amber-500 ml-0.5" />
+              ) : (
+                <>
+                  {id === "TASKS" && tasks.length > 0
+                    ? ` ${tasks.length}`
+                    : id === "DISCUSSION" && activity.comments.length > 0
+                      ? ` ${activity.comments.length}`
+                      : id === "MEDIA" && activity.media.length > 0
+                        ? ` ${activity.media.length}`
+                        : ""}
+                  {id === "REPORT" && reportReadiness && (
+                    <span
+                      className={`ml-0.5 rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                        activity.status === "ACCOMPLISHED" ||
+                        reportReadiness.ready
+                          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300"
+                          : "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300"
+                      }`}
+                    >
+                      {activity.status === "ACCOMPLISHED"
+                        ? "✓"
+                        : `${reportReadiness.completedCount}/${reportReadiness.totalCount}`}
+                    </span>
+                  )}
+                </>
+              )}
+            </button>
+          );
+        })}
       </nav>
 
       {tab === "OVERVIEW" && (
         <OverviewPanel
           activity={activity}
+          tasks={tasks}
           isProject={isProject}
           isUnlocked={isUnlocked}
           onUnlock={handleUnlockGoing}
+          onNavigateTab={setTab}
           pending={pending}
         />
       )}
@@ -623,7 +719,7 @@ export function ActivityDetailClient({
         (isUnlocked ? (
           <MediaPanel
             activity={activity}
-            canManage={canManageClub}
+            canManage={canEdit}
             onRefresh={() => router.refresh()}
           />
         ) : (
@@ -639,8 +735,9 @@ export function ActivityDetailClient({
         (isUnlocked ? (
           <ReportPanel
             activity={activity}
-            canManage={canManageClub}
+            canManage={canEdit}
             onPublished={() => router.refresh()}
+            onOpenMediaTab={() => setTab("MEDIA")}
           />
         ) : (
           <LockedTabPanel
@@ -761,187 +858,457 @@ function LockedTabPanel({
 
 function OverviewPanel({
   activity,
+  tasks = [],
   isProject,
   isUnlocked = true,
   onUnlock,
+  onNavigateTab,
   pending = false,
 }: {
   activity: ActivityDetailDTO;
+  tasks?: GroupTaskDTO[];
   isProject: boolean;
   isUnlocked?: boolean;
   onUnlock?: () => void;
+  onNavigateTab?: (tab: Tab) => void;
   pending?: boolean;
 }) {
   const details = activity.projectDetails;
+  const completedTasks = tasks.filter((t) => t.status === "COMPLETED").length;
+  const isFinished =
+    activity.status === "ACCOMPLISHED" || activity.status === "COMPLETED";
+
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(260px,.8fr)]">
-      <section className="rounded-xl border border-[#EDEDF2] bg-white p-5 dark:border-slate-800 dark:bg-[#161B26]">
-        <h2 className="text-sm font-bold text-[#111625] dark:text-white">
-          About this activity
-        </h2>
-        <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-slate-600 dark:text-slate-300">
-          {activity.description ||
-            activity.shortDescription ||
-            "No description has been added."}
-        </p>
+    <div className="space-y-4">
+      {/* Visual At-a-Glance Summary Cards for Project Managers */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <button
+          type="button"
+          onClick={() => isUnlocked && onNavigateTab?.("ATTENDANCE")}
+          className="group rounded-xl border border-[#EDEDF2] bg-white p-4 text-left transition hover:border-blue-300 dark:border-slate-800 dark:bg-[#161B26] dark:hover:border-blue-500/40 cursor-pointer"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+              Attendance &amp; RSVPs
+            </span>
+            <Users className="h-4 w-4 text-[#0D3594] dark:text-blue-400" />
+          </div>
+          <p className="mt-1.5 text-xl font-bold text-[#111625] dark:text-white">
+            {activity.attendees.length} Checked In
+          </p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {activity.rsvp.going} going
+            {activity.capacity ? ` of ${activity.capacity} spots` : ""} ·{" "}
+            <span className="font-semibold text-[#0D3594] group-hover:underline dark:text-blue-300">
+              Open Attendance →
+            </span>
+          </p>
+        </button>
 
-        {activity.team && activity.team.length > 0 && (
-          <div className="mt-6 border-t border-[#EDEDF2] pt-5 dark:border-slate-800">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-1.5">
-              <Users className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
-              Project Committee & Leads ({activity.team.length})
-            </h3>
-            <div className="grid gap-2.5 sm:grid-cols-2">
-              {activity.team.map((member) => (
-                <div
-                  key={member.profileId}
-                  className="flex items-center gap-2.5 rounded-lg border border-[#EDEDF2] bg-slate-50/60 p-2.5 dark:border-slate-800 dark:bg-slate-900/40"
-                >
-                  <Avatar name={member.fullName} url={member.avatarUrl} size={30} />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-semibold text-[#111625] dark:text-white truncate">
-                      {member.fullName}
-                    </p>
-                    <span className="inline-block text-[10px] font-medium text-[#0D3594] dark:text-blue-300">
-                      {member.role.replace("_", " ")}
-                    </span>
-                  </div>
-                </div>
-              ))}
+        <button
+          type="button"
+          onClick={() => isUnlocked && onNavigateTab?.("TASKS")}
+          className="group rounded-xl border border-[#EDEDF2] bg-white p-4 text-left transition hover:border-blue-300 dark:border-slate-800 dark:bg-[#161B26] dark:hover:border-blue-500/40 cursor-pointer"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+              Tasks &amp; Action Items
+            </span>
+            <CheckSquare className="h-4 w-4 text-amber-500" />
+          </div>
+          <p className="mt-1.5 text-xl font-bold text-[#111625] dark:text-white">
+            {completedTasks} / {tasks.length} Done
+          </p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {tasks.length === 0
+              ? "No tasks assigned yet · "
+              : `${tasks.length - completedTasks} remaining · `}
+            <span className="font-semibold text-[#0D3594] group-hover:underline dark:text-blue-300">
+              Manage Tasks →
+            </span>
+          </p>
+        </button>
+
+        {isProject && details ? (
+          <button
+            type="button"
+            onClick={() => isUnlocked && onNavigateTab?.("REPORT")}
+            className={`group rounded-xl border p-4 text-left transition cursor-pointer ${
+              isFinished
+                ? "border-emerald-300 bg-emerald-50/50 hover:border-emerald-400 dark:border-emerald-500/40 dark:bg-emerald-950/20"
+                : "border-[#EDEDF2] bg-white hover:border-blue-300 dark:border-slate-800 dark:bg-[#161B26] dark:hover:border-blue-500/40"
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Community Impact
+              </span>
+              <HeartHandshake className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
             </div>
+            <p className="mt-1.5 text-xl font-bold text-[#111625] dark:text-white">
+              {details.beneficiaryCount.toLocaleString()} Beneficiaries
+            </p>
+            <p className="mt-0.5 text-xs text-slate-500">
+              {details.totalVolunteerHours.toLocaleString()} vol. hrs ·{" "}
+              <span className="font-semibold text-[#0D3594] group-hover:underline dark:text-blue-300">
+                {isFinished ? "View Report →" : "Update Report →"}
+              </span>
+            </p>
+          </button>
+        ) : (
+          <div className="rounded-xl border border-[#EDEDF2] bg-white p-4 dark:border-slate-800 dark:bg-[#161B26]">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                Activity Mode
+              </span>
+              <Sparkles className="h-4 w-4 text-violet-500" />
+            </div>
+            <p className="mt-1.5 text-base font-bold text-[#111625] dark:text-white">
+              Club / Internal Activity
+            </p>
+            <p className="mt-0.5 text-xs text-slate-500">
+              No beneficiary report needed · {activity.volunteerHoursDefault || 1}{" "}
+              hr credit per member
+            </p>
           </div>
         )}
 
-        {!isUnlocked && (
-          <div className="mt-6 rounded-xl border border-dashed border-amber-300 dark:border-amber-900/60 bg-amber-50/60 dark:bg-amber-950/20 p-5 text-center">
-            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 mb-2">
-              <Lock className="h-5 w-5" />
-            </div>
-            <h4 className="text-xs font-bold text-slate-900 dark:text-white">
-              Inside Project Information is Restricted
-            </h4>
-            <p className="mt-1 text-xs text-slate-600 dark:text-slate-400 max-w-sm mx-auto">
-              RSVP as <strong>Going</strong> to unlock task workflows, private discussion group, participant roster, and real-time project notifications.
-            </p>
-            {onUnlock && (
-              <button
-                type="button"
-                disabled={pending}
-                onClick={onUnlock}
-                className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 disabled:opacity-60 transition cursor-pointer"
-              >
-                <Check className="h-3.5 w-3.5" /> RSVP Going to Unlock
-              </button>
-            )}
+        <button
+          type="button"
+          onClick={() => isUnlocked && onNavigateTab?.("MEDIA")}
+          className="group rounded-xl border border-[#EDEDF2] bg-white p-4 text-left transition hover:border-blue-300 dark:border-slate-800 dark:bg-[#161B26] dark:hover:border-blue-500/40 cursor-pointer"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+              Photos &amp; Documentation
+            </span>
+            <ImagePlus className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
           </div>
-        )}
-        {isProject && details && (
-          <>
-            <h3 className="mt-6 text-xs font-bold uppercase text-slate-500">
-              Project objective
-            </h3>
-            <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-300">
-              {details.objective || "Not added yet."}
-            </p>
-            {details.areasOfFocus.length > 0 && (
-              <div className="mt-4 flex flex-wrap gap-1.5">
-                {details.areasOfFocus.map((item) => (
-                  <span
-                    key={item}
-                    className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
-                  >
-                    {item}
-                  </span>
-                ))}
-              </div>
-            )}
-            {details.sdgs.length > 0 && (
-              <p className="mt-3 text-xs text-slate-500">
-                UN SDGs: {details.sdgs.join(", ")}
-              </p>
-            )}
-            {details.partners.length > 0 && (
-              <div className="mt-5">
-                <h3 className="text-xs font-bold uppercase text-slate-500">
-                  Partners
-                </h3>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {details.partners.map((partner) => (
-                    <span
-                      key={partner.id}
-                      className="rounded-lg border border-[#EDEDF2] px-2.5 py-1.5 text-xs dark:border-slate-700"
-                    >
-                      {partner.name}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </>
-        )}
-      </section>
-      <aside className="space-y-4">
+          <p className="mt-1.5 text-xl font-bold text-[#111625] dark:text-white">
+            {activity.media.length}{" "}
+            {activity.media.length === 1 ? "Photo" : "Photos"}
+          </p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {activity.media.length === 0
+              ? "Upload event photos · "
+              : "Gallery documented · "}
+            <span className="font-semibold text-[#0D3594] group-hover:underline dark:text-blue-300">
+              Open Gallery →
+            </span>
+          </p>
+        </button>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(280px,.85fr)]">
         <section className="rounded-xl border border-[#EDEDF2] bg-white p-5 dark:border-slate-800 dark:bg-[#161B26]">
           <h2 className="text-sm font-bold text-[#111625] dark:text-white">
-            People
+            {isProject
+              ? "Project Summary & Purpose"
+              : "Activity Purpose & Agenda"}
           </h2>
-          <div className="mt-3 flex items-center justify-between text-xs">
-            <span className="text-slate-500">Chair</span>
-            <span className="font-semibold text-slate-700 dark:text-slate-200">
-              {activity.ownerName || "Unassigned"}
-            </span>
-          </div>
-          <div className="mt-3 flex items-center justify-between text-xs">
-            <span className="text-slate-500">Going</span>
-            <span className="font-semibold text-slate-700 dark:text-slate-200">
-              {activity.rsvp.going}
-              {activity.capacity ? ` / ${activity.capacity}` : ""}
-            </span>
-          </div>
-          <div className="mt-3 flex items-center justify-between text-xs">
-            <span className="text-slate-500">Checked in</span>
-            <span className="font-semibold text-slate-700 dark:text-slate-200">
-              {activity.attendees.length}
-            </span>
-          </div>
+          <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+            {activity.description ||
+              activity.shortDescription ||
+              "No detailed description or agenda has been added yet."}
+          </p>
+
+          {activity.team && activity.team.length > 0 && (
+            <div className="mt-6 border-t border-[#EDEDF2] pt-5 dark:border-slate-800">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-1.5">
+                <Users className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                Organizing Committee &amp; Leads ({activity.team.length})
+              </h3>
+              <div className="grid gap-2.5 sm:grid-cols-2">
+                {activity.team.map((member) => (
+                  <div
+                    key={member.profileId}
+                    className="flex items-center gap-2.5 rounded-lg border border-[#EDEDF2] bg-slate-50/60 p-2.5 dark:border-slate-800 dark:bg-slate-900/40"
+                  >
+                    <Avatar
+                      name={member.fullName}
+                      url={member.avatarUrl}
+                      size={30}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold text-[#111625] dark:text-white truncate">
+                        {member.fullName}
+                      </p>
+                      <span className="inline-block text-[10px] font-medium text-[#0D3594] dark:text-blue-300">
+                        {member.role.replace("_", " ")}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!isUnlocked && (
+            <div className="mt-6 rounded-xl border border-dashed border-amber-300 dark:border-amber-900/60 bg-amber-50/60 dark:bg-amber-950/20 p-5 text-center">
+              <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 mb-2">
+                <Lock className="h-5 w-5" />
+              </div>
+              <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                Inside Project Information is Restricted
+              </h4>
+              <p className="mt-1 text-xs text-slate-600 dark:text-slate-400 max-w-sm mx-auto">
+                RSVP as <strong>Going</strong> to unlock task workflows, private
+                discussion group, participant roster, and real-time project
+                notifications.
+              </p>
+              {onUnlock && (
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={onUnlock}
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 disabled:opacity-60 transition cursor-pointer"
+                >
+                  <Check className="h-3.5 w-3.5" /> RSVP Going to Unlock
+                </button>
+              )}
+            </div>
+          )}
           {isProject && details && (
-            <>
-              <div className="mt-3 flex items-center justify-between text-xs">
-                <span className="text-slate-500">Beneficiaries</span>
-                <span className="font-semibold text-slate-700 dark:text-slate-200">
-                  {details.beneficiaryCount.toLocaleString()}
-                </span>
+            <div className="mt-6 space-y-4 border-t border-[#EDEDF2] pt-5 dark:border-slate-800">
+              <div>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                  Intended Community Goal (Objective)
+                </h3>
+                <p className="mt-1.5 whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-300">
+                  {details.objective ||
+                    "Not added yet. You can fill this out in the Accomplishment Report tab."}
+                </p>
               </div>
-              <div className="mt-3 flex items-center justify-between text-xs">
-                <span className="text-slate-500">Volunteer hours</span>
-                <span className="font-semibold text-slate-700 dark:text-slate-200">
-                  {details.totalVolunteerHours.toLocaleString()}
-                </span>
-              </div>
-            </>
+              {details.outcomesSummary && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3.5 dark:border-emerald-500/25 dark:bg-emerald-950/20">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
+                    ✓ Achieved Outcomes &amp; Impact
+                  </h3>
+                  <p className="mt-1 whitespace-pre-wrap text-sm text-emerald-950 dark:text-emerald-100">
+                    {details.outcomesSummary}
+                  </p>
+                </div>
+              )}
+              {details.areasOfFocus.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                    Rotary Areas of Focus
+                  </h3>
+                  <div className="flex flex-wrap gap-1.5">
+                    {details.areasOfFocus.map((item) => (
+                      <span
+                        key={item}
+                        className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+                      >
+                        {item.replaceAll("_", " ")}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {details.sdgs.length > 0 && (
+                <p className="text-xs text-slate-500">
+                  <strong>UN Sustainable Development Goals:</strong> SDG{" "}
+                  {details.sdgs.join(", SDG ")}
+                </p>
+              )}
+              {details.partners.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                    Partner Clubs &amp; Organizations
+                  </h3>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {details.partners.map((partner) => (
+                      <span
+                        key={partner.id}
+                        className="rounded-lg border border-[#EDEDF2] bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                      >
+                        {partner.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </section>
-        <ActivityTimeline activity={activity} />
-      </aside>
+
+        <aside className="space-y-4">
+          {isUnlocked && onNavigateTab && (
+            <section className="rounded-xl border border-[#EDEDF2] bg-white p-5 dark:border-slate-800 dark:bg-[#161B26]">
+              <h2 className="text-sm font-bold text-[#111625] dark:text-white">
+                Manager Quick Shortcuts
+              </h2>
+              <p className="mt-0.5 text-xs text-slate-500">
+                Common actions to run and wrap up this{" "}
+                {isProject ? "project" : "activity"}:
+              </p>
+              <div className="mt-3 grid gap-2">
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab("TASKS")}
+                  className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-blue-300 hover:bg-blue-50/50 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:border-blue-500/40 transition cursor-pointer"
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <CheckSquare className="h-3.5 w-3.5 text-[#0D3594] dark:text-blue-400" />
+                    Assign or Update Tasks ({tasks.length})
+                  </span>
+                  <span className="text-slate-400">→</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab("ATTENDANCE")}
+                  className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-blue-300 hover:bg-blue-50/50 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:border-blue-500/40 transition cursor-pointer"
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <QrCode className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" />
+                    Take Attendance / Show QR
+                  </span>
+                  <span className="text-slate-400">→</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab("MEDIA")}
+                  className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-blue-300 hover:bg-blue-50/50 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:border-blue-500/40 transition cursor-pointer"
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <ImagePlus className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                    Upload Activity Photos ({activity.media.length})
+                  </span>
+                  <span className="text-slate-400">→</span>
+                </button>
+                {isProject && (
+                  <button
+                    type="button"
+                    onClick={() => onNavigateTab("REPORT")}
+                    className={`flex items-center justify-between rounded-lg border px-3 py-2 text-xs font-bold transition cursor-pointer ${
+                      activity.status === "ACCOMPLISHED"
+                        ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-200"
+                        : "border-blue-200 bg-[#0D3594] text-white hover:bg-[#092569]"
+                    }`}
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      <ShieldCheck className="h-3.5 w-3.5" />
+                      {activity.status === "ACCOMPLISHED"
+                        ? "View Accomplishment Report ✓"
+                        : "Complete Accomplishment Report"}
+                    </span>
+                    <span>→</span>
+                  </button>
+                )}
+              </div>
+            </section>
+          )}
+
+          <section className="rounded-xl border border-[#EDEDF2] bg-white p-5 dark:border-slate-800 dark:bg-[#161B26]">
+            <h2 className="text-sm font-bold text-[#111625] dark:text-white">
+              Lead &amp; Turnout Summary
+            </h2>
+            <div className="mt-3 flex items-center justify-between text-xs">
+              <span className="text-slate-500">Project Chair / Lead</span>
+              <span className="font-semibold text-slate-700 dark:text-slate-200">
+                {activity.ownerName || "Unassigned"}
+              </span>
+            </div>
+            <div className="mt-3 flex items-center justify-between text-xs">
+              <span className="text-slate-500">Confirmed Going (RSVP)</span>
+              <span className="font-semibold text-slate-700 dark:text-slate-200">
+                {activity.rsvp.going}
+                {activity.capacity ? ` / ${activity.capacity}` : ""}
+              </span>
+            </div>
+            <div className="mt-3 flex items-center justify-between text-xs">
+              <span className="text-slate-500">Verified Attendees</span>
+              <span className="font-semibold text-slate-700 dark:text-slate-200">
+                {activity.attendees.length}
+              </span>
+            </div>
+            {isProject && details && (
+              <>
+                <div className="mt-3 flex items-center justify-between text-xs">
+                  <span className="text-slate-500">Beneficiaries Reached</span>
+                  <span className="font-semibold text-emerald-700 dark:text-emerald-300">
+                    {details.beneficiaryCount.toLocaleString()}
+                  </span>
+                </div>
+                <div className="mt-3 flex items-center justify-between text-xs">
+                  <span className="text-slate-500">Total Volunteer Hours</span>
+                  <span className="font-semibold text-slate-700 dark:text-slate-200">
+                    {details.totalVolunteerHours.toLocaleString()} hrs
+                  </span>
+                </div>
+              </>
+            )}
+          </section>
+
+          <ActivityTimeline activity={activity} onNavigateTab={onNavigateTab} />
+        </aside>
+      </div>
     </div>
   );
 }
 
-function ActivityTimeline({ activity }: { activity: ActivityDetailDTO }) {
+function ActivityTimeline({
+  activity,
+  onNavigateTab,
+}: {
+  activity: ActivityDetailDTO;
+  onNavigateTab?: (tab: Tab) => void;
+}) {
+  const router = useRouter();
   const [status, setStatus] = useState(activity.status);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const isProject = isProjectKind(activity.kind);
+  const isFinished = status === "ACCOMPLISHED" || status === "COMPLETED";
+
+  React.useEffect(() => {
+    setStatus(activity.status);
+  }, [activity.status]);
+
+  const selectableStatuses = Array.from(
+    new Set([status, ...allowedTransitions(status, isProject)]),
+  );
+
+  const cleanLogs = deduplicateActivityLog(activity.log).slice(0, 8);
+
+  const dotColors: Record<string, string> = {
+    emerald:
+      "bg-emerald-500 ring-4 ring-emerald-500/20 dark:ring-emerald-400/20",
+    blue: "bg-[#0D3594] dark:bg-blue-400",
+    amber: "bg-amber-500",
+    violet: "bg-violet-500",
+    rose: "bg-rose-500",
+    slate: "bg-slate-400",
+  };
+
   return (
-    <section className="rounded-xl border border-[#EDEDF2] bg-white p-5 dark:border-slate-800 dark:bg-[#161B26]">
+    <section
+      className={`rounded-xl border p-5 transition ${
+        isFinished
+          ? "border-emerald-300/90 bg-emerald-50/25 dark:border-emerald-500/35 dark:bg-[#161B26]"
+          : "border-[#EDEDF2] bg-white dark:border-slate-800 dark:bg-[#161B26]"
+      }`}
+    >
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-bold text-[#111625] dark:text-white">
-          Activity history
-        </h2>
-        {activity.canManage && (
+        <div>
+          <h2 className="text-sm font-bold text-[#111625] dark:text-white">
+            {isProject ? "Project Milestones" : "Activity Updates"}
+          </h2>
+          <p className="text-[11px] text-slate-500">
+            Recent progress &amp; stage updates
+          </p>
+        </div>
+        {status === "ACCOMPLISHED" ? (
+          <span className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500 bg-emerald-500 px-3 py-1.5 text-xs font-bold text-white shadow-xs">
+            <Check className="h-3.5 w-3.5 stroke-[2.5]" />
+            Accomplished
+          </span>
+        ) : activity.canManage ? (
           <select
             aria-label="Update activity status"
             value={status}
-            disabled={pending || status === "ACCOMPLISHED"}
+            disabled={pending}
             onChange={(event) => {
               const next = event.target.value as typeof status;
               setError(null);
@@ -956,36 +1323,93 @@ function ActivityTimeline({ activity }: { activity: ActivityDetailDTO }) {
                   return;
                 }
                 setStatus(next);
+                router.refresh();
               });
             }}
-            className="max-w-40 rounded-md border border-[#EDEDF2] bg-white px-2 py-1 text-[10px] dark:border-slate-700 dark:bg-slate-900"
+            className={`max-w-44 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition cursor-pointer ${
+              status === "COMPLETED"
+                ? "border-emerald-400 bg-emerald-500/15 text-emerald-800 dark:border-emerald-500/50 dark:bg-emerald-500/20 dark:text-emerald-200"
+                : "border-[#EDEDF2] bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+            }`}
           >
-            {ACTIVITY_STATUSES.map((s) => (
+            {selectableStatuses.map((s) => (
               <option key={s} value={s}>
-                {ACTIVITY_STATUS_LABELS[s]}
+                {s === "ACCOMPLISHED" || s === "COMPLETED"
+                  ? `✓ ${ACTIVITY_STATUS_LABELS[s]}`
+                  : ACTIVITY_STATUS_LABELS[s]}
               </option>
             ))}
           </select>
+        ) : (
+          <ActivityStatusBadge status={status} />
         )}
       </div>
+
+      {isProject && status !== "ACCOMPLISHED" && onNavigateTab && (
+        <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2 text-[11px] text-slate-600 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-slate-300">
+          <span>To mark as Accomplished, publish the report:</span>
+          <button
+            type="button"
+            onClick={() => onNavigateTab("REPORT")}
+            className="font-bold text-[#0D3594] hover:underline dark:text-blue-300 cursor-pointer shrink-0"
+          >
+            Open Report →
+          </button>
+        </div>
+      )}
+
       {error && <p className="mt-2 text-[11px] text-rose-600">{error}</p>}
-      <ol className="mt-4 space-y-3">
-        {activity.log.slice(0, 8).map((entry) => (
-          <li key={entry.id} className="flex gap-2.5">
-            <span className="mt-1 h-1.5 w-1.5 rounded-full bg-[#0D3594]" />
-            <span className="min-w-0">
-              <span className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
-                {entry.action.replaceAll("_", " ")}
+
+      <ol className="mt-4 space-y-2.5">
+        {cleanLogs.map((entry) => {
+          const formatted = formatActivityLogEntry(entry.action, entry.details);
+          const isGreenMilestone = formatted.tone === "emerald" && formatted.isMilestone;
+          return (
+            <li
+              key={entry.id}
+              className={`flex items-start gap-2.5 rounded-lg p-2 transition ${
+                isGreenMilestone
+                  ? "border border-emerald-300/80 bg-emerald-50/80 dark:border-emerald-500/35 dark:bg-emerald-500/10"
+                  : ""
+              }`}
+            >
+              <span
+                className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
+                  dotColors[formatted.tone] || dotColors.slate
+                }`}
+              />
+              <span className="min-w-0 flex-1">
+                <span
+                  className={`block text-xs font-semibold leading-snug ${
+                    isGreenMilestone
+                      ? "text-emerald-900 dark:text-emerald-200 font-bold"
+                      : "text-slate-700 dark:text-slate-200"
+                  }`}
+                >
+                  {isGreenMilestone && "✓ "}
+                  {formatted.title}
+                </span>
+                {formatted.subtitle && (
+                  <span
+                    className={`mt-0.5 block text-[11px] ${
+                      isGreenMilestone
+                        ? "text-emerald-700 dark:text-emerald-300/90"
+                        : "text-slate-500 dark:text-slate-400"
+                    }`}
+                  >
+                    {formatted.subtitle}
+                  </span>
+                )}
+                <span className="mt-0.5 block text-[10px] text-slate-500 dark:text-slate-400">
+                  By {entry.actorName} · {formatManila(entry.createdAt)}
+                </span>
               </span>
-              <span className="block text-[10px] text-slate-500">
-                {entry.actorName} · {formatManila(entry.createdAt)}
-              </span>
-            </span>
-          </li>
-        ))}
-        {activity.log.length === 0 && (
+            </li>
+          );
+        })}
+        {cleanLogs.length === 0 && (
           <li className="text-xs text-slate-500">
-            Created {formatManila(activity.startAt, "MMM d, yyyy")}
+            Scheduled for {formatManila(activity.startAt, "MMM d, yyyy")}
           </li>
         )}
       </ol>
@@ -2787,78 +3211,190 @@ function ReportPanel({
   activity,
   canManage,
   onPublished,
+  onOpenMediaTab,
 }: {
   activity: ActivityDetailDTO;
   canManage: boolean;
   onPublished: () => void;
+  onOpenMediaTab?: () => void;
 }) {
   const details = activity.projectDetails;
+  const formRef = React.useRef<HTMLFormElement>(null);
+  const quickPhotoInputRef = React.useRef<HTMLInputElement>(null);
   const [pending, startTransition] = useTransition();
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [localMediaCount, setLocalMediaCount] = useState(
+    activity.media.length,
+  );
+  React.useEffect(() => {
+    setLocalMediaCount(activity.media.length);
+  }, [activity.media.length]);
+
   const isAccomplished = activity.status === "ACCOMPLISHED";
-  const [checklist, setChecklist] = useState(() => ({
-    description: (activity.description || "").trim().length >= 30,
-    inspiration: (details?.inspiration || "").trim().length >= 20,
-    objective: (details?.objective || "").trim().length >= 10,
-    outcomes: (details?.outcomesSummary || "").trim().length >= 20,
-    beneficiaries: (details?.beneficiaryType || "").trim().length >= 2,
-    photo: activity.media.length > 0,
+
+  const [formValues, setFormValues] = useState(() => ({
+    detailedDescription: activity.description || "",
+    inspiration: details?.inspiration || "",
+    objective: details?.objective || "",
+    outcomesSummary: details?.outcomesSummary || "",
+    beneficiaryType: details?.beneficiaryType || "",
   }));
-  const checklistItems = [
-    {
-      key: "description",
-      label: "Detailed description",
-      done: checklist.description,
-    },
-    {
-      key: "inspiration",
-      label: "Project inspiration",
-      done: checklist.inspiration,
-    },
-    { key: "objective", label: "Objective", done: checklist.objective },
-    {
-      key: "outcomes",
-      label: "Outcomes and measurement",
-      done: checklist.outcomes,
-    },
-    {
-      key: "beneficiaries",
-      label: "Beneficiary group",
-      done: checklist.beneficiaries,
-    },
-    { key: "photo", label: "At least one photo", done: checklist.photo },
-  ];
-  const completedCount = checklistItems.filter((item) => item.done).length;
-  const ready = completedCount === checklistItems.length;
+
+  const readiness = evaluateReportReadiness({
+    detailedDescription: formValues.detailedDescription,
+    inspiration: formValues.inspiration,
+    objective: formValues.objective,
+    outcomesSummary: formValues.outcomesSummary,
+    beneficiaryType: formValues.beneficiaryType,
+    mediaCount: localMediaCount,
+  });
+
+  const checklistItems = readiness.items;
+  const completedCount = readiness.completedCount;
+  const ready = readiness.ready;
 
   function updateChecklist(form: HTMLFormElement) {
     const formData = new FormData(form);
-    setChecklist({
-      description:
-        String(formData.get("detailedDescription") || "").trim().length >= 30,
-      inspiration:
-        String(formData.get("inspiration") || "").trim().length >= 20,
-      objective: String(formData.get("objective") || "").trim().length >= 10,
-      outcomes:
-        String(formData.get("outcomesSummary") || "").trim().length >= 20,
-      beneficiaries:
-        String(formData.get("beneficiaryType") || "").trim().length >= 2,
-      photo: activity.media.length > 0,
+    setFormValues({
+      detailedDescription: String(formData.get("detailedDescription") || ""),
+      inspiration: String(formData.get("inspiration") || ""),
+      objective: String(formData.get("objective") || ""),
+      outcomesSummary: String(formData.get("outcomesSummary") || ""),
+      beneficiaryType: String(formData.get("beneficiaryType") || ""),
+    });
+  }
+
+  async function handleQuickPhotoUpload(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setUploadingPhoto(true);
+    try {
+      const result = await uploadActivityPhotos({
+        files: Array.from(files),
+        activityId: activity.id,
+        caption: `${activity.title} documentation`,
+        upload: uploadActivityMediaAction,
+        onProgress: () => {},
+      });
+      if (result.uploaded > 0) {
+        setLocalMediaCount((prev) => prev + result.uploaded);
+        notifyToast({
+          title: "Photo uploaded",
+          message: `${result.uploaded} project photo${result.uploaded > 1 ? "s" : ""} attached to report.`,
+          kind: "success",
+        });
+        onPublished();
+      } else if (result.failures.length > 0) {
+        notifyToast({
+          title: "Photo upload failed",
+          message: result.failures[0].error,
+          kind: "error",
+        });
+      }
+    } catch (err) {
+      notifyToast({
+        title: "Photo upload error",
+        message: err instanceof Error ? err.message : "Could not upload photo.",
+        kind: "error",
+      });
+    } finally {
+      setUploadingPhoto(false);
+      if (quickPhotoInputRef.current) quickPhotoInputRef.current.value = "";
+    }
+  }
+
+  function handleSaveDraft(markAwaitingReport = false) {
+    if (!formRef.current) return;
+    const data = new FormData(formRef.current);
+    const payload = {
+      activityId: activity.id,
+      objective: String(data.get("objective") || ""),
+      inspiration: String(data.get("inspiration") || ""),
+      detailedDescription: String(data.get("detailedDescription") || ""),
+      outcomesSummary: String(data.get("outcomesSummary") || ""),
+      beneficiaryType: String(data.get("beneficiaryType") || ""),
+      beneficiaryCount: Number(data.get("beneficiaryCount") || 0),
+      volunteerNonmemberCount: Number(
+        data.get("volunteerNonmemberCount") || 0,
+      ),
+      fundingTotal: Number(data.get("fundingTotal") || 0),
+      totalExpenses: Number(data.get("totalExpenses") || 0),
+      fundingCurrency: String(data.get("fundingCurrency") || "PHP"),
+      fundingSource: String(data.get("fundingSource") || ""),
+      supportsPolio: data.has("supportsPolio"),
+      markAwaitingReport,
+    };
+    startTransition(async () => {
+      const result = await saveProjectReportDraftAction(payload);
+      if (!result.success) {
+        notifyToast({
+          title: "Could not save draft",
+          message: result.error,
+          kind: "error",
+        });
+        return;
+      }
+      notifyToast({
+        title: "Draft saved",
+        message: result.message || "Report progress saved.",
+        kind: "success",
+      });
+      onPublished();
     });
   }
 
   if (isAccomplished) {
     return (
-      <section className="mx-auto max-w-3xl rounded-xl border border-emerald-200 bg-emerald-50 p-5 dark:border-emerald-500/20 dark:bg-emerald-500/5">
-        <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300">
-          <Check className="h-5 w-5" />
-          <h2 className="text-sm font-bold">
-            Project published as accomplished
-          </h2>
+      <section className="mx-auto max-w-3xl space-y-4">
+        <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50/90 via-white to-teal-50/50 p-5 sm:p-6 dark:border-emerald-500/25 dark:from-emerald-950/30 dark:via-[#161B26] dark:to-emerald-950/10">
+          <div className="flex items-center gap-2.5 text-emerald-800 dark:text-emerald-300">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-white">
+              <Check className="h-4 w-4" />
+            </span>
+            <div>
+              <h2 className="text-base font-bold">
+                Project published as accomplished
+              </h2>
+              <p className="text-xs text-slate-600 dark:text-slate-300">
+                The completion snapshot is officially logged in District 3820 records. Copy the formatted sections below for Rotary Showcase.
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="rounded-xl border border-emerald-200/70 bg-white/80 p-3 dark:border-slate-700 dark:bg-slate-900/60">
+              <p className="text-[10px] font-semibold uppercase text-slate-500">
+                Beneficiaries
+              </p>
+              <p className="mt-1 text-base font-bold text-slate-900 dark:text-white">
+                {(details?.beneficiaryCount || 0).toLocaleString()}
+              </p>
+            </div>
+            <div className="rounded-xl border border-emerald-200/70 bg-white/80 p-3 dark:border-slate-700 dark:bg-slate-900/60">
+              <p className="text-[10px] font-semibold uppercase text-slate-500">
+                Volunteers
+              </p>
+              <p className="mt-1 text-base font-bold text-slate-900 dark:text-white">
+                {activity.attendees.length +
+                  (details?.volunteerNonmemberCount || 0)}
+              </p>
+            </div>
+            <div className="rounded-xl border border-emerald-200/70 bg-white/80 p-3 dark:border-slate-700 dark:bg-slate-900/60">
+              <p className="text-[10px] font-semibold uppercase text-slate-500">
+                Volunteer Hours
+              </p>
+              <p className="mt-1 text-base font-bold text-slate-900 dark:text-white">
+                {(details?.totalVolunteerHours || 0).toLocaleString()} hrs
+              </p>
+            </div>
+            <div className="rounded-xl border border-emerald-200/70 bg-white/80 p-3 dark:border-slate-700 dark:bg-slate-900/60">
+              <p className="text-[10px] font-semibold uppercase text-slate-500">
+                Photos Logged
+              </p>
+              <p className="mt-1 text-base font-bold text-slate-900 dark:text-white">
+                {activity.media.length}
+              </p>
+            </div>
+          </div>
         </div>
-        <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
-          The completion snapshot is saved. You can now copy its sections into
-          Rotary Showcase.
-        </p>
         <ShowcaseCopy activity={activity} />
       </section>
     );
@@ -2873,26 +3409,31 @@ function ReportPanel({
 
   return (
     <section className="mx-auto max-w-3xl space-y-4">
-      <div className="rounded-xl border border-[#EDEDF2] bg-white p-4 sm:p-5 dark:border-slate-800 dark:bg-[#161B26]">
+      <div className="rounded-2xl border border-[#EDEDF2] bg-white p-4 sm:p-6 shadow-2xs dark:border-slate-800 dark:bg-[#161B26]">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <p className="text-[10px] font-bold uppercase text-emerald-700 dark:text-emerald-300">
-              Completion report
+            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+              Guided Accomplishment Report
             </p>
             <h2 className="mt-1 text-base font-bold text-[#111625] dark:text-white">
-              Publish this service project
+              Publish this service project as Accomplished
             </h2>
             <p className="mt-1 max-w-2xl text-xs text-slate-500">
-              Complete the Rotary Showcase sections below. Attendance totals are
-              taken from verified check-ins.
+              Complete the 6 Rotary Showcase requirements below. You can save your draft anytime or publish once all 6 items turn green.
             </p>
           </div>
-          <span className="shrink-0 rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+          <span
+            className={`shrink-0 rounded-xl px-3 py-1.5 text-xs font-bold ${
+              ready
+                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300"
+                : "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200"
+            }`}
+          >
             {completedCount}/{checklistItems.length} complete
           </span>
         </div>
         <div
-          className="mt-4 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"
+          className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"
           role="progressbar"
           aria-label="Report completion"
           aria-valuenow={completedCount}
@@ -2900,20 +3441,91 @@ function ReportPanel({
           aria-valuemax={checklistItems.length}
         >
           <div
-            className="h-full rounded-full bg-emerald-600 transition-all"
+            className="h-full rounded-full bg-emerald-600 transition-all duration-300"
             style={{
               width: `${(completedCount / checklistItems.length) * 100}%`,
             }}
           />
         </div>
-        <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="mt-3.5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {checklistItems.map((item) => (
             <li key={item.key}>
-              <Requirement met={item.done} label={item.label} />
+              <Requirement
+                met={item.done}
+                label={item.label}
+                detail={
+                  item.minChars
+                    ? `${Math.min(item.currentChars || 0, item.minChars)}/${item.minChars} chars`
+                    : item.done
+                      ? `${localMediaCount} uploaded`
+                      : "Required"
+                }
+              />
             </li>
           ))}
         </ul>
+
+        {/* Inline Photo Upload Helper when photo is needed or to add more */}
+        <div
+          className={`mt-4 flex flex-col gap-3 rounded-xl border p-3.5 sm:flex-row sm:items-center sm:justify-between ${
+            localMediaCount > 0
+              ? "border-emerald-200/80 bg-emerald-50/50 dark:border-emerald-500/20 dark:bg-emerald-500/5"
+              : "border-amber-300 bg-amber-50/70 dark:border-amber-500/30 dark:bg-amber-950/20"
+          }`}
+        >
+          <div className="flex items-start gap-2.5">
+            <ImagePlus
+              className={`mt-0.5 h-4 w-4 shrink-0 ${
+                localMediaCount > 0
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-amber-600 dark:text-amber-400"
+              }`}
+            />
+            <div>
+              <p className="text-xs font-bold text-slate-900 dark:text-white">
+                {localMediaCount > 0
+                  ? `${localMediaCount} project photo${localMediaCount === 1 ? "" : "s"} attached`
+                  : "Action Needed: Upload at least 1 project documentation photo"}
+              </p>
+              <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                {localMediaCount > 0
+                  ? "Photo requirement is satisfied. You can upload additional photos anytime."
+                  : "Rotary Showcase requires at least one photo before a service project can be marked Accomplished."}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <input
+              ref={quickPhotoInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              multiple
+              className="sr-only"
+              onChange={(e) => handleQuickPhotoUpload(e.target.files)}
+            />
+            <button
+              type="button"
+              disabled={uploadingPhoto || pending}
+              onClick={() => quickPhotoInputRef.current?.click()}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[#0D3594] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#092569] disabled:opacity-60 transition cursor-pointer"
+            >
+              <Upload className="h-3.5 w-3.5" />
+              {uploadingPhoto ? "Uploading..." : "Upload Photo Here"}
+            </button>
+            {onOpenMediaTab && (
+              <button
+                type="button"
+                onClick={onOpenMediaTab}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer"
+              >
+                Media Tab
+              </button>
+            )}
+          </div>
+        </div>
+
         <form
+          ref={formRef}
           className="mt-5 space-y-5"
           onChange={(event) => updateChecklist(event.currentTarget)}
           onSubmit={(event) => {
@@ -2949,7 +3561,7 @@ function ReportPanel({
                 return;
               }
               notifyToast({
-                title: "Project accomplished",
+                title: "Project accomplished! 🎉",
                 message:
                   result.message || "The accomplishment report was published.",
                 kind: "success",
@@ -2960,7 +3572,15 @@ function ReportPanel({
         >
           <ReportSection title="Overview and project development" step="01">
             <label className="block text-xs font-semibold">
-              Detailed description <Required />
+              <span className="flex items-center justify-between">
+                <span>
+                  Detailed description <Required />
+                </span>
+                <CharCounter
+                  current={formValues.detailedDescription.trim().length}
+                  min={30}
+                />
+              </span>
               <textarea
                 name="detailedDescription"
                 rows={4}
@@ -2973,7 +3593,15 @@ function ReportPanel({
             </label>
             <div className="grid gap-4 md:grid-cols-2">
               <label className="block text-xs font-semibold">
-                What inspired the project? <Required />
+                <span className="flex items-center justify-between">
+                  <span>
+                    What inspired the project? <Required />
+                  </span>
+                  <CharCounter
+                    current={formValues.inspiration.trim().length}
+                    min={20}
+                  />
+                </span>
                 <textarea
                   name="inspiration"
                   rows={4}
@@ -2985,7 +3613,15 @@ function ReportPanel({
                 />
               </label>
               <label className="block text-xs font-semibold">
-                Project objective <Required />
+                <span className="flex items-center justify-between">
+                  <span>
+                    Project objective <Required />
+                  </span>
+                  <CharCounter
+                    current={formValues.objective.trim().length}
+                    min={10}
+                  />
+                </span>
                 <textarea
                   name="objective"
                   rows={4}
@@ -2998,7 +3634,15 @@ function ReportPanel({
               </label>
             </div>
             <label className="block text-xs font-semibold">
-              Outcomes and measurement <Required />
+              <span className="flex items-center justify-between">
+                <span>
+                  Outcomes and measurement <Required />
+                </span>
+                <CharCounter
+                  current={formValues.outcomesSummary.trim().length}
+                  min={20}
+                />
+              </span>
               <textarea
                 name="outcomesSummary"
                 rows={3}
@@ -3014,7 +3658,15 @@ function ReportPanel({
           <ReportSection title="Beneficiaries and participation" step="02">
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="text-xs font-semibold">
-                Who benefited? <Required />
+                <span className="flex items-center justify-between">
+                  <span>
+                    Who benefited? <Required />
+                  </span>
+                  <CharCounter
+                    current={formValues.beneficiaryType.trim().length}
+                    min={2}
+                  />
+                </span>
                 <input
                   name="beneficiaryType"
                   required
@@ -3118,20 +3770,41 @@ function ReportPanel({
             </label>
           </ReportSection>
 
-          <section className="sticky bottom-2 z-10 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between dark:border-slate-700 dark:bg-[#161B26]/95">
-            <p className="text-[11px] text-slate-500">
-              {ready
-                ? "All required sections are complete."
-                : `${checklistItems.length - completedCount} required item${checklistItems.length - completedCount === 1 ? "" : "s"} still needed before publishing.`}
-            </p>
-            <button
-              type="submit"
-              disabled={pending || !ready}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 py-2.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
-            >
-              <Check className="h-4 w-4" />{" "}
-              {pending ? "Publishing..." : "Publish as accomplished"}
-            </button>
+          <section className="sticky bottom-2 z-10 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white/95 p-3.5 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between dark:border-slate-700 dark:bg-[#161B26]/95">
+            <div className="space-y-0.5">
+              <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                {ready
+                  ? "✓ All 6 requirements met — ready to publish as Accomplished!"
+                  : `${checklistItems.length - completedCount} required item${checklistItems.length - completedCount === 1 ? "" : "s"} still needed before publishing.`}
+              </p>
+              {!ready && readiness.missingLabels.length > 0 && (
+                <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                  Missing: {readiness.missingLabels.join(", ")}
+                </p>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={pending || uploadingPhoto}
+                onClick={() =>
+                  handleSaveDraft(activity.status === "ONGOING")
+                }
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer"
+              >
+                {activity.status === "ONGOING"
+                  ? "Save Draft & Mark Awaiting Report"
+                  : "Save Draft"}
+              </button>
+              <button
+                type="submit"
+                disabled={pending || uploadingPhoto || !ready}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 py-2.5 text-xs font-bold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto cursor-pointer shadow-xs"
+              >
+                <Check className="h-4 w-4" />{" "}
+                {pending ? "Publishing..." : "Publish as accomplished"}
+              </button>
+            </div>
           </section>
         </form>
       </div>
@@ -3164,13 +3837,49 @@ function ReportSection({
   );
 }
 
-function Requirement({ met, label }: { met: boolean; label: string }) {
+function Requirement({
+  met,
+  label,
+  detail,
+}: {
+  met: boolean;
+  label: string;
+  detail?: string;
+}) {
+  return (
+    <div
+      className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-xs font-semibold ${
+        met
+          ? "border-emerald-200 bg-emerald-50/80 text-emerald-800 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-300"
+          : "border-amber-200 bg-amber-50/70 text-amber-800 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300"
+      }`}
+    >
+      <span className="inline-flex items-center gap-1.5 truncate">
+        <span aria-hidden="true" className="font-bold">
+          {met ? "✓" : "•"}
+        </span>
+        <span className="truncate">{label}</span>
+      </span>
+      {detail && (
+        <span className="shrink-0 text-[10px] font-medium opacity-80">
+          {detail}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function CharCounter({ current, min }: { current: number; min: number }) {
+  const met = current >= min;
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 ${met ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300" : "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300"}`}
+      className={`text-[10px] font-semibold ${
+        met
+          ? "text-emerald-600 dark:text-emerald-400"
+          : "text-amber-600 dark:text-amber-400"
+      }`}
     >
-      <span aria-hidden="true">{met ? "✓" : "•"}</span>
-      {label}
+      {met ? `✓ ${current} chars` : `${current}/${min} min chars`}
     </span>
   );
 }
