@@ -6,9 +6,13 @@ import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   ArrowRight,
+  CheckCircle2,
+  CheckSquare,
   ClipboardList,
+  GraduationCap,
   HeartHandshake,
   Plus,
+  Sparkles,
   Users,
   X,
 } from "lucide-react";
@@ -94,6 +98,11 @@ export function ActivityCreateClient({
     initialKind as ActivityKind | null,
   );
   const [step, setStep] = useState<1 | 2>(initialKind ? 2 : 1);
+  const [presetTitle, setPresetTitle] = useState("");
+  const [presetShortDesc, setPresetShortDesc] = useState("");
+  const [presetCommittee, setPresetCommittee] = useState("");
+  const [presetMeetingType, setPresetMeetingType] =
+    useState("GENERAL_ASSEMBLY");
   const [minEnabled, setMinEnabled] = useState(false);
   const [rsvpEnabled, setRsvpEnabled] = useState(true);
   const [selfCheckIn, setSelfCheckIn] = useState(false);
@@ -114,7 +123,46 @@ export function ActivityCreateClient({
   >([]);
   const [selectedMemberId, setSelectedMemberId] = useState("");
   const [selectedRole, setSelectedRole] = useState<"COMMITTEE" | "CO_CHAIR" | "VOLUNTEER">("COMMITTEE");
+
+  // Initial tasks / action items builder state
+  const defaultDueDate = localDefault(7, 9).slice(0, 10);
+  const [initialTasks, setInitialTasks] = useState<
+    {
+      title: string;
+      dueDate: string;
+      priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+      assigneeId?: string;
+    }[]
+  >([]);
+  const [draftTaskTitle, setDraftTaskTitle] = useState("");
+  const [draftTaskDue, setDraftTaskDue] = useState(defaultDueDate);
+  const [draftTaskPriority, setDraftTaskPriority] = useState<
+    "LOW" | "MEDIUM" | "HIGH" | "URGENT"
+  >("MEDIUM");
+  const [draftTaskAssigneeId, setDraftTaskAssigneeId] = useState("");
+
   const [isPending, startTransition] = useTransition();
+
+  function addInitialTask() {
+    const trimmed = draftTaskTitle.trim();
+    if (trimmed.length < 3) return;
+    setInitialTasks((prev) => [
+      ...prev,
+      {
+        title: trimmed,
+        dueDate: draftTaskDue || defaultDueDate,
+        priority: draftTaskPriority,
+        ...(draftTaskAssigneeId ? { assigneeId: draftTaskAssigneeId } : {}),
+      },
+    ]);
+    setDraftTaskTitle("");
+    setDraftTaskAssigneeId("");
+    setDraftTaskPriority("MEDIUM");
+  }
+
+  function removeInitialTask(idx: number) {
+    setInitialTasks((prev) => prev.filter((_, i) => i !== idx));
+  }
 
   function addCommitteeMember() {
     if (!selectedMemberId) return;
@@ -210,6 +258,7 @@ export function ActivityCreateClient({
       checkInWindowMinutes: Number(data.get("checkInWindowMinutes") || 180),
       volunteerHoursDefault: Number(data.get("volunteerHoursDefault") || 0),
       committeeMembers,
+      initialTasks,
       ...(kind === "MEETING"
         ? { meetingType: String(data.get("meetingType") || "GENERAL_ASSEMBLY") }
         : {}),
@@ -250,6 +299,13 @@ export function ActivityCreateClient({
   }
 
   if (!kind || step === 1) {
+    const internalClubKinds = ACTIVITY_KINDS.filter(
+      (k) => allowed(k) && !ACTIVITY_KIND_META[k].isProject,
+    );
+    const communityProjectKinds = ACTIVITY_KINDS.filter(
+      (k) => allowed(k) && ACTIVITY_KIND_META[k].isProject,
+    );
+
     return (
       <main className="mx-auto max-w-5xl space-y-6 pb-10">
         <Link
@@ -259,49 +315,270 @@ export function ActivityCreateClient({
           <ArrowLeft className="h-3.5 w-3.5" /> Project Center
         </Link>
         <header>
-          <p className="text-[11px] font-semibold uppercase text-slate-500">
-            Step 1 of 2
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-[#0D3594] dark:text-blue-400">
+            Step 1 of 2 · Choose Scenario
           </p>
           <h1 className="mt-1 text-2xl font-bold text-[#111625] dark:text-white">
             What are you organizing?
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Choose a type. We will tailor the form to the activity.
+            Pick a quick scenario below or choose an activity type. Activities like{" "}
+            <strong>L&amp;D Sessions, Meetings, and Internal Task Sprints</strong>{" "}
+            do not require beneficiaries and can be marked Completed in one click.
           </p>
         </header>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {ACTIVITY_KINDS.filter(allowed).map((activityKind) => {
-            const meta = ACTIVITY_KIND_META[activityKind];
-            const Icon = meta.isProject
-              ? HeartHandshake
-              : activityKind === "MEETING"
-                ? Users
-                : ClipboardList;
-            return (
+
+        {/* 1-Click Quick Start Scenarios */}
+        <section className="rounded-2xl border border-blue-200/80 bg-gradient-to-r from-blue-50/70 via-indigo-50/40 to-white p-4 sm:p-5 dark:border-blue-500/25 dark:from-blue-950/30 dark:via-slate-900 dark:to-[#161B26]">
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles className="h-4 w-4 text-[#0D3594] dark:text-blue-400" />
+            <h2 className="text-xs font-bold uppercase tracking-wider text-[#0D3594] dark:text-blue-300">
+              Quick-Start Scenarios (1-Click Presets)
+            </h2>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {canCreateEvent && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setKind("PROFESSIONAL_DEVELOPMENT");
+                    setPresetTitle("L&D Session: ");
+                    setPresetShortDesc(
+                      "Learning & Development session and member training",
+                    );
+                    setPresetCommittee("VOCATIONAL");
+                    setQrCheckIn(true);
+                    setStep(2);
+                  }}
+                  className="group rounded-xl border border-violet-200 bg-white p-3.5 text-left shadow-2xs transition hover:border-violet-400 hover:shadow-sm dark:border-violet-500/30 dark:bg-[#161B26] cursor-pointer"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300">
+                      <GraduationCap className="h-4 w-4" />
+                    </span>
+                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+                      No Beneficiaries
+                    </span>
+                  </div>
+                  <p className="mt-2.5 text-xs font-bold text-[#111625] group-hover:text-[#0D3594] dark:text-white dark:group-hover:text-blue-300">
+                    L&amp;D Meeting / Training
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-slate-500">
+                    Leadership &amp; skill development with attendance &amp; tasks.
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setKind("MEETING");
+                    setPresetMeetingType("COMMITTEE_MEETING");
+                    setPresetTitle("Committee Planning Meeting: ");
+                    setPresetShortDesc(
+                      "Planning agenda, member alignment, and action items",
+                    );
+                    setPresetCommittee("CLUB_SERVICE");
+                    setQrCheckIn(true);
+                    setStep(2);
+                  }}
+                  className="group rounded-xl border border-sky-200 bg-white p-3.5 text-left shadow-2xs transition hover:border-sky-400 hover:shadow-sm dark:border-sky-500/30 dark:bg-[#161B26] cursor-pointer"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300">
+                      <Users className="h-4 w-4" />
+                    </span>
+                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+                      No Beneficiaries
+                    </span>
+                  </div>
+                  <p className="mt-2.5 text-xs font-bold text-[#111625] group-hover:text-[#0D3594] dark:text-white dark:group-hover:text-blue-300">
+                    Committee / Club Meeting
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-slate-500">
+                    General Assembly, Board, or Committee meeting + tasks.
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setKind("OTHER");
+                    setPresetTitle("Task Sprint: ");
+                    setPresetShortDesc(
+                      "Internal committee workstream and task deliverables",
+                    );
+                    setPresetCommittee("CLUB_SERVICE");
+                    setQrCheckIn(false);
+                    setStep(2);
+                  }}
+                  className="group rounded-xl border border-amber-200 bg-white p-3.5 text-left shadow-2xs transition hover:border-amber-400 hover:shadow-sm dark:border-amber-500/30 dark:bg-[#161B26] cursor-pointer"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">
+                      <CheckSquare className="h-4 w-4" />
+                    </span>
+                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+                      Task-Driven
+                    </span>
+                  </div>
+                  <p className="mt-2.5 text-xs font-bold text-[#111625] group-hover:text-[#0D3594] dark:text-white dark:group-hover:text-blue-300">
+                    Internal Work &amp; Task Group
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-slate-500">
+                    Organize &amp; assign club tasks without QR or beneficiaries.
+                  </p>
+                </button>
+              </>
+            )}
+            {canCreateProject && (
               <button
-                key={activityKind}
                 type="button"
                 onClick={() => {
-                  setKind(activityKind);
+                  setKind("SERVICE_PROJECT");
+                  setPresetTitle("");
+                  setPresetShortDesc("");
+                  setPresetCommittee("COMMUNITY_SERVICE");
+                  setQrCheckIn(true);
                   setStep(2);
                 }}
-                className="group min-h-40 rounded-xl border border-[#EDEDF2] bg-white p-4 text-left transition hover:border-[#0D3594]/40 hover:shadow-sm dark:border-slate-800 dark:bg-[#161B26]"
+                className="group rounded-xl border border-emerald-200 bg-white p-3.5 text-left shadow-2xs transition hover:border-emerald-400 hover:shadow-sm dark:border-emerald-500/30 dark:bg-[#161B26] cursor-pointer"
               >
-                <span
-                  className={`inline-flex h-9 w-9 items-center justify-center rounded-lg ${meta.chipClass}`}
-                >
-                  <Icon className="h-4 w-4" />
-                </span>
-                <span className="mt-3 block text-sm font-bold text-[#111625] dark:text-white">
-                  {meta.label}
-                </span>
-                <span className="mt-1 block text-xs leading-relaxed text-slate-500">
-                  {meta.description}
-                </span>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
+                    <HeartHandshake className="h-4 w-4" />
+                  </span>
+                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-[#0D3594] dark:bg-blue-500/15 dark:text-blue-300">
+                    With Beneficiaries
+                  </span>
+                </div>
+                <p className="mt-2.5 text-xs font-bold text-[#111625] group-hover:text-[#0D3594] dark:text-white dark:group-hover:text-blue-300">
+                  Community Service Project
+                </p>
+                <p className="mt-0.5 text-[11px] text-slate-500">
+                  Outreach with beneficiaries, SDGs &amp; Accomplishment Report.
+                </p>
               </button>
-            );
-          })}
-        </div>
+            )}
+          </div>
+        </section>
+
+        {/* Track 1: Internal Club Activities (No Beneficiaries Required) */}
+        {internalClubKinds.length > 0 && (
+          <section className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-bold text-[#111625] dark:text-white">
+                  1. Club Activities, L&amp;D, Meetings &amp; Task Sprints
+                </h2>
+                <p className="text-xs text-slate-500">
+                  For internal club sessions, L&amp;D trainings, meetings, and task groups that{" "}
+                  <strong>do not have external beneficiaries</strong>.
+                </p>
+              </div>
+              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-bold text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+                ✓ Simple 3-Step Flow (Planned → Ongoing → Completed)
+              </span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {internalClubKinds.map((activityKind) => {
+                const meta = ACTIVITY_KIND_META[activityKind];
+                const Icon =
+                  activityKind === "MEETING"
+                    ? Users
+                    : activityKind === "PROFESSIONAL_DEVELOPMENT"
+                      ? GraduationCap
+                      : ClipboardList;
+                return (
+                  <button
+                    key={activityKind}
+                    type="button"
+                    onClick={() => {
+                      setKind(activityKind);
+                      setPresetTitle("");
+                      setPresetShortDesc("");
+                      setQrCheckIn(activityKind !== "OTHER");
+                      setStep(2);
+                    }}
+                    className="group rounded-xl border border-[#EDEDF2] bg-white p-4 text-left transition hover:border-[#0D3594]/40 hover:shadow-sm dark:border-slate-800 dark:bg-[#161B26] cursor-pointer"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span
+                        className={`inline-flex h-9 w-9 items-center justify-center rounded-lg ${meta.chipClass}`}
+                      >
+                        <Icon className="h-4 w-4" />
+                      </span>
+                      <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                        No Beneficiary Report
+                      </span>
+                    </div>
+                    <span className="mt-3 block text-sm font-bold text-[#111625] dark:text-white">
+                      {meta.label}
+                    </span>
+                    <span className="mt-1 block text-xs leading-relaxed text-slate-500">
+                      {meta.description}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* Track 2: Community Service Projects (With Beneficiaries & Accomplishment Report) */}
+        {communityProjectKinds.length > 0 && (
+          <section className="space-y-3 pt-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-bold text-[#111625] dark:text-white">
+                  2. Community Service &amp; Joint Projects (With Beneficiaries)
+                </h2>
+                <p className="text-xs text-slate-500">
+                  For external outreach projects that track community beneficiaries, Areas of Focus, and publish an Accomplishment Report.
+                </p>
+              </div>
+              <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[11px] font-bold text-[#0D3594] dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300">
+                4-Step Flow (Includes Accomplishment Report)
+              </span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {communityProjectKinds.map((activityKind) => {
+                const meta = ACTIVITY_KIND_META[activityKind];
+                return (
+                  <button
+                    key={activityKind}
+                    type="button"
+                    onClick={() => {
+                      setKind(activityKind);
+                      setPresetTitle("");
+                      setPresetShortDesc("");
+                      setQrCheckIn(true);
+                      setStep(2);
+                    }}
+                    className="group rounded-xl border border-emerald-200/90 bg-emerald-50/20 p-4 text-left transition hover:border-emerald-400 hover:shadow-sm dark:border-emerald-500/25 dark:bg-[#161B26] cursor-pointer"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span
+                        className={`inline-flex h-9 w-9 items-center justify-center rounded-lg ${meta.chipClass}`}
+                      >
+                        <HeartHandshake className="h-4 w-4" />
+                      </span>
+                      <span className="rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300">
+                        Beneficiaries + Report
+                      </span>
+                    </div>
+                    <span className="mt-3 block text-sm font-bold text-[#111625] dark:text-white">
+                      {meta.label}
+                    </span>
+                    <span className="mt-1 block text-xs leading-relaxed text-slate-500">
+                      {meta.description}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
       </main>
     );
   }
@@ -313,9 +590,9 @@ export function ActivityCreateClient({
         <button
           type="button"
           onClick={() => setStep(1)}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-[#0D3594]"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-[#0D3594] cursor-pointer"
         >
-          <ArrowLeft className="h-3.5 w-3.5" /> Change type
+          <ArrowLeft className="h-3.5 w-3.5" /> Change activity type
         </button>
         <span className="text-[11px] font-semibold text-slate-500">
           Step 2 of 2
@@ -332,10 +609,47 @@ export function ActivityCreateClient({
             New {meta.label}
           </h1>
           <p className="text-xs text-slate-500">
-            Plan the activity, set attendance expectations and invite the club.
+            {meta.isProject
+              ? "Plan the community service project, assign your committee & tasks, and track beneficiary impact."
+              : "Schedule this club activity or meeting, assign tasks/action items, and track member participation."}
           </p>
         </div>
       </header>
+
+      {/* Reassuring Mode Banner explaining Beneficiary vs Non-Beneficiary lifecycle */}
+      {!meta.isProject ? (
+        <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50/60 px-4 py-3 text-xs text-emerald-950 dark:border-emerald-500/30 dark:bg-emerald-950/20 dark:text-emerald-200">
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+          <div>
+            <p className="font-bold">
+              Internal Club Activity Mode — No Beneficiaries Required
+            </p>
+            <p className="mt-0.5 text-[11px] text-emerald-800/90 dark:text-emerald-300/80">
+              Because this is a <strong>{meta.label}</strong>, you do not need to enter external beneficiaries or publish a Showcase report. It uses a simple 3-step flow (<strong>Planned → Ongoing → Completed</strong>) and supports full task assignment below.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50/60 px-4 py-3 text-xs text-slate-800 dark:border-blue-500/30 dark:bg-blue-950/20 dark:text-slate-200">
+          <HeartHandshake className="mt-0.5 h-4 w-4 shrink-0 text-[#0D3594] dark:text-blue-400" />
+          <div>
+            <p className="font-bold">
+              Community Impact Project Mode — Includes Beneficiaries &amp; Accomplishment Report
+            </p>
+            <p className="mt-0.5 text-[11px] text-slate-600 dark:text-slate-400">
+              Uses the 4-step guided flow (<strong>Planned → Ongoing → Awaiting Report → Accomplished</strong>). Looking to organize an internal L&amp;D session, meeting, or task group without beneficiaries?{" "}
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className="font-bold text-[#0D3594] underline dark:text-blue-300 cursor-pointer"
+              >
+                Switch to an Internal Activity type
+              </button>
+              .
+            </p>
+          </div>
+        </div>
+      )}
 
       <form
         onSubmit={(event) => {
@@ -352,7 +666,16 @@ export function ActivityCreateClient({
               required
               minLength={3}
               maxLength={160}
-              placeholder="e.g. Community health screening"
+              defaultValue={presetTitle}
+              placeholder={
+                kind === "PROFESSIONAL_DEVELOPMENT"
+                  ? "e.g. L&D Session: Public Speaking & Leadership Workshop"
+                  : kind === "MEETING"
+                    ? "e.g. L&D Committee Alignment & Planning Meeting"
+                    : kind === "OTHER"
+                      ? "e.g. Q2 PR & Social Media Task Sprint"
+                      : "e.g. Community health screening"
+              }
               className={inputClass}
             />
           </Field>
@@ -363,16 +686,27 @@ export function ActivityCreateClient({
             <input
               name="shortDescription"
               maxLength={280}
+              defaultValue={presetShortDesc}
               placeholder="A clear one-line summary"
               className={inputClass}
             />
           </Field>
-          <Field label="Description">
+          <Field
+            label={
+              kind === "MEETING" || kind === "PROFESSIONAL_DEVELOPMENT"
+                ? "Agenda, Learning Topics & Notes"
+                : "Description"
+            }
+          >
             <textarea
               name="description"
               rows={3}
               maxLength={10000}
-              placeholder="Purpose, audience and what members should expect"
+              placeholder={
+                kind === "MEETING" || kind === "PROFESSIONAL_DEVELOPMENT"
+                  ? "Key agenda items, speaker/facilitator, learning objectives, and preparation notes for members"
+                  : "Purpose, audience and what members should expect"
+              }
               className={inputClass}
             />
           </Field>
@@ -380,7 +714,7 @@ export function ActivityCreateClient({
             <Field label="Meeting type" required>
               <select
                 name="meetingType"
-                defaultValue="GENERAL_ASSEMBLY"
+                defaultValue={presetMeetingType}
                 className={inputClass}
               >
                 {MEETING_TYPES.map((type) => (
@@ -393,7 +727,11 @@ export function ActivityCreateClient({
           )}
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Committee">
-              <select name="committee" defaultValue="" className={inputClass}>
+              <select
+                name="committee"
+                defaultValue={presetCommittee}
+                className={inputClass}
+              >
                 <option value="">No committee</option>
                 {COMMITTEES.map((committee) => (
                   <option key={committee} value={committee}>
@@ -486,6 +824,112 @@ export function ActivityCreateClient({
                       >
                         <X className="h-3 w-3" />
                       </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Initial Tasks & Action Items Builder */}
+          <div className="space-y-3 rounded-xl border border-blue-200/70 bg-blue-50/30 p-4 dark:border-blue-500/20 dark:bg-blue-950/15">
+            <div>
+              <h3 className="text-xs font-bold text-[#111625] dark:text-white flex items-center gap-1.5">
+                <CheckSquare className="h-4 w-4 text-[#0D3594] dark:text-blue-400" />
+                Action Items &amp; Tasks to Assign (Optional)
+              </h3>
+              <p className="mt-0.5 text-[11px] text-slate-500">
+                Add initial preparation tasks, L&amp;D deliverables, or meeting action items right now. You can also add more tasks anytime after creating the activity.
+              </p>
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-[minmax(180px,2fr)_minmax(130px,1fr)_minmax(110px,.8fr)_minmax(140px,1fr)_auto]">
+              <input
+                type="text"
+                value={draftTaskTitle}
+                onChange={(e) => setDraftTaskTitle(e.target.value)}
+                placeholder="e.g. Prepare L&D slide deck & materials"
+                className={inputClass}
+              />
+              <input
+                type="date"
+                value={draftTaskDue}
+                onChange={(e) => setDraftTaskDue(e.target.value)}
+                className={inputClass}
+              />
+              <select
+                value={draftTaskPriority}
+                onChange={(e) =>
+                  setDraftTaskPriority(
+                    e.target.value as "LOW" | "MEDIUM" | "HIGH" | "URGENT",
+                  )
+                }
+                className={inputClass}
+              >
+                <option value="LOW">Low</option>
+                <option value="MEDIUM">Medium</option>
+                <option value="HIGH">High</option>
+                <option value="URGENT">Urgent</option>
+              </select>
+              <select
+                value={draftTaskAssigneeId}
+                onChange={(e) => setDraftTaskAssigneeId(e.target.value)}
+                className={inputClass}
+              >
+                <option value="">Unassigned</option>
+                {members.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.fullName}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                disabled={draftTaskTitle.trim().length < 3}
+                onClick={addInitialTask}
+                className="inline-flex items-center justify-center gap-1 rounded-lg bg-[#0D3594] px-3 py-2 text-xs font-semibold text-white hover:bg-[#092569] disabled:opacity-50 transition cursor-pointer shrink-0"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add Task
+              </button>
+            </div>
+
+            {initialTasks.length > 0 && (
+              <div className="space-y-1.5 pt-2 border-t border-blue-100 dark:border-slate-800">
+                {initialTasks.map((task, idx) => {
+                  const assignee = members.find(
+                    (m) => m.id === task.assigneeId,
+                  );
+                  return (
+                    <div
+                      key={`${task.title}-${idx}`}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-900"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <CheckSquare className="h-3.5 w-3.5 text-[#0D3594] dark:text-blue-400 shrink-0" />
+                        <span className="font-semibold text-[#111625] dark:text-white truncate">
+                          {task.title}
+                        </span>
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                          {task.priority}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                        <span>Due {task.dueDate}</span>
+                        {assignee && (
+                          <span className="font-medium text-slate-700 dark:text-slate-300">
+                            · {assignee.fullName}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => removeInitialTask(idx)}
+                          className="text-slate-400 hover:text-rose-600 p-0.5 rounded cursor-pointer"
+                          aria-label="Remove task"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
                   );
                 })}

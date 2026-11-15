@@ -4,8 +4,14 @@ import {
   resolveMinMembers,
 } from "@/features/activities/schemas";
 import {
+  allowedTransitions,
+  canTransition,
+  deduplicateActivityLog,
+  evaluateReportReadiness,
   evaluateRsvp,
   evaluateSelfCheckIn,
+  formatActivityLogEntry,
+  getLifecycleStages,
   isQrCheckInApplicable,
   minMembersStatus,
   resolveArchiveState,
@@ -414,5 +420,123 @@ describe("QR attendance applicability and toggle", () => {
       ],
     };
     expect(resolveArchiveState(auditArchivedProject).isArchived).toBe(true);
+  });
+});
+
+describe("Project Lifecycle & Accomplishment Report Readiness", () => {
+  it("guides service projects through 4 stages: PLANNED -> ONGOING -> AWAITING_REPORT -> ACCOMPLISHED", () => {
+    const ongoingStages = getLifecycleStages("ONGOING", true);
+    expect(ongoingStages).toHaveLength(4);
+    expect(ongoingStages.map((s) => [s.status, s.state])).toEqual([
+      ["PLANNED", "completed"],
+      ["ONGOING", "current"],
+      ["AWAITING_REPORT", "upcoming"],
+      ["ACCOMPLISHED", "upcoming"],
+    ]);
+
+    const accomplishedStages = getLifecycleStages("ACCOMPLISHED", true);
+    expect(accomplishedStages.every((s) => s.state === "completed")).toBe(true);
+  });
+
+  it("guides non-project activities through 3 stages: PLANNED -> ONGOING -> COMPLETED", () => {
+    const stages = getLifecycleStages("ONGOING", false);
+    expect(stages).toHaveLength(3);
+    expect(stages.map((s) => [s.status, s.state])).toEqual([
+      ["PLANNED", "completed"],
+      ["ONGOING", "current"],
+      ["COMPLETED", "upcoming"],
+    ]);
+  });
+
+  it("restricts manual status transitions for service projects to AWAITING_REPORT instead of COMPLETED", () => {
+    expect(canTransition("ONGOING", "COMPLETED", true).allowed).toBe(false);
+    expect(canTransition("ONGOING", "AWAITING_REPORT", true).allowed).toBe(true);
+    expect(allowedTransitions("ONGOING", true)).toContain("AWAITING_REPORT");
+    expect(allowedTransitions("ONGOING", true)).not.toContain("COMPLETED");
+  });
+
+  it("evaluates accomplishment report readiness and pinpoints missing requirements", () => {
+    const incomplete = evaluateReportReadiness({
+      detailedDescription: "Too short",
+      inspiration: "Short",
+      objective: "Short",
+      outcomesSummary: "Short",
+      beneficiaryType: "Families",
+      mediaCount: 0,
+    });
+    expect(incomplete.ready).toBe(false);
+    expect(incomplete.completedCount).toBe(1); // beneficiaryType >= 2 chars
+    expect(incomplete.totalCount).toBe(6);
+    expect(incomplete.missingLabels).toEqual([
+      "Detailed description",
+      "Project inspiration",
+      "Project objective",
+      "Outcomes & measurement",
+      "Documentation photo",
+    ]);
+
+    const complete = evaluateReportReadiness({
+      detailedDescription:
+        "Distributed 150 hygiene kits and conducted dental education for families in Barangay San Antonio.",
+      inspiration:
+        "Local barangay health workers identified a high rate of preventable dental issues.",
+      objective:
+        "Provide 150 families with dental kits and preventive care instruction.",
+      outcomesSummary:
+        "Improved oral health awareness and provided 3-month supply of essentials to 150 households.",
+      beneficiaryType: "Children & families in Brgy. San Antonio",
+      mediaCount: 3,
+    });
+    expect(complete.ready).toBe(true);
+    expect(complete.completedCount).toBe(6);
+    expect(complete.percent).toBe(100);
+    expect(complete.missingLabels).toHaveLength(0);
+  });
+
+  it("formats technical activity log codes into human-friendly milestones and collapses duplicates", () => {
+    const published = formatActivityLogEntry("REPORT_PUBLISHED", {
+      submissionId: "sub-1",
+    });
+    expect(published.tone).toBe("emerald");
+    expect(published.isMilestone).toBe(true);
+    expect(published.title).toContain("Accomplished");
+
+    const statusOngoing = formatActivityLogEntry("STATUS_CHANGED", {
+      status: "ONGOING",
+    });
+    expect(statusOngoing.title).toContain("Ongoing");
+
+    const deduped = deduplicateActivityLog([
+      { action: "REPORT_PUBLISHED", details: {} },
+      { action: "STATUS_CHANGED", details: { status: "ONGOING" } },
+      { action: "STATUS_CHANGED", details: { status: "ONGOING" } },
+      { action: "QR_GENERATED", details: {} },
+      { action: "QR_GENERATED", details: {} },
+      { action: "UPDATED", details: {} },
+    ]);
+    expect(deduped).toHaveLength(4);
+  });
+
+  it("supports creating L&D and Meeting activities without beneficiaries alongside initial tasks", () => {
+    const lndParsed = createActivitySchema.safeParse({
+      ...base,
+      kind: "PROFESSIONAL_DEVELOPMENT",
+      title: "L&D Session: Leadership & Public Speaking",
+      initialTasks: [
+        {
+          title: "Prepare slide deck and handouts",
+          dueDate: "2026-11-06",
+          priority: "HIGH",
+          assigneeId: "00000000-0000-0000-0000-000000000099",
+        },
+      ],
+    });
+    expect(lndParsed.success).toBe(true);
+    if (lndParsed.success) {
+      expect(lndParsed.data.initialTasks).toHaveLength(1);
+      expect(lndParsed.data.initialTasks[0]?.title).toBe(
+        "Prepare slide deck and handouts",
+      );
+    }
   });
 });
