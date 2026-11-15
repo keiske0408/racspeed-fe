@@ -129,24 +129,26 @@ export const ACTIVITY_KIND_META: Record<ActivityKind, ActivityKindMeta> = {
       "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-500/10 dark:text-indigo-300 dark:border-indigo-500/20",
   },
   PROFESSIONAL_DEVELOPMENT: {
-    label: "Professional Development",
-    description: "Workshop, seminar or vocational training.",
+    label: "Learning & Development (L&D)",
+    description:
+      "L&D session, member training, workshop, or leadership seminar (no beneficiaries required).",
     isProject: false,
     dotClass: "bg-violet-500",
     chipClass:
-      "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-500/10 dark:text-violet-300 dark:border-violet-500/20",
+      "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-500/10 dark:text-indigo-300 dark:border-violet-500/20",
   },
   FUNDRAISER: {
     label: "Fundraiser",
-    description: "Fund-raising activity with funding targets.",
+    description: "Fund-raising activity or cause campaign.",
     isProject: false,
     dotClass: "bg-amber-500",
     chipClass:
       "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20",
   },
   OTHER: {
-    label: "Other",
-    description: "Any other club activity.",
+    label: "Internal Work & Tasks",
+    description:
+      "Committee task sprint, internal preparation, PR campaign, or club initiative (no beneficiaries).",
     isProject: false,
     dotClass: "bg-slate-400",
     chipClass:

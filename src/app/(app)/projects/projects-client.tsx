@@ -28,11 +28,21 @@ export function ProjectsClient({
 
   async function handleDownloadReport(project: ProjectDTO) {
     setDownloadingId(project.id);
+    let nextStatus = project.status;
     try {
       // Auto-submit and persist snapshot to Supabase report_submissions
       const res = await submitAccomplishmentReportAction(project.id);
       if (res.success) {
-        setNotification(res.message || "Accomplishment report submitted & officially logged in District 3820 records!");
+        nextStatus = "COMPLETED";
+        setProjects((prev) =>
+          prev.map((p) =>
+            p.id === project.id ? { ...p, status: "COMPLETED" } : p,
+          ),
+        );
+        setNotification(
+          res.message ||
+            "Accomplishment report submitted & project marked as Completed!",
+        );
       }
     } catch (err) {
       console.warn("Failed to auto-log report submission:", err);
@@ -43,7 +53,7 @@ export function ProjectsClient({
       clubName: "Rotaract Club of San Pedro East",
       district: "District 3820",
       category: project.category,
-      status: project.status,
+      status: nextStatus,
       beneficiaries: project.beneficiaries,
       volunteerHours: project.verifiedHours || project.volunteerHours,
       fundsRaised: project.fundsRaised,

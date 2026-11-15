@@ -167,6 +167,430 @@ export function allowedTransitions(
   );
 }
 
+export interface LifecycleStage {
+  status: ActivityStatus;
+  stepNumber: number;
+  label: string;
+  shortLabel: string;
+  description: string;
+  state: "completed" | "current" | "upcoming";
+}
+
+export function getLifecycleStages(
+  currentStatus: ActivityStatus,
+  isProject: boolean,
+): LifecycleStage[] {
+  const definitions: Omit<LifecycleStage, "stepNumber" | "state">[] = isProject
+    ? [
+        {
+          status: "PLANNED",
+          label: "Plan & Mobilize",
+          shortLabel: "Planned",
+          description: "Schedule, committee & member RSVPs",
+        },
+        {
+          status: "ONGOING",
+          label: "Ongoing Execution",
+          shortLabel: "Ongoing",
+          description: "Attendance check-in, tasks & photos",
+        },
+        {
+          status: "AWAITING_REPORT",
+          label: "Wrap-Up & Report",
+          shortLabel: "Awaiting Report",
+          description: "Complete impact & narrative details",
+        },
+        {
+          status: "ACCOMPLISHED",
+          label: "Accomplished",
+          shortLabel: "Accomplished",
+          description: "Published to District & Showcase records",
+        },
+      ]
+    : [
+        {
+          status: "PLANNED",
+          label: "Planned",
+          shortLabel: "Planned",
+          description: "Schedule & member RSVPs",
+        },
+        {
+          status: "ONGOING",
+          label: "In Progress",
+          shortLabel: "Ongoing",
+          description: "Attendance check-in & execution",
+        },
+        {
+          status: "COMPLETED",
+          label: "Completed",
+          shortLabel: "Completed",
+          description: "Activity finished & logged",
+        },
+      ];
+
+  const normalizedCurrent: ActivityStatus =
+    currentStatus === "DRAFT"
+      ? "PLANNED"
+      : !isProject && currentStatus === "ACCOMPLISHED"
+        ? "COMPLETED"
+        : isProject && currentStatus === "COMPLETED"
+          ? "AWAITING_REPORT"
+          : currentStatus;
+
+  const activeIndex = definitions.findIndex(
+    (d) => d.status === normalizedCurrent,
+  );
+  const isTerminalFinished =
+    currentStatus === "ACCOMPLISHED" ||
+    (!isProject && currentStatus === "COMPLETED");
+
+  return definitions.map((def, idx) => {
+    let state: LifecycleStage["state"] = "upcoming";
+    if (isTerminalFinished) {
+      state = "completed";
+    } else if (activeIndex === -1) {
+      state = "upcoming";
+    } else if (idx < activeIndex) {
+      state = "completed";
+    } else if (idx === activeIndex) {
+      state = "current";
+    }
+    return {
+      ...def,
+      stepNumber: idx + 1,
+      state,
+    };
+  });
+}
+
+export interface ReportChecklistItem {
+  key:
+    | "description"
+    | "inspiration"
+    | "objective"
+    | "outcomes"
+    | "beneficiaries"
+    | "photo";
+  label: string;
+  hint: string;
+  minChars?: number;
+  currentChars?: number;
+  done: boolean;
+  targetTab: "REPORT" | "MEDIA";
+  fieldName?: string;
+}
+
+export interface ReportReadinessInput {
+  detailedDescription?: string | null;
+  inspiration?: string | null;
+  objective?: string | null;
+  outcomesSummary?: string | null;
+  beneficiaryType?: string | null;
+  mediaCount: number;
+}
+
+export interface ReportReadinessResult {
+  items: ReportChecklistItem[];
+  completedCount: number;
+  totalCount: number;
+  percent: number;
+  ready: boolean;
+  missingLabels: string[];
+}
+
+export function evaluateReportReadiness(
+  input: ReportReadinessInput,
+): ReportReadinessResult {
+  const descLen = (input.detailedDescription || "").trim().length;
+  const inspLen = (input.inspiration || "").trim().length;
+  const objLen = (input.objective || "").trim().length;
+  const outLen = (input.outcomesSummary || "").trim().length;
+  const benLen = (input.beneficiaryType || "").trim().length;
+  const mediaCount = Math.max(0, Number(input.mediaCount || 0));
+
+  const items: ReportChecklistItem[] = [
+    {
+      key: "description",
+      label: "Detailed description",
+      hint: "At least 30 characters describing work delivered",
+      minChars: 30,
+      currentChars: descLen,
+      done: descLen >= 30,
+      targetTab: "REPORT",
+      fieldName: "detailedDescription",
+    },
+    {
+      key: "inspiration",
+      label: "Project inspiration",
+      hint: "At least 20 characters on community need",
+      minChars: 20,
+      currentChars: inspLen,
+      done: inspLen >= 20,
+      targetTab: "REPORT",
+      fieldName: "inspiration",
+    },
+    {
+      key: "objective",
+      label: "Project objective",
+      hint: "At least 10 characters on intended change",
+      minChars: 10,
+      currentChars: objLen,
+      done: objLen >= 10,
+      targetTab: "REPORT",
+      fieldName: "objective",
+    },
+    {
+      key: "outcomes",
+      label: "Outcomes & measurement",
+      hint: "At least 20 characters on measurable results",
+      minChars: 20,
+      currentChars: outLen,
+      done: outLen >= 20,
+      targetTab: "REPORT",
+      fieldName: "outcomesSummary",
+    },
+    {
+      key: "beneficiaries",
+      label: "Beneficiary group",
+      hint: "Who benefited (e.g., students, households)",
+      minChars: 2,
+      currentChars: benLen,
+      done: benLen >= 2,
+      targetTab: "REPORT",
+      fieldName: "beneficiaryType",
+    },
+    {
+      key: "photo",
+      label: "Documentation photo",
+      hint:
+        mediaCount > 0
+          ? `${mediaCount} photo${mediaCount === 1 ? "" : "s"} uploaded`
+          : "Upload at least 1 photo in Media or Report",
+      done: mediaCount > 0,
+      targetTab: "MEDIA",
+    },
+  ];
+
+  const completedCount = items.filter((item) => item.done).length;
+  const totalCount = items.length;
+  const percent = Math.round((completedCount / totalCount) * 100);
+  const missingLabels = items
+    .filter((item) => !item.done)
+    .map((item) => item.label);
+
+  return {
+    items,
+    completedCount,
+    totalCount,
+    percent,
+    ready: completedCount === totalCount,
+    missingLabels,
+  };
+}
+
+export interface FormattedLogEntry {
+  title: string;
+  subtitle?: string;
+  tone: "emerald" | "blue" | "amber" | "violet" | "rose" | "slate";
+  isMilestone: boolean;
+}
+
+const HUMAN_STATUS_LABELS: Record<string, string> = {
+  DRAFT: "Draft",
+  PLANNED: "Planned (Step 1)",
+  ONGOING: "Ongoing Execution (Step 2)",
+  AWAITING_REPORT: "Wrap-Up & Report (Step 3)",
+  ACCOMPLISHED: "Accomplished ✓ (Step 4)",
+  COMPLETED: "Completed ✓",
+  CANCELLED: "Cancelled",
+};
+
+/**
+ * Translates raw database activity_log action codes into friendly,
+ * non-technical plain English for Project Managers and Club Officers.
+ */
+export function formatActivityLogEntry(
+  action: string,
+  details: Record<string, unknown> = {},
+): FormattedLogEntry {
+  const code = (action || "").trim().toUpperCase();
+  const nextStatus =
+    typeof details.status === "string"
+      ? details.status.trim().toUpperCase()
+      : typeof details.to === "string"
+        ? details.to.trim().toUpperCase()
+        : "";
+
+  switch (code) {
+    case "REPORT_PUBLISHED":
+      return {
+        title: "Accomplishment Report published — Project Accomplished!",
+        subtitle: "Official impact report submitted to club & District records",
+        tone: "emerald",
+        isMilestone: true,
+      };
+    case "REPORT_DRAFT_SAVED":
+      return {
+        title: "Saved progress on Accomplishment Report draft",
+        subtitle:
+          nextStatus === "AWAITING_REPORT"
+            ? "Moved to Wrap-Up & Report stage"
+            : undefined,
+        tone: "amber",
+        isMilestone: false,
+      };
+    case "STATUS_CHANGED": {
+      if (nextStatus === "ACCOMPLISHED") {
+        return {
+          title: "Project marked as Accomplished",
+          tone: "emerald",
+          isMilestone: true,
+        };
+      }
+      if (nextStatus === "COMPLETED") {
+        return {
+          title: "Activity marked as Completed",
+          tone: "emerald",
+          isMilestone: true,
+        };
+      }
+      if (nextStatus === "AWAITING_REPORT") {
+        return {
+          title: "Moved to Wrap-Up & Accomplishment Report stage",
+          tone: "amber",
+          isMilestone: true,
+        };
+      }
+      if (nextStatus === "ONGOING") {
+        return {
+          title: "Started execution (Marked as Ongoing)",
+          tone: "blue",
+          isMilestone: true,
+        };
+      }
+      if (nextStatus === "PLANNED") {
+        return {
+          title: "Moved stage to Planned",
+          tone: "blue",
+          isMilestone: false,
+        };
+      }
+      if (nextStatus === "CANCELLED") {
+        return {
+          title: "Activity was cancelled",
+          tone: "rose",
+          isMilestone: false,
+        };
+      }
+      const friendlyStatus = HUMAN_STATUS_LABELS[nextStatus];
+      return {
+        title: friendlyStatus
+          ? `Stage updated to ${friendlyStatus}`
+          : "Project stage updated",
+        tone: "blue",
+        isMilestone: false,
+      };
+    }
+    case "CREATED":
+      return {
+        title: "Activity created & scheduled",
+        tone: "blue",
+        isMilestone: true,
+      };
+    case "UPDATED":
+      return {
+        title: "Updated activity details & schedule",
+        tone: "slate",
+        isMilestone: false,
+      };
+    case "QR_GENERATED":
+      return {
+        title: "Opened QR check-in code for attendance",
+        tone: "violet",
+        isMilestone: false,
+      };
+    case "MEDIA_UPLOADED": {
+      const count = Number(details.count || 1);
+      return {
+        title: `Uploaded ${count} documentation photo${count === 1 ? "" : "s"}`,
+        tone: "emerald",
+        isMilestone: false,
+      };
+    }
+    case "TASK_CREATED": {
+      const taskTitle =
+        typeof details.title === "string" && details.title.trim()
+          ? `"${details.title.trim()}"`
+          : "a new task";
+      return {
+        title: `Added task: ${taskTitle}`,
+        tone: "blue",
+        isMilestone: false,
+      };
+    }
+    case "TEAM_UPDATED": {
+      const role =
+        typeof details.role === "string"
+          ? details.role.replaceAll("_", " ").toLowerCase()
+          : "committee member";
+      return {
+        title: `Appointed ${role} to the organizing team`,
+        tone: "blue",
+        isMilestone: false,
+      };
+    }
+    case "ARCHIVED":
+      return {
+        title: "Moved to historical archive",
+        tone: "slate",
+        isMilestone: false,
+      };
+    case "UNARCHIVED":
+      return {
+        title: "Restored to active workspace",
+        tone: "emerald",
+        isMilestone: false,
+      };
+    default: {
+      const cleaned = code
+        .toLowerCase()
+        .replaceAll("_", " ")
+        .replace(/^\w/, (c) => c.toUpperCase());
+      return {
+        title: cleaned || "Activity updated",
+        tone: "slate",
+        isMilestone: false,
+      };
+    }
+  }
+}
+
+/**
+ * Collapses consecutive duplicate noisy log entries (such as repeated QR_GENERATED or
+ * identical STATUS_CHANGED events within a row) so the timeline reads cleanly.
+ */
+export function deduplicateActivityLog<
+  T extends { action: string; details?: Record<string, unknown> },
+>(entries: T[]): T[] {
+  const result: T[] = [];
+  for (const entry of entries) {
+    const prev = result[result.length - 1];
+    if (prev && prev.action === entry.action) {
+      const prevStatus = prev.details?.status;
+      const currStatus = entry.details?.status;
+      if (
+        entry.action === "QR_GENERATED" ||
+        entry.action === "UPDATED" ||
+        (entry.action === "STATUS_CHANGED" && prevStatus === currStatus)
+      ) {
+        continue;
+      }
+    }
+    result.push(entry);
+  }
+  return result;
+}
+
 export function isQrCheckInApplicable(input: {
   qrCheckInEnabled?: boolean | null;
   qr_check_in_enabled?: boolean | null;

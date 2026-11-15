@@ -87,15 +87,28 @@ export async function submitAccomplishmentReportAction(
     return { success: false, error: "Project not found" };
   }
 
-  // Get default report template
+  // Get or create default report template
   const { data: template } = await adminClient
     .from("report_templates")
     .select("id")
-    .eq("club_id", clubId)
+    .eq("club_id", project.host_club_id || clubId)
     .limit(1)
     .maybeSingle();
 
-  const templateId = template?.id || "00000000-0000-0000-0000-000000000002";
+  let templateId = template?.id as string | undefined;
+  if (!templateId) {
+    const { data: createdTemplate } = await adminClient
+      .from("report_templates")
+      .insert({
+        club_id: project.host_club_id || clubId,
+        name: "Standard Accomplishment Report",
+        schema_json: { version: 1, fields: ["summary", "outcomes", "metrics"] },
+        is_default: true,
+      })
+      .select("id")
+      .single();
+    templateId = createdTemplate?.id;
+  }
 
   const snapshot = {
     projectId: project.id,
@@ -116,28 +129,43 @@ export async function submitAccomplishmentReportAction(
     submittedAt: new Date().toISOString(),
   };
 
-  const { data: submission, error } = await adminClient
-    .from("report_submissions")
-    .insert({
-      project_id: projectId,
-      template_id: templateId,
-      submitted_by: user.id,
-      status: "SUBMITTED",
-      data_snapshot: snapshot,
-      submitted_at: new Date().toISOString(),
-    })
-    .select()
-    .single();
+  let submissionId: string | undefined;
+  if (templateId) {
+    const { data: submission, error } = await adminClient
+      .from("report_submissions")
+      .insert({
+        project_id: projectId,
+        template_id: templateId,
+        submitted_by: user.id,
+        status: "SUBMITTED",
+        data_snapshot: snapshot,
+        submitted_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
 
-  if (error) {
-    return { success: false, error: error.message };
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    submissionId = submission?.id;
   }
 
+  // Mark the project as COMPLETED now that its accomplishment report is submitted
+  await adminClient
+    .from("projects")
+    .update({
+      status: "COMPLETED",
+      outcomes_summary: snapshot.narrative,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", projectId);
+
   revalidatePath("/projects");
+  revalidatePath("/project-center");
   revalidatePath("/dashboard");
   return {
     success: true,
-    message: "Accomplishment report submitted & officially logged in District 3820 records!",
-    submissionId: submission.id,
+    message: "Accomplishment report submitted & project marked as Completed!",
+    submissionId,
   };
 }

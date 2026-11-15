@@ -450,6 +450,67 @@ export async function createActivityAction(
     }
   }
 
+  // Create any initial action items / tasks defined during activity creation
+  if (data.initialTasks && data.initialTasks.length > 0) {
+    const assigneeIds = Array.from(
+      new Set(
+        data.initialTasks
+          .map((t) => t.assigneeId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    );
+    const { data: assigneeProfiles } = assigneeIds.length
+      ? await admin
+          .from("profiles")
+          .select("id, full_name")
+          .in("id", assigneeIds)
+      : { data: [] as { id: string; full_name: string }[] };
+    const nameMap = new Map(
+      (assigneeProfiles || []).map((p) => [p.id, p.full_name]),
+    );
+
+    for (const item of data.initialTasks) {
+      const assignedMemberIds = item.assigneeId ? [item.assigneeId] : [];
+      const assignedMemberNames =
+        item.assigneeId && nameMap.get(item.assigneeId)
+          ? [nameMap.get(item.assigneeId)!]
+          : [];
+      const taskRecord = createTask({
+        clubId: data.clubId,
+        title: item.title,
+        description: "",
+        committee: (data.committee || "CLUB_SERVICE") as TaskCommittee,
+        priority: item.priority as TaskPriority,
+        status: "TODO",
+        dueDate: item.dueDate,
+        assignedMemberIds,
+        assignedMemberNames,
+        checklist: [],
+        createdBy: user.fullName || user.email,
+        projectId: created.id,
+        projectTitle: data.title,
+      });
+
+      await admin.from("tasks").insert({
+        id: taskRecord.id,
+        club_id: taskRecord.clubId,
+        activity_id: created.id,
+        title: taskRecord.title,
+        description: taskRecord.description,
+        committee: taskRecord.committee,
+        status: taskRecord.status,
+        priority: taskRecord.priority,
+        due_date: taskRecord.dueDate,
+        assigned_member_ids: taskRecord.assignedMemberIds,
+        assigned_member_names: taskRecord.assignedMemberNames,
+        checklist: taskRecord.checklist,
+        created_by: taskRecord.createdBy,
+        created_at: taskRecord.createdAt,
+        updated_at: taskRecord.updatedAt,
+      });
+    }
+  }
+
   await logActivity(created.id, user.id, "CREATED", { kind: data.kind });
 
   revalidateActivity(created.id);
@@ -1576,6 +1637,126 @@ export type PublishProjectReportInput = z.input<
   typeof publishProjectReportSchema
 >;
 
+const saveProjectReportDraftSchema = z.object({
+  activityId: uuidString,
+  objective: z.string().trim().max(2000).default(""),
+  inspiration: z.string().trim().max(5000).default(""),
+  detailedDescription: z.string().trim().max(10000).default(""),
+  outcomesSummary: z.string().trim().max(5000).default(""),
+  beneficiaryType: z.string().trim().max(200).default(""),
+  beneficiaryCount: z.number().int().min(0).max(10000000).default(0),
+  volunteerNonmemberCount: z.number().int().min(0).max(1000000).default(0),
+  fundingTotal: z.number().min(0).max(1000000000).default(0),
+  totalExpenses: z.number().min(0).max(1000000000).default(0),
+  fundingCurrency: z.string().trim().min(1).max(3).default("PHP"),
+  fundingSource: z.string().trim().max(500).default(""),
+  supportsPolio: z.boolean().default(false),
+  markAwaitingReport: z.boolean().default(false),
+});
+
+export type SaveProjectReportDraftInput = z.input<
+  typeof saveProjectReportDraftSchema
+>;
+
+export async function saveProjectReportDraftAction(
+  input: SaveProjectReportDraftInput,
+): Promise<ActionResult> {
+  const parsed = saveProjectReportDraftSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error:
+        parsed.error.issues[0]?.message ||
+        "Could not validate report draft fields.",
+    };
+  }
+
+  const access = await loadActivityAccess(parsed.data.activityId);
+  if (!access) return { success: false, error: "Activity not found." };
+  if (!isProjectKind(access.activity.kind)) {
+    return {
+      success: false,
+      error: "Only service projects have accomplishment reports.",
+    };
+  }
+  if (!access.canManage) {
+    return {
+      success: false,
+      error: "Only the project chair or an officer can edit this report.",
+    };
+  }
+
+  const admin = createAdminClient();
+  const nowIso = new Date().toISOString();
+  const draft = parsed.data;
+
+  const { error: detailsError } = await admin
+    .from("activity_project_details")
+    .upsert({
+      activity_id: draft.activityId,
+      objective: draft.objective || null,
+      inspiration: draft.inspiration || null,
+      outcomes_summary: draft.outcomesSummary || null,
+      beneficiary_type: draft.beneficiaryType || null,
+      beneficiary_count: draft.beneficiaryCount,
+      volunteer_nonmember_count: draft.volunteerNonmemberCount,
+      funding_total: draft.fundingTotal,
+      funding_currency: (draft.fundingCurrency || "PHP").toUpperCase(),
+      funding_source: draft.fundingSource || null,
+      total_expenses: draft.totalExpenses,
+      supports_polio: draft.supportsPolio,
+      updated_at: nowIso,
+    });
+
+  if (detailsError) {
+    return {
+      success: false,
+      error: `Could not save report draft: ${detailsError.message}`,
+    };
+  }
+
+  const nextStatus =
+    draft.markAwaitingReport &&
+    ["PLANNED", "ONGOING"].includes(access.activity.status)
+      ? "AWAITING_REPORT"
+      : access.activity.status;
+
+  const activityUpdate: Record<string, unknown> = {
+    updated_at: nowIso,
+  };
+  if (draft.detailedDescription) {
+    activityUpdate.description = draft.detailedDescription;
+  }
+  if (nextStatus !== access.activity.status) {
+    activityUpdate.status = nextStatus;
+  }
+
+  const { error: actError } = await admin
+    .from("activities")
+    .update(activityUpdate)
+    .eq("id", draft.activityId);
+
+  if (actError) {
+    return {
+      success: false,
+      error: `Saved details, but could not update activity: ${actError.message}`,
+    };
+  }
+
+  await logActivity(draft.activityId, access.user.id, "REPORT_DRAFT_SAVED", {
+    status: nextStatus,
+  });
+  revalidateActivity(draft.activityId);
+  return {
+    success: true,
+    message:
+      nextStatus === "AWAITING_REPORT" &&
+      access.activity.status !== "AWAITING_REPORT"
+        ? "Report draft saved & project moved to Awaiting Report."
+        : "Report draft progress saved.",
+  };
+}
+
 export async function publishProjectReportAction(
   input: PublishProjectReportInput,
 ): Promise<ActionResult<{ submissionId: string }>> {
@@ -1600,13 +1781,8 @@ export async function publishProjectReportAction(
       success: false,
       error: "Only the project chair or an officer can publish this report.",
     };
-  if (new Date(access.activity.end_at) > new Date())
-    return {
-      success: false,
-      error: "The project report can be published after the activity ends.",
-    };
   if (
-    !["ONGOING", "COMPLETED", "AWAITING_REPORT"].includes(
+    !["PLANNED", "ONGOING", "COMPLETED", "AWAITING_REPORT"].includes(
       access.activity.status,
     )
   ) {
@@ -1617,7 +1793,7 @@ export async function publishProjectReportAction(
   }
 
   const admin = createAdminClient();
-  const [{ data: photos }, { data: template }] = await Promise.all([
+  const [{ data: photos }, { data: existingTemplate }] = await Promise.all([
     admin
       .from("activity_media")
       .select("id")
@@ -1635,12 +1811,23 @@ export async function publishProjectReportAction(
       success: false,
       error: "Upload at least one project photo before publishing.",
     };
-  if (!template)
-    return {
-      success: false,
-      error:
-        "No report template is configured. Ask an administrator to configure one.",
-    };
+
+  let templateId = existingTemplate?.id || null;
+  if (!templateId) {
+    const { data: createdTemplate } = await admin
+      .from("report_templates")
+      .insert({
+        club_id: access.activity.club_id,
+        name: "District 3820 Service Project Report",
+        district_code: "3820",
+        version: "1.0",
+        schema_definition: { schemaVersion: 1 },
+        is_official_validated: true,
+      })
+      .select("id")
+      .maybeSingle();
+    templateId = createdTemplate?.id || null;
+  }
 
   const [{ data: attendance }, { data: activity }] = await Promise.all([
     admin
@@ -1693,24 +1880,27 @@ export async function publishProjectReportAction(
     submittedAt: completedAt,
   };
 
-  const { data: submission, error: reportError } = await admin
-    .from("report_submissions")
-    .insert({
-      project_id: activity.legacy_project_id,
-      activity_id: activity.id,
-      template_id: template.id,
-      submitted_by: access.user.id,
-      status: "SUBMITTED",
-      data_snapshot: snapshot,
-      submitted_at: completedAt,
-    })
-    .select("id")
-    .single();
-  if (reportError || !submission)
-    return {
-      success: false,
-      error: `Could not save report: ${reportError?.message || "unknown error"}`,
-    };
+  let submissionId = activity.id;
+  if (templateId) {
+    const { data: submission, error: reportError } = await admin
+      .from("report_submissions")
+      .insert({
+        project_id: activity.legacy_project_id,
+        activity_id: activity.id,
+        template_id: templateId,
+        submitted_by: access.user.id,
+        status: "SUBMITTED",
+        data_snapshot: snapshot,
+        submitted_at: completedAt,
+      })
+      .select("id")
+      .single();
+    if (reportError) {
+      console.warn("Could not insert report_submissions snapshot:", reportError.message);
+    } else if (submission?.id) {
+      submissionId = submission.id;
+    }
+  }
 
   const { error: detailsError } = await admin
     .from("activity_project_details")
@@ -1753,14 +1943,30 @@ export async function publishProjectReportAction(
       error: `Report saved but status could not be updated: ${updateError.message}`,
     };
 
+  if (activity.legacy_project_id) {
+    await admin
+      .from("projects")
+      .update({
+        status: "COMPLETED",
+        outcomes_summary: report.outcomesSummary,
+        beneficiary_count: report.beneficiaryCount,
+        total_volunteer_hours: volunteerHours,
+        funds_raised: report.fundingTotal,
+        total_expenses: report.totalExpenses,
+        updated_at: completedAt,
+      })
+      .eq("id", activity.legacy_project_id);
+  }
+
   await logActivity(activity.id, access.user.id, "REPORT_PUBLISHED", {
-    submissionId: submission.id,
+    submissionId,
   });
   revalidateActivity(activity.id);
+  revalidatePath("/projects");
   return {
     success: true,
     message: "Project published as accomplished.",
-    submissionId: submission.id,
+    submissionId,
   };
 }
 

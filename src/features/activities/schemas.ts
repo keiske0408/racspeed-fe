@@ -44,6 +44,13 @@ export const committeeMemberInputSchema = z.object({
   role: z.enum(TEAM_ROLES).default("COMMITTEE"),
 });
 
+export const initialTaskInputSchema = z.object({
+  title: z.string().trim().min(3, "Task title must be at least 3 characters").max(200),
+  dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a valid due date"),
+  priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).default("MEDIUM"),
+  assigneeId: uuidString.optional(),
+});
+
 const baseShape = {
   clubId: uuidString,
   ownerId: uuidString.optional(),
@@ -70,6 +77,7 @@ const baseShape = {
   checkInWindowMinutes: z.coerce.number().int().min(0).max(1440).default(180),
   volunteerHoursDefault: z.coerce.number().min(0).max(24).default(0),
   committeeMembers: z.array(committeeMemberInputSchema).max(50).default([]),
+  initialTasks: z.array(initialTaskInputSchema).max(30).default([]),
 };
 
 const meetingSchema = z.object({
