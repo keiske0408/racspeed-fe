@@ -21,6 +21,7 @@ import {
   ImagePlus,
   MapPin,
   MessageSquare,
+  Paintbrush,
   PauseCircle,
   PlayCircle,
   Plus,
@@ -59,6 +60,7 @@ import {
   toggleFollowAction,
   toggleReactionAction,
   updateActivityQrSessionStatusAction,
+  updateActivityPriorityAction,
   updateActivityStatusAction,
   updateActivityTaskAction,
   uploadActivityMediaAction,
@@ -69,9 +71,12 @@ import type { MemberDTO } from "@/features/members/queries";
 import {
   isProjectKind,
   ACTIVITY_KIND_META,
+  ACTIVITY_PRIORITIES,
+  ACTIVITY_PRIORITY_META,
   ACTIVITY_STATUSES,
   ACTIVITY_STATUS_LABELS,
   COMMITTEES,
+  type ActivityPriority,
   type ActivityStatus,
 } from "@/features/activities/types";
 import {
@@ -91,8 +96,10 @@ import {
   ActivityStatusBadge,
   Avatar,
   KindBadge,
+  PriorityBadge,
   ProgressBar,
 } from "../_components/badges";
+import { DiscussionPaintCanvas } from "../_components/discussion-paint-canvas";
 import { RsvpButtons } from "../_components/rsvp-buttons";
 import { formatActivityWhen, isRsvpOpen } from "../_components/activity-card";
 import {
@@ -353,6 +360,34 @@ export function ActivityDetailClient({
               meetingType={activity.meetingType}
             />
             <ActivityStatusBadge status={activity.status} />
+            <PriorityBadge priority={activity.priority} />
+            {canEdit && !activity.isArchived && (
+              <label className="inline-flex items-center gap-1 rounded-full border border-[#DDE1EA] bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                <span className="sr-only">Change priority</span>
+                <select
+                  aria-label="Priority level"
+                  disabled={pending}
+                  value={activity.priority ?? "MEDIUM"}
+                  onChange={(e) => {
+                    const nextPriority = e.target.value as ActivityPriority;
+                    run(async () => {
+                      setActivity({ priority: nextPriority });
+                      return updateActivityPriorityAction(
+                        activity.id,
+                        nextPriority,
+                      );
+                    }, `Priority updated to ${ACTIVITY_PRIORITY_META[nextPriority].label}.`);
+                  }}
+                  className="bg-transparent text-[11px] font-semibold outline-none cursor-pointer"
+                >
+                  {ACTIVITY_PRIORITIES.map((p) => (
+                    <option key={p} value={p} className="dark:bg-slate-900">
+                      Set: {ACTIVITY_PRIORITY_META[p].label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             {activity.isArchived && (
               <span className="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                 <Archive className="h-3 w-3" />
@@ -2713,62 +2748,185 @@ function DiscussionPanel({
   currentUserId: string;
   onRefresh: () => void;
 }) {
+  const [composerMode, setComposerMode] = useState<"COMMENT" | "PAINT">(
+    "COMMENT",
+  );
+  const [lightboxSketchId, setLightboxSketchId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+
+  const sketches = activity.comments.filter(
+    (c) => !c.isDeleted && Boolean(c.sketch?.imageUrl),
+  );
+  const activeLightbox =
+    sketches.find((c) => c.id === lightboxSketchId) ?? null;
+
   return (
-    <section className="mx-auto max-w-3xl space-y-4">
-      <form
-        className="rounded-xl border border-[#EDEDF2] bg-white p-4 dark:border-slate-800 dark:bg-[#161B26]"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const form = event.currentTarget;
-          const data = new FormData(form);
-          setError(null);
-          startTransition(async () => {
-            const result = await addCommentAction({
-              activityId: activity.id,
-              body: String(data.get("body") || ""),
-            });
-            if (!result.success) {
-              setError(result.error);
-              return;
-            }
-            form.reset();
-            onRefresh();
-          });
-        }}
-      >
-        <label htmlFor="activity-comment" className="sr-only">
-          Write a comment
-        </label>
-        <textarea
-          id="activity-comment"
-          name="body"
-          required
-          maxLength={5000}
-          rows={3}
-          placeholder="Share an update or ask the team a question..."
-          className={fieldClass}
-        />
-        <div className="mt-2 flex items-center justify-between gap-2">
-          <span className="text-[10px] text-slate-500">
-            Comments are visible to club members.
-          </span>
-          <button
-            type="submit"
-            disabled={pending}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-[#0D3594] px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
-          >
-            <Send className="h-3.5 w-3.5" /> Post
-          </button>
+    <section className="mx-auto max-w-4xl space-y-5">
+      {/* Pinned Visual Summaries & Sketches Strip */}
+      {sketches.length > 0 && (
+        <div className="rounded-xl border border-[#EDEDF2] bg-white p-4 dark:border-slate-800 dark:bg-[#161B26]">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-[#EEF2FF] text-[#0D3594] dark:bg-blue-950/60 dark:text-blue-300">
+                <Paintbrush className="h-3.5 w-3.5" />
+              </span>
+              <div>
+                <h3 className="text-xs font-bold uppercase tracking-wide text-[#111625] dark:text-white">
+                  Visual Summaries & Sketches ({sketches.length})
+                </h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Whiteboard diagrams and meeting takeaways shared by the team. Click any sketch to expand.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setComposerMode("PAINT")}
+              className="inline-flex items-center gap-1 rounded-lg border border-[#DDE1EA] bg-slate-50 px-2.5 py-1.5 text-[11px] font-semibold text-[#0D3594] hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-800 dark:text-blue-300 transition cursor-pointer"
+            >
+              <Plus className="h-3 w-3" /> Add Drawing
+            </button>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {sketches.map((item) => (
+              <button
+                key={`strip-${item.id}`}
+                type="button"
+                onClick={() => setLightboxSketchId(item.id)}
+                className="group overflow-hidden rounded-xl border border-[#EDEDF2] bg-[#FAFBFD] text-left transition hover:border-[#0D3594]/50 hover:shadow-sm dark:border-slate-700 dark:bg-slate-900/70 cursor-pointer"
+              >
+                <div className="aspect-[16/9] w-full overflow-hidden border-b border-[#EDEDF2] bg-white dark:border-slate-800">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={item.sketch!.imageUrl!}
+                    alt={item.sketch!.title}
+                    className="h-full w-full object-contain transition duration-200 group-hover:scale-[1.02]"
+                  />
+                </div>
+                <div className="p-2.5">
+                  <p className="truncate text-xs font-bold text-[#111625] dark:text-white">
+                    {item.sketch!.title}
+                  </p>
+                  {item.body && (
+                    <p className="mt-0.5 line-clamp-2 text-[11px] text-slate-500 dark:text-slate-400">
+                      {item.body}
+                    </p>
+                  )}
+                  <p className="mt-1.5 text-[10px] text-slate-400">
+                    {item.author.fullName} · {formatManila(item.createdAt)}
+                  </p>
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
-        {error && <p className="mt-2 text-xs text-rose-600">{error}</p>}
-      </form>
+      )}
+
+      {/* Composer Mode Switcher */}
+      <div className="rounded-xl border border-[#EDEDF2] bg-white p-4 dark:border-slate-800 dark:bg-[#161B26]">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-[#EDEDF2] pb-3 dark:border-slate-800">
+          <div className="inline-flex rounded-lg border border-[#DDE1EA] bg-[#F5F7FA] p-1 dark:border-slate-700 dark:bg-slate-900">
+            <button
+              type="button"
+              onClick={() => setComposerMode("COMMENT")}
+              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
+                composerMode === "COMMENT"
+                  ? "bg-white text-[#111625] shadow-xs dark:bg-slate-800 dark:text-white"
+                  : "text-slate-500 hover:text-slate-800 dark:text-slate-400"
+              }`}
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+              Write Comment
+            </button>
+            <button
+              type="button"
+              onClick={() => setComposerMode("PAINT")}
+              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
+                composerMode === "PAINT"
+                  ? "bg-white text-[#0D3594] shadow-xs dark:bg-slate-800 dark:text-blue-300"
+                  : "text-slate-500 hover:text-slate-800 dark:text-slate-400"
+              }`}
+            >
+              <Paintbrush className="h-3.5 w-3.5" />
+              Paint & Visual Summary
+            </button>
+          </div>
+          <span className="text-[11px] text-slate-500">
+            {composerMode === "PAINT"
+              ? "Sketch floor plans, flowcharts, or idea boards with a summary note"
+              : "Share a quick update or discussion question"}
+          </span>
+        </div>
+
+        {composerMode === "COMMENT" ? (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              const form = event.currentTarget;
+              const data = new FormData(form);
+              setError(null);
+              startTransition(async () => {
+                const result = await addCommentAction({
+                  activityId: activity.id,
+                  body: String(data.get("body") || ""),
+                });
+                if (!result.success) {
+                  setError(result.error);
+                  return;
+                }
+                form.reset();
+                onRefresh();
+              });
+            }}
+          >
+            <label htmlFor="activity-comment" className="sr-only">
+              Write a comment
+            </label>
+            <textarea
+              id="activity-comment"
+              name="body"
+              required
+              maxLength={5000}
+              rows={3}
+              placeholder="Share an update, brainstorming note, or ask the team a question..."
+              className={fieldClass}
+            />
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <span className="text-[10px] text-slate-500">
+                Comments are visible to club members.
+              </span>
+              <button
+                type="submit"
+                disabled={pending}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-[#0D3594] px-3 py-2 text-xs font-semibold text-white disabled:opacity-60 cursor-pointer"
+              >
+                <Send className="h-3.5 w-3.5" /> Post
+              </button>
+            </div>
+            {error && <p className="mt-2 text-xs text-rose-600">{error}</p>}
+          </form>
+        ) : (
+          <DiscussionPaintCanvas
+            activityId={activity.id}
+            onPosted={() => {
+              setComposerMode("COMMENT");
+              onRefresh();
+            }}
+          />
+        )}
+      </div>
+
+      {/* Discussion Feed */}
       <div className="space-y-3">
         {activity.comments.map((comment) => (
           <article
             key={comment.id}
-            className="rounded-xl border border-[#EDEDF2] bg-white p-4 dark:border-slate-800 dark:bg-[#161B26]"
+            className={`rounded-xl border p-4 ${
+              !comment.isDeleted && comment.sketch?.imageUrl
+                ? "border-blue-200/80 bg-white dark:border-blue-900/50 dark:bg-[#161B26]"
+                : "border-[#EDEDF2] bg-white dark:border-slate-800 dark:bg-[#161B26]"
+            }`}
           >
             <header className="flex items-center gap-2.5">
               <Avatar
@@ -2777,9 +2935,17 @@ function DiscussionPanel({
                 size={30}
               />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-bold text-[#111625] dark:text-white">
-                  {comment.author.fullName}
-                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="truncate text-xs font-bold text-[#111625] dark:text-white">
+                    {comment.author.fullName}
+                  </p>
+                  {!comment.isDeleted && comment.sketch?.imageUrl && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[#EEF2FF] px-2 py-0.5 text-[10px] font-bold text-[#0D3594] dark:bg-blue-950/60 dark:text-blue-300">
+                      <Paintbrush className="h-2.5 w-2.5" />
+                      Visual Summary
+                    </span>
+                  )}
+                </div>
                 <p className="text-[10px] text-slate-500">
                   {formatManila(comment.createdAt)}
                   {comment.editedAt ? " · edited" : ""}
@@ -2796,17 +2962,57 @@ function DiscussionPanel({
                         onRefresh();
                       })
                     }
-                    className="rounded p-1 text-slate-400 hover:text-rose-600"
+                    className="rounded p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 )}
             </header>
-            <p
-              className={`mt-3 whitespace-pre-wrap text-sm leading-relaxed ${comment.isDeleted ? "italic text-slate-400" : "text-slate-700 dark:text-slate-200"}`}
-            >
-              {comment.isDeleted ? "This comment was deleted." : comment.body}
-            </p>
+
+            {comment.isDeleted ? (
+              <p className="mt-3 text-sm italic text-slate-400">
+                This comment was deleted.
+              </p>
+            ) : comment.sketch?.imageUrl ? (
+              <div className="mt-3 space-y-2.5 rounded-xl border border-[#EDEDF2] bg-[#FAFBFD] p-3 dark:border-slate-800 dark:bg-slate-900/60">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h4 className="text-sm font-bold text-[#111625] dark:text-white">
+                    {comment.sketch.title}
+                  </h4>
+                  <a
+                    href={comment.sketch.imageUrl}
+                    download={`${comment.sketch.title.replace(/[^a-z0-9-_]+/gi, "-").toLowerCase() || "sketch"}.png`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 rounded-lg border border-[#DDE1EA] bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                  >
+                    <Download className="h-3 w-3" /> Download PNG
+                  </a>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setLightboxSketchId(comment.id)}
+                  className="block w-full overflow-hidden rounded-lg border border-[#DDE1EA] bg-white dark:border-slate-700 cursor-zoom-in"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={comment.sketch.imageUrl}
+                    alt={comment.sketch.title}
+                    className="max-h-96 w-full object-contain"
+                  />
+                </button>
+                {comment.body && (
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700 dark:text-slate-200">
+                    {comment.body}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-slate-700 dark:text-slate-200">
+                {comment.body}
+              </p>
+            )}
+
             {!comment.isDeleted && (
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {comment.reactions.map((reaction) => (
@@ -2856,10 +3062,82 @@ function DiscussionPanel({
         {activity.comments.length === 0 && (
           <div className="rounded-xl border border-dashed border-slate-300 py-10 text-center dark:border-slate-700">
             <MessageSquare className="mx-auto h-5 w-5 text-slate-400" />
-            <p className="mt-2 text-xs text-slate-500">No discussion yet.</p>
+            <p className="mt-2 text-xs text-slate-500">
+              No discussion yet. Write a comment or switch to{" "}
+              <button
+                type="button"
+                onClick={() => setComposerMode("PAINT")}
+                className="font-semibold text-[#0D3594] underline cursor-pointer dark:text-blue-400"
+              >
+                Paint & Visual Summary
+              </button>{" "}
+              to share a sketch.
+            </p>
           </div>
         )}
       </div>
+
+      {/* Lightbox Modal for Sketches */}
+      {activeLightbox?.sketch?.imageUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-xs"
+          role="dialog"
+          aria-modal="true"
+          aria-label={activeLightbox.sketch.title}
+          onClick={() => setLightboxSketchId(null)}
+        >
+          <div
+            className="w-full max-w-4xl overflow-hidden rounded-2xl border border-slate-700 bg-white shadow-2xl dark:bg-[#161B26]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-[#EDEDF2] px-5 py-3 dark:border-slate-800">
+              <div>
+                <h4 className="text-sm font-bold text-[#111625] dark:text-white">
+                  {activeLightbox.sketch.title}
+                </h4>
+                <p className="text-[11px] text-slate-500">
+                  Shared by {activeLightbox.author.fullName} ·{" "}
+                  {formatManila(activeLightbox.createdAt)}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={activeLightbox.sketch.imageUrl}
+                  download={`${activeLightbox.sketch.title.replace(/[^a-z0-9-_]+/gi, "-").toLowerCase() || "sketch"}.png`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-[#DDE1EA] px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  <Download className="h-3.5 w-3.5" /> Download PNG
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setLightboxSketchId(null)}
+                  className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+            <div className="bg-[#F5F7FA] p-4 dark:bg-slate-900">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={activeLightbox.sketch.imageUrl}
+                alt={activeLightbox.sketch.title}
+                className="mx-auto max-h-[70vh] rounded-lg border border-[#DDE1EA] bg-white object-contain"
+              />
+            </div>
+            {activeLightbox.body && (
+              <div className="border-t border-[#EDEDF2] px-5 py-3 text-sm text-slate-700 dark:border-slate-800 dark:text-slate-200">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                  Summary Notes
+                </p>
+                <p className="mt-1 whitespace-pre-wrap">{activeLightbox.body}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -3955,6 +4233,9 @@ function EditActivityModal({
   const [startAt, setStartAt] = useState(() => isoToManilaLocal(activity.startAt));
   const [endAt, setEndAt] = useState(() => isoToManilaLocal(activity.endAt));
   const [allDay, setAllDay] = useState(Boolean(activity.allDay));
+  const [priority, setPriority] = useState<ActivityPriority>(
+    activity.priority ?? "MEDIUM",
+  );
   const [committee, setCommittee] = useState<string>(activity.committee || "");
   const [capacity, setCapacity] = useState(activity.capacity ? String(activity.capacity) : "");
   const [minMembersEnabled, setMinMembersEnabled] = useState(Boolean(activity.minMembersRequired));
@@ -4069,6 +4350,7 @@ function EditActivityModal({
         startAt,
         endAt,
         allDay,
+        priority,
         committee: committee ? (committee as any) : undefined,
         status: activity.status,
         minMembersEnabled,
@@ -4243,7 +4525,26 @@ function EditActivityModal({
                 />
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                    Priority
+                  </label>
+                  <select
+                    value={priority}
+                    onChange={(e) =>
+                      setPriority(e.target.value as ActivityPriority)
+                    }
+                    className={fieldClass}
+                  >
+                    {ACTIVITY_PRIORITIES.map((p) => (
+                      <option key={p} value={p}>
+                        {ACTIVITY_PRIORITY_META[p].label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
                     Committee
