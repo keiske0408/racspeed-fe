@@ -39,16 +39,35 @@ const NON_PROJECT_KINDS = ACTIVITY_KINDS.filter(
   "MEETING" | (typeof PROJECT_KINDS)[number]
 >[];
 
+export const TASK_PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
+export const TASK_STATUSES = [
+  "TODO",
+  "IN_PROGRESS",
+  "IN_REVIEW",
+  "COMPLETED",
+] as const;
+
 export const committeeMemberInputSchema = z.object({
   profileId: uuidString,
   role: z.enum(TEAM_ROLES).default("COMMITTEE"),
 });
 
 export const initialTaskInputSchema = z.object({
-  title: z.string().trim().min(3, "Task title must be at least 3 characters").max(200),
+  title: z
+    .string()
+    .trim()
+    .min(3, "Task title must be at least 3 characters")
+    .max(200),
+  description: z.string().trim().max(2000).optional(),
   dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a valid due date"),
-  priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).default("MEDIUM"),
+  priority: z.enum(TASK_PRIORITIES).default("MEDIUM"),
+  status: z.enum(TASK_STATUSES).default("TODO"),
   assigneeId: uuidString.optional(),
+});
+
+export const relatedLinkSchema = z.object({
+  label: z.string().trim().min(1).max(160),
+  url: z.string().trim().url().max(2000),
 });
 
 const baseShape = {
@@ -80,21 +99,24 @@ const baseShape = {
   initialTasks: z.array(initialTaskInputSchema).max(30).default([]),
 };
 
-const meetingSchema = z.object({
+export const meetingSchema = z.object({
   ...baseShape,
   kind: z.literal("MEETING"),
   meetingType: z.enum(MEETING_TYPES),
 });
 
-const partnerSchema = z.object({
+export const partnerSchema = z.object({
   name: z.string().trim().min(1).max(200),
   role: z.enum(PARTNER_ROLES).default("IMPLEMENTING_PARTNER"),
   sisterClubId: uuidString.optional(),
 });
 
-const AREA_CODES = AREAS_OF_FOCUS.map((a) => a.code) as [string, ...string[]];
+export const AREA_CODES = AREAS_OF_FOCUS.map((a) => a.code) as [
+  string,
+  ...string[],
+];
 
-const projectSchema = z.object({
+export const projectSchema = z.object({
   ...baseShape,
   kind: z.enum(PROJECT_KINDS),
   sisterClubId: uuidString.optional(),
@@ -107,9 +129,10 @@ const projectSchema = z.object({
   areasOfFocus: z.array(z.enum(AREA_CODES)).max(7).default([]),
   sdgs: z.array(z.coerce.number().int().min(1).max(17)).max(17).default([]),
   partners: z.array(partnerSchema).max(20).default([]),
+  relatedLinks: z.array(relatedLinkSchema).max(20).optional(),
 });
 
-const generalSchema = z.object({
+export const generalSchema = z.object({
   ...baseShape,
   kind: z.enum(NON_PROJECT_KINDS as [string, ...string[]]),
 });

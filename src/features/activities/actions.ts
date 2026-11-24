@@ -126,6 +126,7 @@ async function notifyProjectAudience({
           dedupeKey: `${dedupePrefix}_${profileId}`,
           sendPush: true,
           sendEmail: false,
+          sendTelegram: true,
         }),
       ),
     );
@@ -257,6 +258,9 @@ async function syncProjectRelations(
     beneficiary_count: data.beneficiaryTarget,
     funding_total: data.fundingTarget,
     funding_source: data.fundingSource || null,
+    ...(data.relatedLinks !== undefined
+      ? { related_links: data.relatedLinks }
+      : {}),
     updated_at: new Date().toISOString(),
   });
 
@@ -423,6 +427,44 @@ export async function createActivityAction(
     }
   }
 
+  if (data.status !== "DRAFT") {
+    const { data: memberships, error: memberError } = await admin
+      .from("club_memberships")
+      .select("profile_id")
+      .eq("club_id", data.clubId)
+      .eq("membership_status", "ACTIVE");
+    if (memberError) {
+      console.error("Could not load members for activity announcement:", memberError.message);
+    } else {
+      const excluded = new Set([
+        user.id,
+        ownerId,
+        ...(data.committeeMembers || []).map((member) => member.profileId),
+      ]);
+      await Promise.all(
+        (memberships || [])
+          .filter((member) => !excluded.has(member.profile_id))
+          .map((member) =>
+            dispatchNotification({
+              profileId: member.profile_id,
+              clubId: data.clubId,
+              title: "New club activity announced",
+              message: `${data.title} is now open in the activity calendar.`,
+              type: "ACTIVITY_REMINDER",
+              linkUrl: `/project-center/${created.id}`,
+              dedupeKey: `activity-announced:${created.id}:${member.profile_id}`,
+              sendEmail: false,
+              sendPush: true,
+              sendTelegram: true,
+              deferDelivery: true,
+            }).catch((notificationError) =>
+              console.error("Could not queue activity announcement:", notificationError),
+            ),
+          ),
+      );
+    }
+  }
+
   await Promise.all([
     admin.from("activity_team").insert(teamInserts),
     admin.from("activity_followers").upsert(
@@ -446,6 +488,7 @@ export async function createActivityAction(
         linkUrl: `/project-center/${created.id}`,
         dedupeKey: `committee_add_${created.id}_${cm.profileId}`,
         sendPush: true,
+        sendTelegram: true,
       }).catch((e) => console.warn("Failed committee notif:", e));
     }
   }
@@ -469,19 +512,21 @@ export async function createActivityAction(
       (assigneeProfiles || []).map((p) => [p.id, p.full_name]),
     );
 
-    for (const item of data.initialTasks) {
+    const baseTimeMs = Date.now();
+    for (const [index, item] of data.initialTasks.entries()) {
       const assignedMemberIds = item.assigneeId ? [item.assigneeId] : [];
       const assignedMemberNames =
         item.assigneeId && nameMap.get(item.assigneeId)
           ? [nameMap.get(item.assigneeId)!]
           : [];
+      const orderedTimestamp = new Date(baseTimeMs + index).toISOString();
       const taskRecord = createTask({
         clubId: data.clubId,
         title: item.title,
-        description: "",
+        description: item.description || "",
         committee: (data.committee || "CLUB_SERVICE") as TaskCommittee,
         priority: item.priority as TaskPriority,
-        status: "TODO",
+        status: (item.status || "TODO") as TaskStatus,
         dueDate: item.dueDate,
         assignedMemberIds,
         assignedMemberNames,
@@ -505,8 +550,8 @@ export async function createActivityAction(
         assigned_member_names: taskRecord.assignedMemberNames,
         checklist: taskRecord.checklist,
         created_by: taskRecord.createdBy,
-        created_at: taskRecord.createdAt,
-        updated_at: taskRecord.updatedAt,
+        created_at: orderedTimestamp,
+        updated_at: orderedTimestamp,
       });
     }
   }
@@ -588,6 +633,22 @@ export async function updateActivityAction(
       error: `Failed to update activity: ${error.message}`,
     };
 
+  const scheduleChanged =
+    updatePayload.start_at !== access.activity.start_at ||
+    updatePayload.end_at !== access.activity.end_at ||
+    parsed.data.title !== access.activity.title;
+  if (scheduleChanged) {
+    await notifyProjectAudience({
+      activityId,
+      clubId: access.activity.club_id,
+      title: "Activity details changed",
+      message: `The schedule or title for ${parsed.data.title} changed. Review the activity details before attending.`,
+      type: "ACTIVITY_REMINDER",
+      excludeProfileIds: [access.user.id],
+      dedupePrefix: `activity-changed_${activityId}_${String(updatePayload.updated_at)}`,
+    });
+  }
+
   await syncProjectRelations(activityId, parsed.data);
   await logActivity(activityId, access.user.id, "UPDATED");
   revalidateActivity(activityId);
@@ -625,6 +686,18 @@ export async function updateActivityStatusAction(
     })
     .eq("id", activityId);
   if (error) return { success: false, error: error.message };
+
+  if (status === "CANCELLED") {
+    await notifyProjectAudience({
+      activityId,
+      clubId: access.activity.club_id,
+      title: "Activity cancelled",
+      message: `${access.activity.title} has been cancelled.`,
+      type: "ACTIVITY_REMINDER",
+      excludeProfileIds: [access.user.id],
+      dedupePrefix: `activity-cancelled_${activityId}`,
+    });
+  }
 
   await logActivity(activityId, access.user.id, "STATUS_CHANGED", {
     from: access.activity.status,
@@ -944,6 +1017,7 @@ export async function setRsvpAction(input: {
       linkUrl: `/project-center/${parsed.data.activityId}`,
       dedupeKey: `rsvp_unlocked_${parsed.data.activityId}_${access.user.id}`,
       sendPush: false,
+      sendTelegram: true,
     }).catch((e) => console.warn("RSVP unlock notif error:", e));
 
     // Notify project owner of new attendee
@@ -957,6 +1031,7 @@ export async function setRsvpAction(input: {
         linkUrl: `/project-center/${parsed.data.activityId}?tab=roster`,
         dedupeKey: `rsvp_owner_${parsed.data.activityId}_${access.user.id}`,
         sendPush: true,
+        sendTelegram: true,
       }).catch((e) => console.warn("RSVP owner notif error:", e));
     }
   }
@@ -1961,6 +2036,18 @@ export async function publishProjectReportAction(
   await logActivity(activity.id, access.user.id, "REPORT_PUBLISHED", {
     submissionId,
   });
+  await dispatchNotification({
+    profileId: access.user.id,
+    clubId: access.activity.club_id,
+    type: "REPORT_REVIEW",
+    title: "Accomplishment report submitted",
+    message: "Your project report was submitted and the activity was marked accomplished.",
+    linkUrl: `/project-center/${activity.id}?tab=REPORT`,
+    dedupeKey: `report-submitted:${submissionId}`,
+    sendTelegram: true,
+  }).catch((notificationError) =>
+    console.error("Could not notify member about report submission:", notificationError),
+  );
   revalidateActivity(activity.id);
   revalidatePath("/projects");
   return {
@@ -2017,6 +2104,7 @@ export async function toggleReactionAction(
         linkUrl: `/project-center/${activityId}?tab=comments`,
         dedupeKey: `react_${commentId}_${access.user.id}_${emoji}`,
         sendPush: true,
+        sendTelegram: true,
       }).catch((e) => console.warn("Failed reaction notification:", e));
     }
   }
@@ -2412,6 +2500,7 @@ export async function createActivityTaskAction(
         linkUrl: `/project-center/${parsed.data.activityId}?tab=tasks`,
         dedupeKey: `task_assign_${created.id}_${assignee.id}`,
         sendPush: true,
+        sendTelegram: true,
       }).catch((e) => console.warn("Failed assignee task notif:", e));
     }
   }
@@ -2532,6 +2621,7 @@ export async function updateActivityTaskAction(
         linkUrl: `/project-center/${parsed.data.activityId}?tab=tasks`,
         dedupeKey: `task_assign_${parsed.data.taskId}_${assignee.id}`,
         sendPush: true,
+        sendTelegram: true,
       }).catch((e) => console.warn("Failed assignee task notif:", e));
     }
   }

@@ -4,15 +4,20 @@ import React, { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  ArrowDown,
   ArrowLeft,
   ArrowRight,
+  ArrowUp,
   CheckCircle2,
   CheckSquare,
   ClipboardList,
+  ExternalLink,
   GraduationCap,
   HeartHandshake,
+  Link2,
   Plus,
   Sparkles,
+  Trash2,
   Users,
   X,
 } from "lucide-react";
@@ -26,11 +31,17 @@ import {
   MEETING_TYPES,
   MEETING_TYPE_LABELS,
   type ActivityKind,
+  type ActivityStatus,
+  type Committee,
+  type MeetingType,
+  type PartnerRole,
 } from "@/features/activities/types";
 import {
   UUID_PATTERN,
   type CreateActivityInput,
 } from "@/features/activities/schemas";
+import type { ActivityFormState } from "@/features/activities/ai-draft-schema";
+import { AiDraftPanel } from "./ai-draft-panel";
 import { notifyToast } from "@/components/shared/toast-viewport";
 
 const SDGS = [
@@ -94,15 +105,43 @@ export function ActivityCreateClient({
   }[];
 }) {
   const router = useRouter();
+  const [defaultDates] = useState(() => ({
+    startAt: localDefault(7, 9),
+    endAt: localDefault(7, 12),
+  }));
   const [kind, setKind] = useState<ActivityKind | null>(
     initialKind as ActivityKind | null,
   );
   const [step, setStep] = useState<1 | 2>(initialKind ? 2 : 1);
-  const [presetTitle, setPresetTitle] = useState("");
-  const [presetShortDesc, setPresetShortDesc] = useState("");
-  const [presetCommittee, setPresetCommittee] = useState("");
-  const [presetMeetingType, setPresetMeetingType] =
-    useState("GENERAL_ASSEMBLY");
+  const [showAiMode, setShowAiMode] = useState(false);
+
+  // Controlled core fields (preserved for non-overwriting AI merges & direct review)
+  const [title, setTitle] = useState("");
+  const [shortDescription, setShortDescription] = useState("");
+  const [description, setDescription] = useState("");
+  const [location, setLocation] = useState("");
+  const [committee, setCommittee] = useState<Committee | "">("");
+  const [meetingType, setMeetingType] =
+    useState<MeetingType>("GENERAL_ASSEMBLY");
+  const [status, setStatus] = useState<ActivityStatus>("PLANNED");
+  const [startAt, setStartAt] = useState(defaultDates.startAt);
+  const [endAt, setEndAt] = useState(defaultDates.endAt);
+  const [allDay, setAllDay] = useState(false);
+  const [objective, setObjective] = useState("");
+  const [beneficiaryType, setBeneficiaryType] = useState("");
+  const [beneficiaryTarget, setBeneficiaryTarget] = useState(0);
+  const [fundingTarget, setFundingTarget] = useState(0);
+  const [fundingSource, setFundingSource] = useState("");
+  const [areasOfFocus, setAreasOfFocus] = useState<string[]>([]);
+  const [sdgs, setSdgs] = useState<number[]>([]);
+  const [externalPartnerNameInput, setExternalPartnerNameInput] = useState("");
+  const [extraExternalPartners, setExtraExternalPartners] = useState<
+    { name: string; role: PartnerRole }[]
+  >([]);
+  const [relatedLinks, setRelatedLinks] = useState<
+    { label: string; url: string; purpose: "primer" | "registration" | "other" }[]
+  >([]);
+
   const [minEnabled, setMinEnabled] = useState(false);
   const [rsvpEnabled, setRsvpEnabled] = useState(true);
   const [selfCheckIn, setSelfCheckIn] = useState(false);
@@ -122,19 +161,17 @@ export function ActivityCreateClient({
     { profileId: string; role: "COMMITTEE" | "CO_CHAIR" | "VOLUNTEER" }[]
   >([]);
   const [selectedMemberId, setSelectedMemberId] = useState("");
-  const [selectedRole, setSelectedRole] = useState<"COMMITTEE" | "CO_CHAIR" | "VOLUNTEER">("COMMITTEE");
+  const [selectedRole, setSelectedRole] = useState<
+    "COMMITTEE" | "CO_CHAIR" | "VOLUNTEER"
+  >("COMMITTEE");
 
   // Initial tasks / action items builder state
-  const defaultDueDate = localDefault(7, 9).slice(0, 10);
+  const defaultDueDate = defaultDates.startAt.slice(0, 10);
   const [initialTasks, setInitialTasks] = useState<
-    {
-      title: string;
-      dueDate: string;
-      priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
-      assigneeId?: string;
-    }[]
+    ActivityFormState["initialTasks"]
   >([]);
   const [draftTaskTitle, setDraftTaskTitle] = useState("");
+  const [draftTaskDesc, setDraftTaskDesc] = useState("");
   const [draftTaskDue, setDraftTaskDue] = useState(defaultDueDate);
   const [draftTaskPriority, setDraftTaskPriority] = useState<
     "LOW" | "MEDIUM" | "HIGH" | "URGENT"
@@ -149,19 +186,105 @@ export function ActivityCreateClient({
     setInitialTasks((prev) => [
       ...prev,
       {
+        id: `manual-task-${Date.now()}-${prev.length + 1}`,
         title: trimmed,
+        description: draftTaskDesc.trim(),
         dueDate: draftTaskDue || defaultDueDate,
         priority: draftTaskPriority,
+        status: "TODO",
+        order: prev.length + 1,
         ...(draftTaskAssigneeId ? { assigneeId: draftTaskAssigneeId } : {}),
       },
     ]);
     setDraftTaskTitle("");
+    setDraftTaskDesc("");
     setDraftTaskAssigneeId("");
     setDraftTaskPriority("MEDIUM");
   }
 
   function removeInitialTask(idx: number) {
-    setInitialTasks((prev) => prev.filter((_, i) => i !== idx));
+    setInitialTasks((prev) =>
+      prev
+        .filter((_, i) => i !== idx)
+        .map((item, i) => ({ ...item, order: i + 1 })),
+    );
+  }
+
+  function moveInitialTask(idx: number, direction: -1 | 1) {
+    setInitialTasks((prev) => {
+      const target = idx + direction;
+      if (target < 0 || target >= prev.length) return prev;
+      const copy = [...prev];
+      const [moved] = copy.splice(idx, 1);
+      copy.splice(target, 0, moved);
+      return copy.map((item, i) => ({ ...item, order: i + 1 }));
+    });
+  }
+
+  function getCurrentFormState(): ActivityFormState {
+    const ext = [
+      ...(externalPartnerNameInput.trim()
+        ? [
+            {
+              name: externalPartnerNameInput.trim(),
+              role: "IMPLEMENTING_PARTNER" as PartnerRole,
+            },
+          ]
+        : []),
+      ...extraExternalPartners,
+    ];
+    return {
+      kind: kind || "SERVICE_PROJECT",
+      meetingType,
+      title,
+      shortDescription,
+      description,
+      location,
+      startAt,
+      endAt,
+      allDay,
+      committee,
+      status,
+      objective,
+      beneficiaryType,
+      beneficiaryTarget,
+      fundingTarget,
+      fundingSource,
+      areasOfFocus,
+      sdgs,
+      selectedPartnerIds,
+      externalPartners: ext,
+      relatedLinks,
+      initialTasks,
+    };
+  }
+
+  function applyFormState(next: ActivityFormState) {
+    setKind(next.kind);
+    setMeetingType(next.meetingType);
+    setTitle(next.title);
+    setShortDescription(next.shortDescription);
+    setDescription(next.description);
+    setLocation(next.location);
+    setStartAt(next.startAt);
+    setEndAt(next.endAt);
+    setAllDay(next.allDay);
+    setCommittee(next.committee);
+    setStatus(next.status);
+    setObjective(next.objective);
+    setBeneficiaryType(next.beneficiaryType);
+    setBeneficiaryTarget(next.beneficiaryTarget);
+    setFundingTarget(next.fundingTarget);
+    setFundingSource(next.fundingSource);
+    setAreasOfFocus(next.areasOfFocus);
+    setSdgs(next.sdgs);
+    setSelectedPartnerIds(next.selectedPartnerIds);
+    setExternalPartnerNameInput(next.externalPartners[0]?.name || "");
+    setExtraExternalPartners(next.externalPartners.slice(1));
+    setRelatedLinks(next.relatedLinks);
+    setInitialTasks(next.initialTasks);
+    setStep(2);
+    setShowAiMode(false);
   }
 
   function addCommitteeMember() {
@@ -188,22 +311,28 @@ export function ActivityCreateClient({
       ? canCreateProject
       : canCreateEvent;
 
-  function submit(form: HTMLFormElement, saveDraft = false) {
-    if (!kind) return;
-    const data = new FormData(form);
-    const checkedValues = (name: string) => data.getAll(name).map(Number);
-    const partners = data
-      .getAll("partnerName")
-      .map((name, index) => ({
-        name: String(name).trim(),
-        role: String(
-          data.getAll("partnerRole")[index] || "IMPLEMENTING_PARTNER",
-        ),
-      }))
-      .filter((partner) => partner.name.length > 0);
-    const selectedPartners = partnerClubs.filter((club) =>
-      data.getAll("sisterClubId").map(String).includes(club.id),
-    );
+  function buildAndDispatchCreate(
+    payloadState: ActivityFormState,
+    domOverrides?: {
+      minMembersRequired?: number;
+      capacity?: number;
+      rsvpDeadline?: string;
+      checkInWindowMinutes?: number;
+      volunteerHoursDefault?: number;
+      partnerIdsFromDom?: string[];
+      domPartners?: { name: string; role: string }[];
+    },
+  ) {
+    const targetKind = payloadState.kind;
+    const selectedPartners = domOverrides?.partnerIdsFromDom
+      ? partnerClubs.filter((club) =>
+          domOverrides.partnerIdsFromDom!.includes(club.id),
+        )
+      : partnerClubs.filter((club) =>
+          payloadState.selectedPartnerIds.includes(club.id),
+        );
+    const externalPartnersList =
+      domOverrides?.domPartners ?? payloadState.externalPartners;
     const selectedSisterClub = selectedPartners[0];
     const sisterClubId =
       selectedSisterClub && UUID_PATTERN.test(selectedSisterClub.id)
@@ -216,7 +345,7 @@ export function ActivityCreateClient({
         role: "IMPLEMENTING_PARTNER" as const,
         ...(UUID_PATTERN.test(partner.id) ? { sisterClubId: partner.id } : {}),
       })),
-      ...partners,
+      ...externalPartnersList,
     ].filter(
       (partner, index, all) =>
         all.findIndex(
@@ -225,56 +354,74 @@ export function ActivityCreateClient({
         ) === index,
     );
 
-    if (kind === "JOINT_PROJECT" && selectedPartners.length === 0 && partners.length === 0) {
+    if (
+      targetKind === "JOINT_PROJECT" &&
+      selectedPartners.length === 0 &&
+      externalPartnersList.length === 0
+    ) {
       notifyToast({
         title: "Partnership required",
-        message: "Please select at least one partner club or collaborating organization for a joint project.",
+        message:
+          "Please select at least one partner club or collaborating organization for a joint project.",
         kind: "error",
       });
       return;
     }
 
+    const sanitizedTasks = payloadState.initialTasks.map((t) => ({
+      title: t.title,
+      ...(t.description ? { description: t.description } : {}),
+      dueDate: t.dueDate || defaultDueDate,
+      priority: t.priority,
+      status: t.status,
+      ...(t.assigneeId ? { assigneeId: t.assigneeId } : {}),
+    }));
+
     const payload = {
       clubId,
-      kind,
-      title: String(data.get("title") || ""),
-      shortDescription: String(data.get("shortDescription") || ""),
-      description: String(data.get("description") || ""),
-      location: String(data.get("location") || ""),
-      startAt: String(data.get("startAt") || ""),
-      endAt: String(data.get("endAt") || ""),
-      allDay: data.has("allDay"),
-      committee: String(data.get("committee") || "") || undefined,
-      status: saveDraft ? "DRAFT" : "PLANNED",
+      kind: targetKind,
+      title: payloadState.title,
+      shortDescription: payloadState.shortDescription,
+      description: payloadState.description,
+      location: payloadState.location,
+      startAt: payloadState.startAt,
+      endAt: payloadState.endAt,
+      allDay: payloadState.allDay,
+      committee: payloadState.committee || undefined,
+      status: payloadState.status,
       minMembersEnabled: minEnabled,
       minMembersRequired: minEnabled
-        ? Number(data.get("minMembersRequired"))
+        ? domOverrides?.minMembersRequired
         : undefined,
-      capacity: data.get("capacity") ? Number(data.get("capacity")) : undefined,
+      capacity: domOverrides?.capacity,
       rsvpEnabled,
-      rsvpDeadline: String(data.get("rsvpDeadline") || "") || undefined,
+      rsvpDeadline: domOverrides?.rsvpDeadline || undefined,
       selfCheckInEnabled: selfCheckIn,
       qrCheckInEnabled: qrCheckIn,
-      checkInWindowMinutes: Number(data.get("checkInWindowMinutes") || 180),
-      volunteerHoursDefault: Number(data.get("volunteerHoursDefault") || 0),
+      checkInWindowMinutes: domOverrides?.checkInWindowMinutes ?? 180,
+      volunteerHoursDefault: domOverrides?.volunteerHoursDefault ?? 0,
       committeeMembers,
-      initialTasks,
-      ...(kind === "MEETING"
-        ? { meetingType: String(data.get("meetingType") || "GENERAL_ASSEMBLY") }
+      initialTasks: sanitizedTasks,
+      ...(targetKind === "MEETING"
+        ? { meetingType: payloadState.meetingType }
         : {}),
-      ...(["SERVICE_PROJECT", "JOINT_PROJECT"].includes(kind)
+      ...(["SERVICE_PROJECT", "JOINT_PROJECT"].includes(targetKind)
         ? {
-            ...(kind === "JOINT_PROJECT"
+            ...(targetKind === "JOINT_PROJECT"
               ? { sisterClubId, sisterClubName }
               : {}),
-            objective: String(data.get("objective") || ""),
-            beneficiaryType: String(data.get("beneficiaryType") || ""),
-            beneficiaryTarget: Number(data.get("beneficiaryTarget") || 0),
-            fundingTarget: Number(data.get("fundingTarget") || 0),
-            fundingSource: String(data.get("fundingSource") || ""),
-            areasOfFocus: data.getAll("areasOfFocus").map(String),
-            sdgs: checkedValues("sdgs"),
+            objective: payloadState.objective,
+            beneficiaryType: payloadState.beneficiaryType,
+            beneficiaryTarget: payloadState.beneficiaryTarget,
+            fundingTarget: payloadState.fundingTarget,
+            fundingSource: payloadState.fundingSource,
+            areasOfFocus: payloadState.areasOfFocus,
+            sdgs: payloadState.sdgs,
             partners: projectPartners,
+            relatedLinks: payloadState.relatedLinks.map((l) => ({
+              label: l.label,
+              url: l.url,
+            })),
           }
         : {}),
     } as CreateActivityInput;
@@ -296,6 +443,66 @@ export function ActivityCreateClient({
       router.push(`/project-center/${result.activityId}`);
       router.refresh();
     });
+  }
+
+  function submit(form: HTMLFormElement, saveDraft = false) {
+    if (!kind) return;
+    const data = new FormData(form);
+    const partnersFromDom = data
+      .getAll("partnerName")
+      .map((name, index) => ({
+        name: String(name).trim(),
+        role: String(
+          data.getAll("partnerRole")[index] || "IMPLEMENTING_PARTNER",
+        ),
+      }))
+      .filter((partner) => partner.name.length > 0);
+    const mergedExternal = [
+      ...partnersFromDom,
+      ...extraExternalPartners,
+    ];
+    const currentState: ActivityFormState = {
+      ...getCurrentFormState(),
+      kind,
+      status: saveDraft ? "DRAFT" : status,
+      externalPartners: mergedExternal as { name: string; role: PartnerRole }[],
+    };
+
+    buildAndDispatchCreate(currentState, {
+      minMembersRequired: minEnabled
+        ? Number(data.get("minMembersRequired"))
+        : undefined,
+      capacity: data.get("capacity") ? Number(data.get("capacity")) : undefined,
+      rsvpDeadline: String(data.get("rsvpDeadline") || "") || undefined,
+      checkInWindowMinutes: Number(data.get("checkInWindowMinutes") || 180),
+      volunteerHoursDefault: Number(data.get("volunteerHoursDefault") || 0),
+      partnerIdsFromDom: data.getAll("sisterClubId").map(String),
+      domPartners: mergedExternal,
+    });
+  }
+
+  if (showAiMode) {
+    return (
+      <AiDraftPanel
+        canCreateEvent={canCreateEvent}
+        canCreateProject={canCreateProject}
+        partnerClubs={partnerClubs}
+        members={members}
+        currentForm={getCurrentFormState()}
+        defaultDates={defaultDates}
+        isSubmitting={isPending}
+        onCancel={() => setShowAiMode(false)}
+        onApplyToForm={(merged) => {
+          applyFormState(merged);
+          notifyToast({
+            message:
+              "AI draft applied to the form. Review details and save when ready.",
+            kind: "success",
+          });
+        }}
+        onConfirmCreate={(finalForm) => buildAndDispatchCreate(finalForm)}
+      />
+    );
   }
 
   if (!kind || step === 1) {
@@ -328,6 +535,34 @@ export function ActivityCreateClient({
           </p>
         </header>
 
+        {/* AI Generate Project from Text CTA */}
+        <section className="rounded-2xl border-2 border-[#0D3594]/25 bg-gradient-to-r from-[#0D3594]/[0.06] via-indigo-50/60 to-emerald-50/40 p-4 sm:p-5 dark:border-blue-500/35 dark:from-blue-950/40 dark:via-slate-900 dark:to-emerald-950/20">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1 rounded-full bg-[#0D3594] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+                  <Sparkles className="h-3 w-3" /> AI-Assisted
+                </span>
+                <h2 className="text-sm font-bold text-[#111625] dark:text-white">
+                  Generate Project &amp; Club Approval Checklist from Text
+                </h2>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-300 max-w-2xl">
+                Received an invitation or proposal via Messenger, Viber, or email? Paste the raw text and let AI pre-fill the project details, extract primer &amp; sign-up links, flag missing info, and generate a meeting checklist for club approval.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowAiMode(true)}
+              className="inline-flex items-center justify-center gap-2 shrink-0 rounded-xl bg-[#0D3594] px-4 py-2.5 text-xs font-bold text-white shadow-xs hover:bg-[#092569] transition cursor-pointer"
+            >
+              <Sparkles className="h-4 w-4" />
+              Generate from Text
+              <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </section>
+
         {/* 1-Click Quick Start Scenarios */}
         <section className="rounded-2xl border border-blue-200/80 bg-gradient-to-r from-blue-50/70 via-indigo-50/40 to-white p-4 sm:p-5 dark:border-blue-500/25 dark:from-blue-950/30 dark:via-slate-900 dark:to-[#161B26]">
           <div className="flex items-center gap-2 mb-3">
@@ -343,11 +578,11 @@ export function ActivityCreateClient({
                   type="button"
                   onClick={() => {
                     setKind("PROFESSIONAL_DEVELOPMENT");
-                    setPresetTitle("L&D Session: ");
-                    setPresetShortDesc(
+                    setTitle("L&D Session: ");
+                    setShortDescription(
                       "Learning & Development session and member training",
                     );
-                    setPresetCommittee("VOCATIONAL");
+                    setCommittee("VOCATIONAL");
                     setQrCheckIn(true);
                     setStep(2);
                   }}
@@ -373,12 +608,12 @@ export function ActivityCreateClient({
                   type="button"
                   onClick={() => {
                     setKind("MEETING");
-                    setPresetMeetingType("COMMITTEE_MEETING");
-                    setPresetTitle("Committee Planning Meeting: ");
-                    setPresetShortDesc(
+                    setMeetingType("COMMITTEE_MEETING");
+                    setTitle("Committee Planning Meeting: ");
+                    setShortDescription(
                       "Planning agenda, member alignment, and action items",
                     );
-                    setPresetCommittee("CLUB_SERVICE");
+                    setCommittee("CLUB_SERVICE");
                     setQrCheckIn(true);
                     setStep(2);
                   }}
@@ -404,11 +639,11 @@ export function ActivityCreateClient({
                   type="button"
                   onClick={() => {
                     setKind("OTHER");
-                    setPresetTitle("Task Sprint: ");
-                    setPresetShortDesc(
+                    setTitle("Task Sprint: ");
+                    setShortDescription(
                       "Internal committee workstream and task deliverables",
                     );
-                    setPresetCommittee("CLUB_SERVICE");
+                    setCommittee("CLUB_SERVICE");
                     setQrCheckIn(false);
                     setStep(2);
                   }}
@@ -436,9 +671,9 @@ export function ActivityCreateClient({
                 type="button"
                 onClick={() => {
                   setKind("SERVICE_PROJECT");
-                  setPresetTitle("");
-                  setPresetShortDesc("");
-                  setPresetCommittee("COMMUNITY_SERVICE");
+                  setTitle("");
+                  setShortDescription("");
+                  setCommittee("COMMUNITY_SERVICE");
                   setQrCheckIn(true);
                   setStep(2);
                 }}
@@ -495,8 +730,8 @@ export function ActivityCreateClient({
                     type="button"
                     onClick={() => {
                       setKind(activityKind);
-                      setPresetTitle("");
-                      setPresetShortDesc("");
+                      setTitle("");
+                      setShortDescription("");
                       setQrCheckIn(activityKind !== "OTHER");
                       setStep(2);
                     }}
@@ -550,8 +785,8 @@ export function ActivityCreateClient({
                     type="button"
                     onClick={() => {
                       setKind(activityKind);
-                      setPresetTitle("");
-                      setPresetShortDesc("");
+                      setTitle("");
+                      setShortDescription("");
                       setQrCheckIn(true);
                       setStep(2);
                     }}
@@ -586,7 +821,7 @@ export function ActivityCreateClient({
   const meta = ACTIVITY_KIND_META[kind];
   return (
     <main className="mx-auto max-w-4xl space-y-5 pb-10">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <button
           type="button"
           onClick={() => setStep(1)}
@@ -594,9 +829,19 @@ export function ActivityCreateClient({
         >
           <ArrowLeft className="h-3.5 w-3.5" /> Change activity type
         </button>
-        <span className="text-[11px] font-semibold text-slate-500">
-          Step 2 of 2
-        </span>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setShowAiMode(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50/80 px-3 py-1.5 text-xs font-bold text-[#0D3594] hover:bg-blue-100 dark:border-blue-500/30 dark:bg-blue-500/15 dark:text-blue-300 cursor-pointer"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            Generate from Text (AI)
+          </button>
+          <span className="text-[11px] font-semibold text-slate-500">
+            Step 2 of 2
+          </span>
+        </div>
       </div>
       <header className="flex items-center gap-3">
         <span
@@ -666,7 +911,8 @@ export function ActivityCreateClient({
               required
               minLength={3}
               maxLength={160}
-              defaultValue={presetTitle}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
               placeholder={
                 kind === "PROFESSIONAL_DEVELOPMENT"
                   ? "e.g. L&D Session: Public Speaking & Leadership Workshop"
@@ -686,7 +932,8 @@ export function ActivityCreateClient({
             <input
               name="shortDescription"
               maxLength={280}
-              defaultValue={presetShortDesc}
+              value={shortDescription}
+              onChange={(e) => setShortDescription(e.target.value)}
               placeholder="A clear one-line summary"
               className={inputClass}
             />
@@ -702,6 +949,8 @@ export function ActivityCreateClient({
               name="description"
               rows={3}
               maxLength={10000}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
               placeholder={
                 kind === "MEETING" || kind === "PROFESSIONAL_DEVELOPMENT"
                   ? "Key agenda items, speaker/facilitator, learning objectives, and preparation notes for members"
@@ -714,7 +963,8 @@ export function ActivityCreateClient({
             <Field label="Meeting type" required>
               <select
                 name="meetingType"
-                defaultValue={presetMeetingType}
+                value={meetingType}
+                onChange={(e) => setMeetingType(e.target.value as MeetingType)}
                 className={inputClass}
               >
                 {MEETING_TYPES.map((type) => (
@@ -729,13 +979,14 @@ export function ActivityCreateClient({
             <Field label="Committee">
               <select
                 name="committee"
-                defaultValue={presetCommittee}
+                value={committee}
+                onChange={(e) => setCommittee(e.target.value as Committee | "")}
                 className={inputClass}
               >
                 <option value="">No committee</option>
-                {COMMITTEES.map((committee) => (
-                  <option key={committee} value={committee}>
-                    {committee.replaceAll("_", " ")}
+                {COMMITTEES.map((c) => (
+                  <option key={c} value={c}>
+                    {c.replaceAll("_", " ")}
                   </option>
                 ))}
               </select>
@@ -744,6 +995,8 @@ export function ActivityCreateClient({
               <input
                 name="location"
                 maxLength={300}
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
                 placeholder="Venue or online meeting link"
                 className={inputClass}
               />
@@ -893,6 +1146,13 @@ export function ActivityCreateClient({
                 Add Task
               </button>
             </div>
+            <input
+              type="text"
+              value={draftTaskDesc}
+              onChange={(e) => setDraftTaskDesc(e.target.value)}
+              placeholder="Optional task notes, checklist details, or link reference..."
+              className={inputClass}
+            />
 
             {initialTasks.length > 0 && (
               <div className="space-y-1.5 pt-2 border-t border-blue-100 dark:border-slate-800">
@@ -902,25 +1162,52 @@ export function ActivityCreateClient({
                   );
                   return (
                     <div
-                      key={`${task.title}-${idx}`}
+                      key={task.id || `${task.title}-${idx}`}
                       className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-900"
                     >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <CheckSquare className="h-3.5 w-3.5 text-[#0D3594] dark:text-blue-400 shrink-0" />
-                        <span className="font-semibold text-[#111625] dark:text-white truncate">
-                          {task.title}
-                        </span>
-                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                          {task.priority}
-                        </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-[10px] font-bold text-[#0D3594] dark:text-blue-400 shrink-0">
+                            #{idx + 1}
+                          </span>
+                          <span className="font-semibold text-[#111625] dark:text-white truncate">
+                            {task.title}
+                          </span>
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300 shrink-0">
+                            {task.priority}
+                          </span>
+                        </div>
+                        {task.description && (
+                          <p className="mt-0.5 truncate text-[11px] text-slate-500">
+                            {task.description}
+                          </p>
+                        )}
                       </div>
-                      <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                      <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
                         <span>Due {task.dueDate}</span>
                         {assignee && (
                           <span className="font-medium text-slate-700 dark:text-slate-300">
                             · {assignee.fullName}
                           </span>
                         )}
+                        <button
+                          type="button"
+                          disabled={idx === 0}
+                          onClick={() => moveInitialTask(idx, -1)}
+                          className="text-slate-400 hover:text-[#0D3594] disabled:opacity-30 p-0.5 rounded cursor-pointer"
+                          aria-label="Move task up"
+                        >
+                          <ArrowUp className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={idx === initialTasks.length - 1}
+                          onClick={() => moveInitialTask(idx, 1)}
+                          className="text-slate-400 hover:text-[#0D3594] disabled:opacity-30 p-0.5 rounded cursor-pointer"
+                          aria-label="Move task down"
+                        >
+                          <ArrowDown className="h-3.5 w-3.5" />
+                        </button>
                         <button
                           type="button"
                           onClick={() => removeInitialTask(idx)}
@@ -942,7 +1229,8 @@ export function ActivityCreateClient({
                 name="startAt"
                 type="datetime-local"
                 required
-                defaultValue={localDefault(7, 9)}
+                value={startAt}
+                onChange={(e) => setStartAt(e.target.value)}
                 className={inputClass}
               />
             </Field>
@@ -951,13 +1239,20 @@ export function ActivityCreateClient({
                 name="endAt"
                 type="datetime-local"
                 required
-                defaultValue={localDefault(7, 12)}
+                value={endAt}
+                onChange={(e) => setEndAt(e.target.value)}
                 className={inputClass}
               />
             </Field>
           </div>
           <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300">
-            <input type="checkbox" name="allDay" className="accent-[#0D3594]" />{" "}
+            <input
+              type="checkbox"
+              name="allDay"
+              checked={allDay}
+              onChange={(e) => setAllDay(e.target.checked)}
+              className="accent-[#0D3594]"
+            />{" "}
             All-day activity
           </label>
         </section>
@@ -976,6 +1271,8 @@ export function ActivityCreateClient({
                 name="objective"
                 rows={2}
                 maxLength={2000}
+                value={objective}
+                onChange={(e) => setObjective(e.target.value)}
                 className={inputClass}
               />
             </Field>
@@ -984,6 +1281,8 @@ export function ActivityCreateClient({
                 <input
                   name="beneficiaryType"
                   maxLength={200}
+                  value={beneficiaryType}
+                  onChange={(e) => setBeneficiaryType(e.target.value)}
                   placeholder="e.g. mothers and children"
                   className={inputClass}
                 />
@@ -993,7 +1292,10 @@ export function ActivityCreateClient({
                   name="beneficiaryTarget"
                   type="number"
                   min="0"
-                  defaultValue="0"
+                  value={beneficiaryTarget}
+                  onChange={(e) =>
+                    setBeneficiaryTarget(Number(e.target.value || 0))
+                  }
                   className={inputClass}
                 />
               </Field>
@@ -1003,7 +1305,10 @@ export function ActivityCreateClient({
                   type="number"
                   min="0"
                   step="0.01"
-                  defaultValue="0"
+                  value={fundingTarget}
+                  onChange={(e) =>
+                    setFundingTarget(Number(e.target.value || 0))
+                  }
                   className={inputClass}
                 />
               </Field>
@@ -1011,6 +1316,8 @@ export function ActivityCreateClient({
                 <input
                   name="fundingSource"
                   maxLength={300}
+                  value={fundingSource}
+                  onChange={(e) => setFundingSource(e.target.value)}
                   placeholder="Club, grant or partner"
                   className={inputClass}
                 />
@@ -1027,6 +1334,14 @@ export function ActivityCreateClient({
                       type="checkbox"
                       name="areasOfFocus"
                       value={area.code}
+                      checked={areasOfFocus.includes(area.code)}
+                      onChange={(e) =>
+                        setAreasOfFocus((prev) =>
+                          e.target.checked
+                            ? [...prev, area.code]
+                            : prev.filter((c) => c !== area.code),
+                        )
+                      }
                       className="mt-0.5 accent-emerald-600"
                     />{" "}
                     {area.name}
@@ -1036,20 +1351,31 @@ export function ActivityCreateClient({
             </Field>
             <Field label="UN Sustainable Development Goals">
               <div className="grid gap-2 sm:grid-cols-2">
-                {SDGS.map((goal, index) => (
-                  <label
-                    key={goal}
-                    className="flex items-start gap-2 rounded-lg border border-emerald-100 bg-white px-3 py-2 text-xs text-slate-700 dark:border-emerald-500/10 dark:bg-slate-900 dark:text-slate-200"
-                  >
-                    <input
-                      type="checkbox"
-                      name="sdgs"
-                      value={index + 1}
-                      className="mt-0.5 accent-emerald-600"
-                    />{" "}
-                    {index + 1}. {goal}
-                  </label>
-                ))}
+                {SDGS.map((goal, index) => {
+                  const goalNum = index + 1;
+                  return (
+                    <label
+                      key={goal}
+                      className="flex items-start gap-2 rounded-lg border border-emerald-100 bg-white px-3 py-2 text-xs text-slate-700 dark:border-emerald-500/10 dark:bg-slate-900 dark:text-slate-200"
+                    >
+                      <input
+                        type="checkbox"
+                        name="sdgs"
+                        value={goalNum}
+                        checked={sdgs.includes(goalNum)}
+                        onChange={(e) =>
+                          setSdgs((prev) =>
+                            e.target.checked
+                              ? [...prev, goalNum]
+                              : prev.filter((n) => n !== goalNum),
+                          )
+                        }
+                        className="mt-0.5 accent-emerald-600"
+                      />{" "}
+                      {goalNum}. {goal}
+                    </label>
+                  );
+                })}
               </div>
             </Field>
             <Field
@@ -1144,6 +1470,8 @@ export function ActivityCreateClient({
               <input
                 name="partnerName"
                 maxLength={200}
+                value={externalPartnerNameInput}
+                onChange={(e) => setExternalPartnerNameInput(e.target.value)}
                 placeholder="Partner organization name"
                 className={inputClass}
               />
@@ -1153,6 +1481,70 @@ export function ActivityCreateClient({
                 value="IMPLEMENTING_PARTNER"
               />
             </Field>
+            {extraExternalPartners.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {extraExternalPartners.map((partner, idx) => (
+                  <span
+                    key={`${partner.name}-${idx}`}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                  >
+                    {partner.name}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setExtraExternalPartners((prev) =>
+                          prev.filter((_, i) => i !== idx),
+                        )
+                      }
+                      className="text-slate-400 hover:text-rose-600 cursor-pointer"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            {relatedLinks.length > 0 && (
+              <div className="space-y-1.5 rounded-lg border border-emerald-200/80 bg-white p-3 dark:border-emerald-500/20 dark:bg-slate-900/50">
+                <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                  <Link2 className="h-3.5 w-3.5 text-emerald-600" />
+                  Attached Project Links ({relatedLinks.length})
+                </p>
+                <div className="space-y-1">
+                  {relatedLinks.map((link, idx) => (
+                    <div
+                      key={`${link.url}-${idx}`}
+                      className="flex items-center justify-between gap-2 text-xs"
+                    >
+                      <a
+                        href={link.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-[#0D3594] hover:underline truncate dark:text-blue-300"
+                      >
+                        <ExternalLink className="h-3 w-3 shrink-0" />
+                        <span className="font-semibold">{link.label}:</span>
+                        <span className="truncate font-mono text-[11px]">
+                          {link.url}
+                        </span>
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setRelatedLinks((prev) =>
+                            prev.filter((_, i) => i !== idx),
+                          )
+                        }
+                        className="text-slate-400 hover:text-rose-600 cursor-pointer shrink-0"
+                        aria-label="Remove attached link"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
         )}
 
