@@ -141,6 +141,18 @@ export function Sidebar({
     return { ...section, items };
   }).filter((section) => section.items.length > 0);
 
+  // Pick the longest matching route href so nested routes like
+  // /settings/notifications do not also highlight /settings ("Club Settings").
+  const activeHref =
+    visibleSections
+      .flatMap((section) => section.items.map((item) => item.href))
+      .filter(
+        (href) =>
+          pathname === href ||
+          (href !== "/dashboard" && pathname.startsWith(`${href}/`)),
+      )
+      .sort((a, b) => b.length - a.length)[0] ?? null;
+
   return (
     <aside
       className={`${
@@ -196,10 +208,7 @@ export function Sidebar({
             <div className="space-y-0.5">
               {section.items.map((item) => {
                 const Icon = item.icon;
-                const isActive =
-                  pathname === item.href ||
-                  (item.href !== "/dashboard" &&
-                    pathname.startsWith(`${item.href}/`));
+                const isActive = item.href === activeHref;
 
                 return (
                   <Link
