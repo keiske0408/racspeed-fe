@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Bell, Check } from "lucide-react";
 
 interface NotificationItem {
@@ -18,9 +19,31 @@ export function NotificationBell() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<NotificationItem[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const unread = items.filter((item) => !item.is_read).length;
+  const unread = unreadCount;
+
+  React.useEffect(() => {
+    let active = true;
+    fetch("/api/notifications?limit=25", { cache: "no-store" })
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || "Could not load notifications.");
+        if (active) {
+          setItems(body.notifications || []);
+          setUnreadCount(body.unreadCount || 0);
+        }
+      })
+      .catch((reason) => {
+        if (active) {
+          setError(reason instanceof Error ? reason.message : "Could not load notifications.");
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   async function toggle() {
     const next = !open;
@@ -34,6 +57,7 @@ export function NotificationBell() {
       if (!response.ok)
         throw new Error(body.error || "Could not load notifications.");
       setItems(body.notifications || []);
+      setUnreadCount(body.unreadCount || 0);
     } catch (reason) {
       setError(
         reason instanceof Error
@@ -47,19 +71,26 @@ export function NotificationBell() {
 
   async function openItem(item: NotificationItem) {
     if (!item.is_read) {
-      await fetch("/api/notifications", {
+      const response = await fetch("/api/notifications", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ notificationId: item.id }),
+        body: JSON.stringify({ id: item.id }),
       });
+      if (!response.ok) {
+        setError("Could not update notification status.");
+        return;
+      }
       setItems((current) =>
         current.map((entry) =>
           entry.id === item.id ? { ...entry, is_read: true } : entry,
         ),
       );
+      setUnreadCount((count) => Math.max(0, count - 1));
     }
     setOpen(false);
-    if (item.link_url) router.push(item.link_url);
+    if (item.link_url?.startsWith("/") && !item.link_url.startsWith("//")) {
+      router.push(item.link_url);
+    }
   }
 
   return (
@@ -79,6 +110,13 @@ export function NotificationBell() {
             {unread > 9 ? "9+" : unread}
           </span>
         )}
+        <Link
+          href="/notifications"
+          onClick={() => setOpen(false)}
+          className="text-[10px] font-semibold text-[#0D3594] hover:underline dark:text-blue-300"
+        >
+          View all
+        </Link>
       </button>
       {open && (
         <section className="absolute right-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-[#EDEDF2] bg-white shadow-lg dark:border-slate-800 dark:bg-[#161B26]">

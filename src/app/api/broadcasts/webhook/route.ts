@@ -1,70 +1,70 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
+import { env } from "@/lib/env";
+import { getActiveNotificationUser, getNotificationAdmin } from "@/lib/services/notifications/auth";
+import { dispatchNotification } from "@/lib/services/notifications/dispatch";
 
-export const dynamic = "force-dynamic";
+const broadcastSchema = z.object({
+  platform: z.literal("telegram"),
+  content: z.string().trim().min(1).max(4000),
+  eventTitle: z.string().trim().max(120).optional(),
+});
 
-export async function POST(req: Request) {
+export async function POST(request: NextRequest) {
+  const user = await getActiveNotificationUser();
+  if (!user) {
+    return NextResponse.json({ error: "Sign in to send a club announcement." }, { status: 401 });
+  }
+
+  const parsed = broadcastSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "Only Telegram group announcements are supported; message content is required." },
+      { status: 400 },
+    );
+  }
+
+  const clubId = env.NEXT_PUBLIC_DEFAULT_CLUB_ID;
+  const session = await getNotificationAdmin(clubId);
+  if (!session) {
+    return NextResponse.json({ error: "You do not have permission to send club announcements." }, { status: 403 });
+  }
+
+  const { count, error: groupError } = await session.admin
+    .from("telegram_group_destinations")
+    .select("id", { count: "exact", head: true })
+    .eq("club_id", clubId)
+    .eq("enabled", true);
+  if (groupError) {
+    console.error("Could not check Telegram destinations:", groupError.message);
+    return NextResponse.json({ error: "Could not check Telegram destinations." }, { status: 500 });
+  }
+  if (!count) {
+    return NextResponse.json({ error: "No Telegram groups are configured for this club." }, { status: 409 });
+  }
+
   try {
-    const { platform, webhookUrl, content, eventTitle } = await req.json();
-
-    if (!webhookUrl || !webhookUrl.trim()) {
-      return NextResponse.json({ error: "Webhook URL is required" }, { status: 400 });
-    }
-    if (!content || !content.trim()) {
-      return NextResponse.json({ error: "Broadcast message is required" }, { status: 400 });
-    }
-
-    let payload: any = {};
-
-    if (platform === "discord") {
-      payload = {
-        username: "RACSPEED Broadcast Bot",
-        avatar_url: "https://raw.githubusercontent.com/shadcn-ui/ui/main/apps/www/public/apple-touch-icon.png",
-        content: content.slice(0, 1990), // Discord max 2000 chars
-      };
-    } else if (platform === "slack") {
-      payload = {
-        text: content,
-      };
-    } else if (platform === "telegram") {
-      // Telegram Bot webhook or send endpoint
-      payload = {
-        text: content,
-        parse_mode: "Markdown",
-      };
-    } else {
-      payload = {
-        message: content,
-        eventTitle,
-        dispatchedAt: new Date().toISOString(),
-      };
-    }
-
-    const res = await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+    const result = await dispatchNotification({
+      profileId: user.user.id,
+      clubId,
+      type: "PUBLIC_ANNOUNCEMENT",
+      title: parsed.data.eventTitle || "Club announcement",
+      message: parsed.data.content,
+      sendEmail: false,
+      sendPush: false,
+      sendTelegram: false,
+      sendToGroups: true,
     });
-
-    if (!res.ok) {
-      const errorText = await res.text().catch(() => "");
-      return NextResponse.json(
-        {
-          error: `Webhook server responded with ${res.status}: ${errorText || res.statusText}`,
-        },
-        { status: 502 }
-      );
-    }
-
+    const queued = result.deliveryCount || 0;
     return NextResponse.json({
       success: true,
-      platform,
+      platform: "telegram",
+      queued,
+      failed: result.deliveryStatuses.filter((status) => status === "FAILED").length,
       dispatchedAt: new Date().toISOString(),
     });
-  } catch (err: any) {
-    console.error("Webhook dispatch error:", err);
-    return NextResponse.json(
-      { error: err?.message || "Failed to dispatch webhook" },
-      { status: 500 }
-    );
+  } catch (error) {
+    console.error("Could not queue Telegram club announcement:", error instanceof Error ? error.message : "Unknown error");
+    return NextResponse.json({ error: "Could not queue the Telegram announcement." }, { status: 500 });
   }
 }

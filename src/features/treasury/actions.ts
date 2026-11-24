@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireUser, assertPermission } from "@/lib/auth/session";
 import { toCentavos } from "@/lib/utils/money";
+import { dispatchNotification } from "@/lib/services/notifications/dispatch";
 
 const createInvoiceSchema = z.object({
   profileId: z.string().uuid("Invalid member selection"),
@@ -67,6 +68,19 @@ export async function createInvoiceAction(formData: FormData) {
     quantity: 1,
   });
 
+  await dispatchNotification({
+    profileId,
+    clubId,
+    type: "PAYMENT_STATUS",
+    title: "New invoice issued",
+    message: "A new club invoice is available in your account.",
+    linkUrl: "/treasury",
+    dedupeKey: `invoice-issued:${newInvoice.id}`,
+    sendTelegram: true,
+  }).catch((notificationError) =>
+    console.error("Could not notify member about issued invoice:", notificationError),
+  );
+
   revalidatePath("/treasury");
   revalidatePath("/dashboard");
   return { success: true, message: `Invoice ${invoiceNumber} issued successfully!` };
@@ -111,7 +125,9 @@ export async function submitPaymentProofAction(formData: FormData) {
     }
   }
 
-  const { error } = await adminClient.from("payment_submissions").insert({
+  const { data: submission, error } = await adminClient
+    .from("payment_submissions")
+    .insert({
     club_id: rawClubId,
     submitted_by: user.id,
     claimed_amount: claimedAmount,
@@ -120,10 +136,52 @@ export async function submitPaymentProofAction(formData: FormData) {
     reference_number: referenceNumber || `REF-${Date.now()}`,
     receipt_storage_path: receiptStoragePath,
     status: "SUBMITTED",
-  });
+    })
+    .select("id")
+    .single();
 
   if (error) {
     return { success: false, error: `Failed to submit payment proof: ${error.message}` };
+  }
+
+  if (submission) {
+    const { data: memberships, error: reviewerError } = await adminClient
+      .from("club_memberships")
+      .select("profile_id, membership_roles(roles(key))")
+      .eq("club_id", rawClubId)
+      .eq("membership_status", "ACTIVE");
+    if (reviewerError) {
+      console.error("Could not find payment reviewers:", reviewerError.message);
+    } else {
+      const reviewerIds = new Set(
+        (memberships || [])
+          .filter((membership) =>
+            (membership.membership_roles as { roles: { key: string }[] | null }[] | null)?.some(
+              (membershipRole) =>
+                membershipRole.roles?.some((role) =>
+                  ["PRESIDENT", "TREASURER"].includes(role.key),
+                ),
+            ),
+          )
+          .map((membership) => membership.profile_id),
+      );
+      await Promise.all(
+        Array.from(reviewerIds).map((reviewerId) =>
+          dispatchNotification({
+            profileId: reviewerId,
+            clubId: rawClubId,
+            type: "PAYMENT_STATUS",
+            title: "Payment proof awaiting review",
+            message: "A member submitted payment proof that is waiting for verification.",
+            linkUrl: "/treasury",
+            dedupeKey: `payment-review:${submission.id}:${reviewerId}`,
+            sendTelegram: true,
+          }).catch((notificationError) =>
+            console.error("Could not notify payment reviewer:", notificationError),
+          ),
+        ),
+      );
+    }
   }
 
   revalidatePath("/treasury");
@@ -137,6 +195,16 @@ export async function verifyPaymentSubmissionAction(submissionId: string, clubId
 
   const adminClient = createAdminClient();
 
+  const { data: submission, error: lookupError } = await adminClient
+    .from("payment_submissions")
+    .select("submitted_by")
+    .eq("id", submissionId)
+    .eq("club_id", clubId)
+    .eq("status", "SUBMITTED")
+    .maybeSingle();
+  if (lookupError) return { success: false, error: lookupError.message };
+  if (!submission) return { success: false, error: "Pending payment submission not found." };
+
   const { error } = await adminClient
     .from("payment_submissions")
     .update({
@@ -144,11 +212,26 @@ export async function verifyPaymentSubmissionAction(submissionId: string, clubId
       verified_by: user.id,
       verified_at: new Date().toISOString(),
     })
-    .eq("id", submissionId);
+    .eq("id", submissionId)
+    .eq("club_id", clubId)
+    .eq("status", "SUBMITTED");
 
   if (error) {
     return { success: false, error: `Failed to verify payment: ${error.message}` };
   }
+
+  await dispatchNotification({
+    profileId: submission.submitted_by,
+    clubId,
+    type: "PAYMENT_STATUS",
+    title: "Payment verified",
+    message: "Your payment proof was verified and recorded.",
+    linkUrl: "/treasury",
+    dedupeKey: `payment-verified:${submissionId}`,
+    sendTelegram: true,
+  }).catch((notificationError) =>
+    console.error("Could not notify member about verified payment:", notificationError),
+  );
 
   revalidatePath("/treasury");
   revalidatePath("/dashboard");
@@ -160,6 +243,16 @@ export async function rejectPaymentSubmissionAction(submissionId: string, notes 
   await assertPermission(clubId, "PAYMENT_VERIFY");
 
   const adminClient = createAdminClient();
+  const { data: submission, error: lookupError } = await adminClient
+    .from("payment_submissions")
+    .select("submitted_by")
+    .eq("id", submissionId)
+    .eq("club_id", clubId)
+    .eq("status", "SUBMITTED")
+    .maybeSingle();
+  if (lookupError) return { success: false, error: lookupError.message };
+  if (!submission) return { success: false, error: "Pending payment submission not found." };
+
   const { error } = await adminClient
     .from("payment_submissions")
     .update({
@@ -168,11 +261,26 @@ export async function rejectPaymentSubmissionAction(submissionId: string, notes 
       verified_by: user.id,
       verified_at: new Date().toISOString(),
     })
-    .eq("id", submissionId);
+    .eq("id", submissionId)
+    .eq("club_id", clubId)
+    .eq("status", "SUBMITTED");
 
   if (error) {
     return { success: false, error: `Failed to reject payment: ${error.message}` };
   }
+
+  await dispatchNotification({
+    profileId: submission.submitted_by,
+    clubId,
+    type: "PAYMENT_STATUS",
+    title: "Payment proof needs attention",
+    message: "Your payment proof could not be verified. Please review the notes in your account or contact the Treasurer.",
+    linkUrl: "/treasury",
+    dedupeKey: `payment-rejected:${submissionId}`,
+    sendTelegram: true,
+  }).catch((notificationError) =>
+    console.error("Could not notify member about rejected payment:", notificationError),
+  );
 
   revalidatePath("/treasury");
   return { success: true, message: "Payment proof marked as REJECTED." };

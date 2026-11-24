@@ -5,6 +5,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireUser, assertPermission } from "@/lib/auth/session";
+import { dispatchNotification } from "@/lib/services/notifications/dispatch";
 
 const createProjectSchema = z.object({
   title: z.string().min(3, "Project title must be at least 3 characters"),
@@ -159,6 +160,21 @@ export async function submitAccomplishmentReportAction(
       updated_at: new Date().toISOString(),
     })
     .eq("id", projectId);
+
+  if (submissionId) {
+    await dispatchNotification({
+      profileId: user.id,
+      clubId: project.host_club_id || clubId,
+      type: "REPORT_REVIEW",
+      title: "Accomplishment report submitted",
+      message: "Your project accomplishment report was submitted.",
+      linkUrl: `/projects`,
+      dedupeKey: `project-report-submitted:${submissionId}`,
+      sendTelegram: true,
+    }).catch((notificationError) =>
+      console.error("Could not notify member about report submission:", notificationError),
+    );
+  }
 
   revalidatePath("/projects");
   revalidatePath("/project-center");

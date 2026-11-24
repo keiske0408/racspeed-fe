@@ -5,6 +5,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireUser, assertPermission } from "@/lib/auth/session";
+import { dispatchNotification } from "@/lib/services/notifications/dispatch";
 
 const createMemberSchema = z.object({
   fullName: z.string().min(2, "Full name must be at least 2 characters"),
@@ -205,6 +206,19 @@ export async function approveMemberAction(
       .eq("email", profile.email);
   }
 
+  await dispatchNotification({
+    profileId,
+    clubId,
+    type: "MEMBERSHIP_UPDATE",
+    title: "Membership application approved",
+    message: "Your Rotaract club membership has been approved.",
+    linkUrl: "/dashboard",
+    dedupeKey: `membership-approved:${clubId}:${profileId}`,
+    sendTelegram: true,
+  }).catch((error) =>
+    console.error("Could not notify member about approval:", error),
+  );
+
   revalidatePath("/members");
   revalidatePath("/recruitment");
   revalidatePath("/dashboard");
@@ -282,6 +296,19 @@ export async function approveAspirantMemberAction(
     }
   }
 
+  await dispatchNotification({
+    profileId,
+    clubId,
+    type: "MEMBERSHIP_UPDATE",
+    title: "Aspirant membership approved",
+    message: "Your aspirant membership is active. The club will guide you through the remaining induction steps.",
+    linkUrl: "/dashboard",
+    dedupeKey: `aspirant-approved:${clubId}:${profileId}`,
+    sendTelegram: true,
+  }).catch((error) =>
+    console.error("Could not notify member about aspirant approval:", error),
+  );
+
   revalidatePath("/members");
   revalidatePath("/recruitment");
   revalidatePath("/dashboard");
@@ -308,6 +335,19 @@ export async function rejectMemberAction(
   if (error) {
     return { success: false, error: error.message };
   }
+
+  await dispatchNotification({
+    profileId,
+    clubId,
+    type: "MEMBERSHIP_UPDATE",
+    title: "Membership application update",
+    message: "Your membership application was not approved. Please contact a club officer if you need more information.",
+    linkUrl: "/pending-approval",
+    dedupeKey: `membership-rejected:${clubId}:${profileId}`,
+    sendTelegram: true,
+  }).catch((notificationError) =>
+    console.error("Could not notify applicant about decision:", notificationError),
+  );
 
   revalidatePath("/members");
   revalidatePath("/dashboard");
@@ -522,6 +562,58 @@ export async function registerApplicantAction(formData: FormData) {
       consented: true,
     });
   } catch {}
+
+  const reviewersResult = await adminClient
+    .from("club_memberships")
+    .select("profile_id, membership_roles(roles(key))")
+    .eq("club_id", defaultClubId)
+    .eq("membership_status", "ACTIVE");
+  if (reviewersResult.error) {
+    console.error("Could not find membership application reviewers:", reviewersResult.error.message);
+  } else {
+    const reviewerIds = new Set(
+      (reviewersResult.data || [])
+        .filter((membership) =>
+          (membership.membership_roles as { roles: { key: string }[] | null }[] | null)?.some(
+            (membershipRole) =>
+              membershipRole.roles?.some((role) =>
+                ["PRESIDENT", "MEMBERSHIP_CHAIR"].includes(role.key),
+              ),
+          ),
+        )
+        .map((membership) => membership.profile_id),
+    );
+    await Promise.all(
+      Array.from(reviewerIds).map((reviewerId) =>
+        dispatchNotification({
+          profileId: reviewerId,
+          clubId: defaultClubId,
+          type: "MEMBERSHIP_UPDATE",
+          title: "New membership application",
+          message: "A new club membership application is waiting for review.",
+          linkUrl: "/members",
+          dedupeKey: `membership-application:${userId}:${reviewerId}`,
+          sendTelegram: true,
+        }).catch((notificationError) =>
+          console.error("Could not notify application reviewer:", notificationError),
+        ),
+      ),
+    );
+  }
+  await dispatchNotification({
+    profileId: userId,
+    clubId: defaultClubId,
+    type: "MEMBERSHIP_UPDATE",
+    title: "Application received",
+    message: "Your Rotaract club membership application is pending review. We will update you when the club makes a decision.",
+    linkUrl: "/pending-approval",
+    dedupeKey: `membership-received:${defaultClubId}:${userId}`,
+    sendEmail: true,
+    sendPush: false,
+    sendTelegram: false,
+  }).catch((notificationError) =>
+    console.error("Could not send application confirmation:", notificationError),
+  );
 
   revalidatePath("/members");
   revalidatePath("/dashboard");

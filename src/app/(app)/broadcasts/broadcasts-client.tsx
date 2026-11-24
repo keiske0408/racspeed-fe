@@ -33,7 +33,6 @@ import {
   BroadcastTone,
   BroadcastMessageType,
   VolunteerActivityCategory,
-  WebhookConfig,
 } from "@/features/broadcasts/types";
 import { STARTER_PRESETS, parseRawTextToBroadcastDraft } from "@/features/broadcasts/parser";
 import { formatBroadcastMessage } from "@/features/broadcasts/formatter";
@@ -89,21 +88,17 @@ export function BroadcastsClient({
   const [geminiApiKey, setGeminiApiKey] = useState("");
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
 
-  // Webhook direct dispatch
-  const [webhookUrl, setWebhookUrl] = useState("");
-  const [webhookPlatform, setWebhookPlatform] = useState<"discord" | "telegram" | "slack" | "generic">("discord");
+  // Telegram group dispatch
   const [isSendingWebhook, setIsSendingWebhook] = useState(false);
   const [webhookStatus, setWebhookStatus] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
-  // Load saved API key & webhook config from localStorage
+  // Load the optional AI API key and remove legacy arbitrary webhook targets.
   useEffect(() => {
     try {
       const savedKey = localStorage.getItem("racspeed_gemini_key");
       if (savedKey) setGeminiApiKey(savedKey);
-      const savedWebhook = localStorage.getItem("racspeed_broadcast_webhook");
-      if (savedWebhook) setWebhookUrl(savedWebhook);
-      const savedPlatform = localStorage.getItem("racspeed_broadcast_platform");
-      if (savedPlatform) setWebhookPlatform(savedPlatform as any);
+      localStorage.removeItem("racspeed_broadcast_webhook");
+      localStorage.removeItem("racspeed_broadcast_platform");
     } catch {
       // Local storage not available
     }
@@ -219,26 +214,15 @@ export function BroadcastsClient({
 
   // Webhook dispatch execution
   const handleDispatchWebhook = async () => {
-    if (!webhookUrl.trim()) {
-      setWebhookStatus({ message: "Please specify a valid Webhook URL", type: "error" });
-      return;
-    }
     setIsSendingWebhook(true);
     setWebhookStatus(null);
 
     try {
-      // Save webhook config to storage
-      try {
-        localStorage.setItem("racspeed_broadcast_webhook", webhookUrl.trim());
-        localStorage.setItem("racspeed_broadcast_platform", webhookPlatform);
-      } catch {}
-
       const res = await fetch("/api/broadcasts/webhook", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          platform: webhookPlatform,
-          webhookUrl: webhookUrl.trim(),
+          platform: "telegram",
           content: formattedOutput,
           eventTitle: draft.title,
         }),
@@ -247,7 +231,9 @@ export function BroadcastsClient({
       const data = await res.json();
       if (res.ok && data.success) {
         setWebhookStatus({
-          message: `Broadcast successfully pushed to ${webhookPlatform.toUpperCase()}!`,
+          message: data.failed
+            ? `Queued for ${data.queued} Telegram group(s); ${data.failed} delivery attempt(s) failed permanently.`
+            : `Announcement queued for ${data.queued} Telegram group(s).`,
           type: "success",
         });
       } else {
@@ -256,9 +242,9 @@ export function BroadcastsClient({
           type: "error",
         });
       }
-    } catch (err: any) {
+    } catch (err) {
       setWebhookStatus({
-        message: err?.message || "Network error sending to webhook.",
+        message: err instanceof Error ? err.message : "Network error sending the announcement.",
         type: "error",
       });
     } finally {
@@ -674,47 +660,27 @@ export function BroadcastsClient({
             )}
           </div>
 
-          {/* Webhook Dispatch & Automation Box */}
+          {/* Managed Telegram group dispatch */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-xs space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
                 <Send className="w-3.5 h-3.5 text-blue-500" />
-                Webhook Dispatch Automation
+                Telegram Group Announcement
               </span>
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-300 font-semibold">
-                Discord / Telegram / Slack
+                Managed Bot
               </span>
             </div>
 
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Push your GC composition directly to an announcement channel or community bot with one click.
+              Send this message only to Telegram groups configured by an authorized club administrator.
             </p>
 
             <div className="flex flex-col sm:flex-row gap-2">
-              <select
-                aria-label="Webhook platform selector"
-                value={webhookPlatform}
-                onChange={(e) => setWebhookPlatform(e.target.value as any)}
-                className="text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-medium"
-              >
-                <option value="discord">Discord Webhook</option>
-                <option value="slack">Slack Incoming</option>
-                <option value="telegram">Telegram Bot</option>
-                <option value="generic">Generic Webhook</option>
-              </select>
-
-              <input
-                type="text"
-                value={webhookUrl}
-                onChange={(e) => setWebhookUrl(e.target.value)}
-                placeholder="Paste Webhook URL (https://discord.com/api/webhooks/...)"
-                className="flex-1 text-xs px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100"
-              />
-
               <button
                 type="button"
                 onClick={handleDispatchWebhook}
-                disabled={isSendingWebhook || !webhookUrl.trim()}
+                disabled={isSendingWebhook}
                 className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-xs transition flex items-center justify-center gap-1.5 disabled:opacity-50"
               >
                 {isSendingWebhook ? (

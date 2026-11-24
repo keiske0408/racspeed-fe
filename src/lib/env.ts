@@ -18,6 +18,15 @@ const envSchema = z.object({
     .default("00000000-0000-0000-0000-000000000001"),
   NEXT_PUBLIC_DEFAULT_DISTRICT: z.string().default("3820"),
   RESEND_API_KEY: z.string().optional(),
+  TELEGRAM_BOT_TOKEN: z.string().optional(),
+  TELEGRAM_BOT_USERNAME: z
+    .string()
+    .regex(/^[A-Za-z0-9_]{5,32}$/)
+    .optional(),
+  TELEGRAM_WEBHOOK_SECRET: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{32,256}$/)
+    .optional(),
   EMAIL_FROM: z
     .string()
     .default("Rotaract San Pedro East <notifications@rotaract.local>"),
@@ -28,6 +37,8 @@ const envSchema = z.object({
   CRON_SECRET: isProduction
     ? z.string().min(16, "CRON_SECRET must be at least 16 chars in production")
     : z.string().default("local_dev_cron_secret"),
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().default("gemini-2.5-flash"),
 });
 
 export const env = envSchema.parse({
@@ -39,10 +50,15 @@ export const env = envSchema.parse({
   NEXT_PUBLIC_DEFAULT_CLUB_ID: process.env.NEXT_PUBLIC_DEFAULT_CLUB_ID,
   NEXT_PUBLIC_DEFAULT_DISTRICT: process.env.NEXT_PUBLIC_DEFAULT_DISTRICT,
   RESEND_API_KEY: process.env.RESEND_API_KEY,
+  TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
+  TELEGRAM_BOT_USERNAME: process.env.TELEGRAM_BOT_USERNAME,
+  TELEGRAM_WEBHOOK_SECRET: process.env.TELEGRAM_WEBHOOK_SECRET,
   EMAIL_FROM: process.env.EMAIL_FROM,
   EMAIL_TEST_RECIPIENT: process.env.EMAIL_TEST_RECIPIENT,
   NEXT_PUBLIC_VAPID_PUBLIC_KEY: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
   VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY,
   VAPID_SUBJECT: process.env.VAPID_SUBJECT,
   CRON_SECRET: process.env.CRON_SECRET,
+  GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+  GEMINI_MODEL: process.env.GEMINI_MODEL || "gemini-2.5-flash",
 });
