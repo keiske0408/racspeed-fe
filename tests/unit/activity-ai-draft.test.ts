@@ -44,6 +44,7 @@ function makeBaseForm(overrides: Partial<ActivityFormState> = {}): ActivityFormS
     allDay: false,
     committee: "",
     status: "PLANNED",
+    priority: "MEDIUM",
     objective: "",
     beneficiaryType: "",
     beneficiaryTarget: 0,

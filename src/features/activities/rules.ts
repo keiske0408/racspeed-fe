@@ -1,4 +1,10 @@
-import type { ActivityStatus, RsvpResponse } from "./types";
+import {
+  ACTIVITY_PRIORITIES,
+  ACTIVITY_PRIORITY_META,
+  type ActivityPriority,
+  type ActivityStatus,
+  type RsvpResponse,
+} from "./types";
 
 export const SELF_CHECK_IN_OPENS_BEFORE_MINUTES = 30;
 
@@ -539,6 +545,35 @@ export function formatActivityLogEntry(
         isMilestone: false,
       };
     }
+    case "PRIORITY_CHANGED": {
+      const rawPriority =
+        typeof details.priority === "string"
+          ? details.priority.trim().toUpperCase()
+          : "";
+      const meta = (ACTIVITY_PRIORITIES as readonly string[]).includes(
+        rawPriority,
+      )
+        ? ACTIVITY_PRIORITY_META[rawPriority as ActivityPriority]
+        : null;
+      return {
+        title: meta
+          ? `Updated priority to ${meta.label}`
+          : "Updated project priority",
+        tone: rawPriority === "URGENT" ? "rose" : rawPriority === "HIGH" ? "amber" : "blue",
+        isMilestone: false,
+      };
+    }
+    case "SKETCH_POSTED": {
+      const sketchTitle =
+        typeof details.title === "string" && details.title.trim()
+          ? `"${details.title.trim()}"`
+          : "a visual sketch";
+      return {
+        title: `Posted visual summary sketch ${sketchTitle}`,
+        tone: "violet",
+        isMilestone: false,
+      };
+    }
     case "ARCHIVED":
       return {
         title: "Moved to historical archive",
@@ -656,6 +691,115 @@ export function resolveArchiveState(input: {
   }
 
   return { isArchived: false, archivedAt: null };
+}
+
+/**
+ * Resolves an activity's priority from its explicit column or audit log fallback,
+ * defaulting to MEDIUM when unset.
+ */
+export function resolveActivityPriority(input: {
+  priority?: string | null;
+  activity_log?:
+    | {
+        action: string;
+        details?: Record<string, unknown> | null;
+        created_at: string;
+      }[]
+    | null;
+}): ActivityPriority {
+  const explicit =
+    typeof input.priority === "string"
+      ? input.priority.trim().toUpperCase()
+      : "";
+  if ((ACTIVITY_PRIORITIES as readonly string[]).includes(explicit)) {
+    return explicit as ActivityPriority;
+  }
+
+  const priorityEvents = (input.activity_log || [])
+    .filter(
+      (entry) =>
+        (entry.action === "PRIORITY_CHANGED" || entry.action === "CREATED") &&
+        typeof entry.details?.priority === "string",
+    )
+    .sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
+
+  for (const ev of priorityEvents) {
+    const candidate = String(ev.details?.priority || "")
+      .trim()
+      .toUpperCase();
+    if ((ACTIVITY_PRIORITIES as readonly string[]).includes(candidate)) {
+      return candidate as ActivityPriority;
+    }
+  }
+
+  return "MEDIUM";
+}
+
+/**
+ * Compares two activities by priority weight descending (URGENT -> LOW),
+ * tie-breaking by startAt ascending.
+ */
+export function compareByPriority(
+  a: { priority?: ActivityPriority | null; startAt?: string | null },
+  b: { priority?: ActivityPriority | null; startAt?: string | null },
+): number {
+  const wa =
+    ACTIVITY_PRIORITY_META[a.priority || "MEDIUM"]?.weight ??
+    ACTIVITY_PRIORITY_META.MEDIUM.weight;
+  const wb =
+    ACTIVITY_PRIORITY_META[b.priority || "MEDIUM"]?.weight ??
+    ACTIVITY_PRIORITY_META.MEDIUM.weight;
+  if (wb !== wa) return wb - wa;
+  return (a.startAt || "").localeCompare(b.startAt || "");
+}
+
+const SKETCH_MARKER_RE = /^\[\[SKETCH:([^|\]]+)\|([^\]]*)\]\]\r?\n?([\s\S]*)$/;
+
+/**
+ * Encodes an uploaded discussion sketch PNG + summary into a structured
+ * `activity_comments.body` string so existing reactions and deletes work seamlessly.
+ */
+export function encodeSketchCommentBody({
+  storagePath,
+  title,
+  summary,
+}: {
+  storagePath: string;
+  title: string;
+  summary: string;
+}): string {
+  const safePath = storagePath.replace(/[|\]]/g, "").trim();
+  const safeTitle =
+    title
+      .replace(/[|\]]/g, "-")
+      .trim()
+      .slice(0, 120) || "Visual Summary Sketch";
+  const cleanSummary = summary.trim();
+  const header = `[[SKETCH:${safePath}|${safeTitle}]]`;
+  return cleanSummary ? `${header}\n${cleanSummary}` : header;
+}
+
+/**
+ * Decodes a discussion comment body, extracting structured sketch metadata
+ * when present while keeping plain-text comments untouched.
+ */
+export function decodeSketchCommentBody(body: string): {
+  sketch: { storagePath: string; title: string } | null;
+  text: string;
+} {
+  if (!body) return { sketch: null, text: "" };
+  const match = body.match(SKETCH_MARKER_RE);
+  if (!match) return { sketch: null, text: body };
+  return {
+    sketch: {
+      storagePath: match[1].trim(),
+      title: match[2].trim() || "Visual Summary Sketch",
+    },
+    text: (match[3] || "").trim(),
+  };
 }
 
 export const DEFAULT_QR_EXPIRATION_MINUTES =

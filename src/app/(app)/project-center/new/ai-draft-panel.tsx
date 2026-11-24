@@ -21,11 +21,14 @@ import {
 import {
   ACTIVITY_KINDS,
   ACTIVITY_KIND_META,
+  ACTIVITY_PRIORITIES,
+  ACTIVITY_PRIORITY_META,
   AREAS_OF_FOCUS,
   COMMITTEES,
   MEETING_TYPES,
   MEETING_TYPE_LABELS,
   type ActivityKind,
+  type ActivityPriority,
   type ActivityStatus,
   type Committee,
   type MeetingType,
@@ -517,7 +520,7 @@ export function AiDraftPanel({
           </p>
         </div>
 
-        <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
           <label className="block space-y-1 text-xs font-semibold text-slate-700 dark:text-slate-200">
             <span>Activity Type</span>
             <select
@@ -533,6 +536,26 @@ export function AiDraftPanel({
               {allowedKinds.map((k) => (
                 <option key={k} value={k}>
                   {ACTIVITY_KIND_META[k].label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block space-y-1 text-xs font-semibold text-slate-700 dark:text-slate-200">
+            <span>Priority</span>
+            <select
+              value={reviewedForm.priority}
+              onChange={(e) =>
+                setReviewedForm({
+                  ...reviewedForm,
+                  priority: e.target.value as ActivityPriority,
+                })
+              }
+              className={reviewInputClass}
+            >
+              {ACTIVITY_PRIORITIES.map((p) => (
+                <option key={p} value={p}>
+                  {ACTIVITY_PRIORITY_META[p].label}
                 </option>
               ))}
             </select>

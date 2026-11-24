@@ -1,4 +1,9 @@
-import { isQrCheckInApplicable, resolveArchiveState } from "./rules";
+import {
+  decodeSketchCommentBody,
+  isQrCheckInApplicable,
+  resolveActivityPriority,
+  resolveArchiveState,
+} from "./rules";
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getGroupTasksList } from "@/features/tasks/queries";
@@ -8,6 +13,7 @@ import type {
   ActivityDetailDTO,
   ActivityKind,
   ActivityMediaDTO,
+  ActivityPriority,
   ActivityProjectDetailsDTO,
   ActivityStatus,
   ActivitySummaryDTO,
@@ -29,7 +35,7 @@ const SUMMARY_COLUMNS = `
   activity_rsvps(profile_id, response),
   attendance_records(profile_id),
   activity_comments(count), activity_media(count),
-  activity_log(action, created_at),
+  activity_log(action, details, created_at),
   tasks(status)
 `;
 
@@ -46,6 +52,7 @@ interface ActivitySummaryRow {
   end_at: string;
   all_day: boolean;
   status: string;
+  priority?: string | null;
   committee: string | null;
   owner_id: string | null;
   owner?: { full_name: string | null } | null;
@@ -65,7 +72,9 @@ interface ActivitySummaryRow {
   tasks?: { status: string }[] | null;
   activity_comments?: { count: number }[] | null;
   activity_media?: { count: number }[] | null;
-  activity_log?: { action: string; created_at: string }[] | null;
+  activity_log?:
+    | { action: string; details?: Record<string, unknown> | null; created_at: string }[]
+    | null;
   is_archived?: boolean | null;
   archived_at?: string | null;
 }
@@ -215,6 +224,10 @@ function mapSummary(
     endAt: row.end_at,
     allDay: Boolean(row.all_day),
     status: row.status as ActivityStatus,
+    priority: resolveActivityPriority({
+      priority: row.priority,
+      activity_log: row.activity_log,
+    }) as ActivityPriority,
     committee: (row.committee as Committee) || null,
     ownerId: row.owner_id,
     ownerName: row.owner?.full_name || null,
@@ -265,19 +278,27 @@ export async function listActivities(
 ): Promise<ActivitySummaryDTO[]> {
   try {
     const admin = createAdminClient();
-    let query = admin
-      .from("activities")
-      .select(SUMMARY_COLUMNS)
-      .eq("club_id", clubId)
-      .order("start_at", { ascending: true });
-    if (!options.includeDrafts && UUID_PATTERN.test(userId)) {
-      query = query.or(`is_published.eq.true,owner_id.eq.${userId}`);
-    }
-    if (options.from) query = query.gte("end_at", options.from);
-    if (options.to) query = query.lte("start_at", options.to);
-    if (options.limit) query = query.limit(options.limit);
+    const buildQuery = (columns: string) => {
+      let q = admin
+        .from("activities")
+        .select(columns)
+        .eq("club_id", clubId)
+        .order("start_at", { ascending: true });
+      if (!options.includeDrafts && UUID_PATTERN.test(userId)) {
+        q = q.or(`is_published.eq.true,owner_id.eq.${userId}`);
+      }
+      if (options.from) q = q.gte("end_at", options.from);
+      if (options.to) q = q.lte("start_at", options.to);
+      if (options.limit) q = q.limit(options.limit);
+      return q;
+    };
 
-    const { data, error } = await query;
+    let { data, error } = await buildQuery(`${SUMMARY_COLUMNS}, priority`);
+    if (error && error.message?.toLowerCase().includes("priority")) {
+      const fallback = await buildQuery(SUMMARY_COLUMNS);
+      data = fallback.data;
+      error = fallback.error;
+    }
     if (error || !data) {
       console.warn("Could not load activities:", error?.message);
       return [];
@@ -374,11 +395,20 @@ export async function getActivityDetail(
   if (!UUID_PATTERN.test(activityId)) return null;
   const admin = createAdminClient();
 
-  const { data: row, error } = await admin
+  let { data: row, error } = await admin
     .from("activities")
-    .select(`${SUMMARY_COLUMNS}, description, is_published`)
+    .select(`${SUMMARY_COLUMNS}, priority, description, is_published`)
     .eq("id", activityId)
     .maybeSingle();
+  if (error && error.message?.toLowerCase().includes("priority")) {
+    const fallback = await admin
+      .from("activities")
+      .select(`${SUMMARY_COLUMNS}, description, is_published`)
+      .eq("id", activityId)
+      .maybeSingle();
+    row = fallback.data as typeof row;
+    error = fallback.error;
+  }
   if (error || !row) return null;
 
   const [
@@ -530,31 +560,53 @@ export async function getActivityDetail(
   }
 
   const commentRows = (comments.data || []) as unknown as ActivityCommentRow[];
-  const commentList: ActivityCommentDTO[] = commentRows.map((c) => {
-    const reactionRows: { emoji: string; profile_id: string }[] =
-      c.activity_comment_reactions || [];
-    const grouped = new Map<string, { count: number; mine: boolean }>();
-    for (const rr of reactionRows) {
-      const g = grouped.get(rr.emoji) || { count: 0, mine: false };
-      g.count += 1;
-      g.mine = g.mine || rr.profile_id === userId;
-      grouped.set(rr.emoji, g);
-    }
-    const isDeleted = Boolean(c.deleted_at);
-    return {
-      id: c.id,
-      parentId: c.parent_id,
-      author: person(c.profiles, c.author_id),
-      body: isDeleted ? "" : c.body,
-      createdAt: c.created_at,
-      editedAt: c.edited_at,
-      isDeleted,
-      reactions: Array.from(grouped.entries()).map(([emoji, g]) => ({
-        emoji,
-        ...g,
-      })),
-    };
-  });
+  const decodedComments = commentRows.map((c) => ({
+    row: c,
+    decoded: c.deleted_at
+      ? { sketch: null, text: "" }
+      : decodeSketchCommentBody(c.body),
+  }));
+  const sketchUrls = await signPaths(
+    decodedComments
+      .map((entry) => entry.decoded.sketch?.storagePath || "")
+      .filter(Boolean),
+  );
+
+  const commentList: ActivityCommentDTO[] = decodedComments.map(
+    ({ row: c, decoded }) => {
+      const reactionRows: { emoji: string; profile_id: string }[] =
+        c.activity_comment_reactions || [];
+      const grouped = new Map<string, { count: number; mine: boolean }>();
+      for (const rr of reactionRows) {
+        const g = grouped.get(rr.emoji) || { count: 0, mine: false };
+        g.count += 1;
+        g.mine = g.mine || rr.profile_id === userId;
+        grouped.set(rr.emoji, g);
+      }
+      const isDeleted = Boolean(c.deleted_at);
+      return {
+        id: c.id,
+        parentId: c.parent_id,
+        author: person(c.profiles, c.author_id),
+        body: isDeleted ? "" : decoded.text,
+        sketch:
+          !isDeleted && decoded.sketch
+            ? {
+                title: decoded.sketch.title,
+                storagePath: decoded.sketch.storagePath,
+                imageUrl: sketchUrls.get(decoded.sketch.storagePath) || null,
+              }
+            : null,
+        createdAt: c.created_at,
+        editedAt: c.edited_at,
+        isDeleted,
+        reactions: Array.from(grouped.entries()).map(([emoji, g]) => ({
+          emoji,
+          ...g,
+        })),
+      };
+    },
+  );
 
   return {
     ...summary,

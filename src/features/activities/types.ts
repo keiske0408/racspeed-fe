@@ -35,6 +35,48 @@ export const ACTIVITY_STATUSES = [
 ] as const;
 export type ActivityStatus = (typeof ACTIVITY_STATUSES)[number];
 
+export const ACTIVITY_PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
+export type ActivityPriority = (typeof ACTIVITY_PRIORITIES)[number];
+
+export const ACTIVITY_PRIORITY_META: Record<
+  ActivityPriority,
+  {
+    label: string;
+    weight: number;
+    chipClass: string;
+    dotClass: string;
+  }
+> = {
+  URGENT: {
+    label: "Urgent",
+    weight: 4,
+    chipClass:
+      "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/15 dark:text-rose-300 dark:border-rose-500/30",
+    dotClass: "bg-rose-500",
+  },
+  HIGH: {
+    label: "High",
+    weight: 3,
+    chipClass:
+      "bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30",
+    dotClass: "bg-amber-500",
+  },
+  MEDIUM: {
+    label: "Medium",
+    weight: 2,
+    chipClass:
+      "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/20",
+    dotClass: "bg-blue-500",
+  },
+  LOW: {
+    label: "Low",
+    weight: 1,
+    chipClass:
+      "bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
+    dotClass: "bg-slate-400",
+  },
+};
+
 export const RSVP_RESPONSES = ["GOING", "MAYBE", "NOT_GOING"] as const;
 export type RsvpResponse = (typeof RSVP_RESPONSES)[number];
 
@@ -194,6 +236,7 @@ export interface ActivitySummaryDTO {
   endAt: string;
   allDay: boolean;
   status: ActivityStatus;
+  priority: ActivityPriority;
   committee: Committee | null;
   ownerId: string | null;
   ownerName: string | null;
@@ -282,6 +325,11 @@ export interface ActivityCommentDTO {
   parentId: string | null;
   author: ActivityPersonDTO;
   body: string;
+  sketch?: {
+    title: string;
+    storagePath: string;
+    imageUrl: string | null;
+  } | null;
   createdAt: string;
   editedAt: string | null;
   isDeleted: boolean;

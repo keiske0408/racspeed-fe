@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   ACTIVITY_KINDS,
+  ACTIVITY_PRIORITIES,
   ACTIVITY_STATUSES,
   AREAS_OF_FOCUS,
   COMMITTEES,
@@ -8,6 +9,7 @@ import {
   PARTNER_ROLES,
   PROJECT_KINDS,
   type ActivityKind,
+  type ActivityPriority,
   type ActivityStatus,
   type Committee,
   type MeetingType,
@@ -280,6 +282,7 @@ export const aiProjectFieldsSchema = z.object({
   allDay: z.boolean().nullable().optional(),
   committee: z.enum(COMMITTEES).nullable().optional(),
   status: z.enum(ACTIVITY_STATUSES).nullable().optional(),
+  priority: z.enum(ACTIVITY_PRIORITIES).nullable().optional(),
   rsvpDeadline: z.string().trim().nullable().optional(),
   objective: z.string().trim().max(2000).nullable().optional(),
   beneficiaryType: z.string().trim().max(200).nullable().optional(),
@@ -664,6 +667,7 @@ export interface ActivityFormState {
   allDay: boolean;
   committee: Committee | "";
   status: ActivityStatus;
+  priority: ActivityPriority;
   objective: string;
   beneficiaryType: string;
   beneficiaryTarget: number;
@@ -858,6 +862,7 @@ export function mapAiDraftToFormDraft(
       allDay: Boolean(p.allDay),
       committee: p.committee || "",
       status: p.status || "DRAFT",
+      priority: p.priority || "MEDIUM",
       objective: (p.objective || "").trim(),
       beneficiaryType: (p.beneficiaryType || "").trim(),
       beneficiaryTarget: p.beneficiaryTarget ?? 0,
@@ -1077,6 +1082,10 @@ export function mergeAiDraftWithExistingForm(
     allDay: current.allDay || incoming.allDay,
     committee: current.committee || incoming.committee,
     status: current.title.trim() ? current.status : incoming.status,
+    priority:
+      current.priority && current.priority !== "MEDIUM"
+        ? current.priority
+        : incoming.priority || "MEDIUM",
     objective: pickStr(current.objective, incoming.objective),
     beneficiaryType: pickStr(current.beneficiaryType, incoming.beneficiaryType),
     beneficiaryTarget:

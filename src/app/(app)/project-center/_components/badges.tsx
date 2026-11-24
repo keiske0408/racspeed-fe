@@ -1,9 +1,11 @@
 import React from "react";
 import {
   ACTIVITY_KIND_META,
+  ACTIVITY_PRIORITY_META,
   ACTIVITY_STATUS_LABELS,
   MEETING_TYPE_LABELS,
   type ActivityKind,
+  type ActivityPriority,
   type ActivityStatus,
   type MeetingType,
 } from "@/features/activities/types";
@@ -55,6 +57,24 @@ export function ActivityStatusBadge({ status }: { status: ActivityStatus }) {
     >
       {isFinished && <span aria-hidden="true">✓</span>}
       {ACTIVITY_STATUS_LABELS[status]}
+    </span>
+  );
+}
+
+export function PriorityBadge({
+  priority = "MEDIUM",
+}: {
+  priority?: ActivityPriority | null;
+}) {
+  const normalized: ActivityPriority =
+    priority && priority in ACTIVITY_PRIORITY_META ? priority : "MEDIUM";
+  const meta = ACTIVITY_PRIORITY_META[normalized];
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[11px] font-semibold ${meta.chipClass}`}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full ${meta.dotClass}`} />
+      {meta.label}
     </span>
   );
 }

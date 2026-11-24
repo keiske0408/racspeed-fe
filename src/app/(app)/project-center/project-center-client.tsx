@@ -25,14 +25,22 @@ import {
 import { ActivityCalendar } from "./_components/activity-calendar";
 import { ActivityMoments } from "./_components/activity-moments";
 import { ActivityCard, formatActivityWhen } from "./_components/activity-card";
-import { ActivityStatusBadge, KindBadge } from "./_components/badges";
+import {
+  ActivityStatusBadge,
+  KindBadge,
+  PriorityBadge,
+} from "./_components/badges";
 import { CompactLifecycleIndicator } from "./_components/project-lifecycle-guide";
+import { compareByPriority } from "@/features/activities/rules";
 import {
   ACTIVITY_KINDS,
   ACTIVITY_KIND_META,
+  ACTIVITY_PRIORITIES,
+  ACTIVITY_PRIORITY_META,
   ACTIVITY_STATUSES,
   ACTIVITY_STATUS_LABELS,
   isProjectKind,
+  type ActivityPriority,
   type ActivityStatus,
   type ActivitySummaryDTO,
 } from "@/features/activities/types";
@@ -107,6 +115,10 @@ export function ProjectCenterClient({
         : "ACTIVE",
   );
   const [rotaryYear, setRotaryYear] = useState("ALL");
+  const [priorityFilter, setPriorityFilter] = useState<
+    "ALL" | ActivityPriority
+  >("ALL");
+  const [sortBy, setSortBy] = useState<"SCHEDULE" | "PRIORITY">("SCHEDULE");
   const [query, setQuery] = useState("");
 
   const availableRotaryYears = useMemo(() => {
@@ -142,8 +154,10 @@ export function ProjectCenterClient({
   const filtered = useMemo(() => {
     const text = query.trim().toLowerCase();
     const pool = scope === "ARCHIVED" ? archivedActivities : activeActivities;
-    return pool.filter((activity) => {
+    const matched = pool.filter((activity) => {
       if (kind !== "ALL" && activity.kind !== kind) return false;
+      if (priorityFilter !== "ALL" && activity.priority !== priorityFilter)
+        return false;
       if (rotaryYear !== "ALL" && activity.rotaryYear !== rotaryYear)
         return false;
       if (scope === "ACTIVE") {
@@ -186,13 +200,19 @@ export function ProjectCenterClient({
         activity.ownerName,
       ].some((value) => value?.toLowerCase().includes(text));
     });
+    if (sortBy === "PRIORITY") {
+      return [...matched].sort(compareByPriority);
+    }
+    return matched;
   }, [
     activeActivities,
     archivedActivities,
     kind,
+    priorityFilter,
     query,
     rotaryYear,
     scope,
+    sortBy,
     status,
   ]);
 
@@ -717,6 +737,40 @@ export function ProjectCenterClient({
                 </select>
               </>
             )}
+
+            <label htmlFor="activity-priority-filter" className="sr-only">
+              Filter by priority
+            </label>
+            <select
+              id="activity-priority-filter"
+              value={priorityFilter}
+              onChange={(e) =>
+                setPriorityFilter(e.target.value as "ALL" | ActivityPriority)
+              }
+              className="rounded-lg border border-[#EDEDF2] bg-white px-2.5 py-2 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-[#161B26] dark:text-slate-200"
+            >
+              <option value="ALL">All priorities</option>
+              {[...ACTIVITY_PRIORITIES].reverse().map((p) => (
+                <option key={p} value={p}>
+                  {ACTIVITY_PRIORITY_META[p].label} priority
+                </option>
+              ))}
+            </select>
+
+            <label htmlFor="activity-sort-order" className="sr-only">
+              Sort activities
+            </label>
+            <select
+              id="activity-sort-order"
+              value={sortBy}
+              onChange={(e) =>
+                setSortBy(e.target.value as "SCHEDULE" | "PRIORITY")
+              }
+              className="rounded-lg border border-[#EDEDF2] bg-white px-2.5 py-2 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-[#161B26] dark:text-slate-200"
+            >
+              <option value="SCHEDULE">Sort: Schedule</option>
+              <option value="PRIORITY">Sort: Priority (Highest first)</option>
+            </select>
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -1009,11 +1063,12 @@ export function ProjectCenterClient({
                       </p>
                     ) : null}
                   </div>
-                  <div>
+                  <div className="flex flex-wrap items-center gap-1.5">
                     <KindBadge
                       kind={activity.kind}
                       meetingType={activity.meetingType}
                     />
+                    <PriorityBadge priority={activity.priority} />
                   </div>
                   <p className="text-xs text-slate-600 dark:text-slate-300">
                     {formatActivityWhen(activity)}

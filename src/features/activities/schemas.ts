@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   ACTIVITY_KINDS,
+  ACTIVITY_PRIORITIES,
   ACTIVITY_STATUSES,
   AREAS_OF_FOCUS,
   COMMITTEES,
@@ -86,6 +87,7 @@ const baseShape = {
   allDay: z.boolean().default(false),
   committee: z.enum(COMMITTEES).optional(),
   status: z.enum(ACTIVITY_STATUSES).default("PLANNED"),
+  priority: z.enum(ACTIVITY_PRIORITIES).default("MEDIUM"),
   minMembersEnabled: z.boolean().default(false),
   minMembersRequired: optionalPositiveInt,
   capacity: optionalPositiveInt,

@@ -25,12 +25,15 @@ import { createActivityAction } from "@/features/activities/actions";
 import {
   ACTIVITY_KINDS,
   ACTIVITY_KIND_META,
+  ACTIVITY_PRIORITIES,
+  ACTIVITY_PRIORITY_META,
   AREAS_OF_FOCUS,
   COMMITTEES,
   DEFAULT_CLUB_ID,
   MEETING_TYPES,
   MEETING_TYPE_LABELS,
   type ActivityKind,
+  type ActivityPriority,
   type ActivityStatus,
   type Committee,
   type MeetingType,
@@ -124,6 +127,7 @@ export function ActivityCreateClient({
   const [meetingType, setMeetingType] =
     useState<MeetingType>("GENERAL_ASSEMBLY");
   const [status, setStatus] = useState<ActivityStatus>("PLANNED");
+  const [priority, setPriority] = useState<ActivityPriority>("MEDIUM");
   const [startAt, setStartAt] = useState(defaultDates.startAt);
   const [endAt, setEndAt] = useState(defaultDates.endAt);
   const [allDay, setAllDay] = useState(false);
@@ -245,6 +249,7 @@ export function ActivityCreateClient({
       allDay,
       committee,
       status,
+      priority,
       objective,
       beneficiaryType,
       beneficiaryTarget,
@@ -271,6 +276,7 @@ export function ActivityCreateClient({
     setAllDay(next.allDay);
     setCommittee(next.committee);
     setStatus(next.status);
+    setPriority(next.priority ?? "MEDIUM");
     setObjective(next.objective);
     setBeneficiaryType(next.beneficiaryType);
     setBeneficiaryTarget(next.beneficiaryTarget);
@@ -389,6 +395,7 @@ export function ActivityCreateClient({
       allDay: payloadState.allDay,
       committee: payloadState.committee || undefined,
       status: payloadState.status,
+      priority: payloadState.priority ?? "MEDIUM",
       minMembersEnabled: minEnabled,
       minMembersRequired: minEnabled
         ? domOverrides?.minMembersRequired
@@ -975,7 +982,21 @@ export function ActivityCreateClient({
               </select>
             </Field>
           )}
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Field label="Priority">
+              <select
+                name="priority"
+                value={priority}
+                onChange={(e) => setPriority(e.target.value as ActivityPriority)}
+                className={inputClass}
+              >
+                {ACTIVITY_PRIORITIES.map((p) => (
+                  <option key={p} value={p}>
+                    {ACTIVITY_PRIORITY_META[p].label}
+                  </option>
+                ))}
+              </select>
+            </Field>
             <Field label="Committee">
               <select
                 name="committee"

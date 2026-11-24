@@ -20,7 +20,12 @@ import {
   type ActivitySummaryDTO,
 } from "@/features/activities/types";
 import { minMembersStatus } from "@/features/activities/rules";
-import { ActivityStatusBadge, KindBadge, ProgressBar } from "./badges";
+import {
+  ActivityStatusBadge,
+  KindBadge,
+  PriorityBadge,
+  ProgressBar,
+} from "./badges";
 import { CompactLifecycleIndicator } from "./project-lifecycle-guide";
 import { RsvpButtons } from "./rsvp-buttons";
 
@@ -97,6 +102,7 @@ export function ActivityCard({
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 flex-wrap">
             <KindBadge kind={activity.kind} meetingType={activity.meetingType} />
+            <PriorityBadge priority={activity.priority} />
             {activity.isArchived && (
               <span className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                 <Archive className="h-2.5 w-2.5" />

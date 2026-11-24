@@ -6,7 +6,10 @@ import {
 import {
   allowedTransitions,
   canTransition,
+  compareByPriority,
+  decodeSketchCommentBody,
   deduplicateActivityLog,
+  encodeSketchCommentBody,
   evaluateReportReadiness,
   evaluateRsvp,
   evaluateSelfCheckIn,
@@ -14,6 +17,7 @@ import {
   getLifecycleStages,
   isQrCheckInApplicable,
   minMembersStatus,
+  resolveActivityPriority,
   resolveArchiveState,
 } from "@/features/activities/rules";
 import {
@@ -538,5 +542,81 @@ describe("Project Lifecycle & Accomplishment Report Readiness", () => {
         "Prepare slide deck and handouts",
       );
     }
+  });
+
+  it("validates priority values on creation and falls back cleanly for legacy activities", () => {
+    const urgentParsed = createActivitySchema.safeParse({
+      ...base,
+      kind: "SERVICE_PROJECT",
+      objective: "Improve literacy access for local students.",
+      beneficiaryType: "Elementary students",
+      areasOfFocus: ["BASIC_EDUCATION"],
+      sdgs: [4],
+      partners: [],
+      priority: "URGENT",
+    });
+    expect(urgentParsed.success).toBe(true);
+    if (urgentParsed.success) {
+      expect(urgentParsed.data.priority).toBe("URGENT");
+    }
+
+    const defaultParsed = createActivitySchema.safeParse({
+      ...base,
+      kind: "FELLOWSHIP",
+    });
+    expect(defaultParsed.success).toBe(true);
+    if (defaultParsed.success) {
+      expect(defaultParsed.data.priority).toBe("MEDIUM");
+    }
+
+    expect(resolveActivityPriority({ priority: "HIGH" })).toBe("HIGH");
+    expect(resolveActivityPriority({ priority: "UNKNOWN" })).toBe("MEDIUM");
+    expect(resolveActivityPriority({ priority: null })).toBe("MEDIUM");
+    expect(
+      resolveActivityPriority({
+        priority: null,
+        activity_log: [
+          {
+            action: "PRIORITY_CHANGED",
+            details: { priority: "URGENT" },
+            created_at: "2026-11-01T10:00:00Z",
+          },
+        ],
+      }),
+    ).toBe("URGENT");
+
+    const ordered = (
+      [
+        { priority: "LOW" },
+        { priority: "URGENT" },
+        { priority: "MEDIUM" },
+        { priority: "HIGH" },
+      ] as const
+    )
+      .slice()
+      .sort((a, b) => compareByPriority(a, b))
+      .map((item) => item.priority);
+    expect(ordered).toEqual(["URGENT", "HIGH", "MEDIUM", "LOW"]);
+  });
+
+  it("encodes and decodes discussion paint sketch bodies cleanly", () => {
+    const encoded = encodeSketchCommentBody({
+      title: "Venue Layout & Registration Table",
+      storagePath: "club-1/act-1/discussion-sketches/sketch-123.png",
+      summary: "Place registration booth near the main hall entrance.",
+    });
+
+    const decoded = decodeSketchCommentBody(encoded);
+    expect(decoded.sketch).toEqual({
+      title: "Venue Layout & Registration Table",
+      storagePath: "club-1/act-1/discussion-sketches/sketch-123.png",
+    });
+    expect(decoded.text).toBe(
+      "Place registration booth near the main hall entrance.",
+    );
+
+    const plain = decodeSketchCommentBody("Normal discussion reply without sketch");
+    expect(plain.sketch).toBeNull();
+    expect(plain.text).toBe("Normal discussion reply without sketch");
   });
 });

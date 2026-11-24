@@ -42,6 +42,7 @@ import {
   DEFAULT_QR_EXPIRATION_MINUTES,
   decodeSessionSecretMeta,
   encodeSessionSecretMeta,
+  encodeSketchCommentBody,
   evaluateRsvp,
   evaluateSelfCheckIn,
   isQrCheckInApplicable,
@@ -56,10 +57,12 @@ import {
   MEDIA_BUCKET,
 } from "./queries";
 import {
+  ACTIVITY_PRIORITIES,
   ACTIVITY_STATUSES,
   COMMITTEES,
   isProjectKind,
   type ActivityMediaDTO,
+  type ActivityPriority,
   type ActivityStatus,
   type RsvpResponse,
 } from "./types";
@@ -383,11 +386,12 @@ export async function createActivityAction(
     data.ownerId
       ? data.ownerId
       : user.id;
-  const { data: created, error } = await admin
+  let { data: created, error } = await admin
     .from("activities")
     .insert({
       ...toActivityRow(data),
       status: data.status,
+      priority: data.priority,
       club_id: data.clubId,
       owner_id: ownerId,
       created_by: user.id,
@@ -395,6 +399,23 @@ export async function createActivityAction(
     })
     .select("id")
     .single();
+
+  if (error && error.message?.toLowerCase().includes("priority")) {
+    const fallback = await admin
+      .from("activities")
+      .insert({
+        ...toActivityRow(data),
+        status: data.status,
+        club_id: data.clubId,
+        owner_id: ownerId,
+        created_by: user.id,
+        is_published: data.status !== "DRAFT",
+      })
+      .select("id")
+      .single();
+    created = fallback.data;
+    error = fallback.error;
+  }
 
   if (error || !created) {
     return {
@@ -556,7 +577,10 @@ export async function createActivityAction(
     }
   }
 
-  await logActivity(created.id, user.id, "CREATED", { kind: data.kind });
+  await logActivity(created.id, user.id, "CREATED", {
+    kind: data.kind,
+    priority: data.priority,
+  });
 
   revalidateActivity(created.id);
   return {
@@ -623,15 +647,31 @@ export async function updateActivityAction(
     });
   }
 
-  const { error } = await admin
+  let { error } = await admin
     .from("activities")
-    .update(updatePayload)
+    .update({
+      ...updatePayload,
+      priority: parsed.data.priority,
+    })
     .eq("id", activityId);
+  if (error && error.message?.toLowerCase().includes("priority")) {
+    const fallback = await admin
+      .from("activities")
+      .update(updatePayload)
+      .eq("id", activityId);
+    error = fallback.error;
+  }
   if (error)
     return {
       success: false,
       error: `Failed to update activity: ${error.message}`,
     };
+
+  if (parsed.data.priority) {
+    await logActivity(activityId, access.user.id, "PRIORITY_CHANGED", {
+      priority: parsed.data.priority,
+    });
+  }
 
   const scheduleChanged =
     updatePayload.start_at !== access.activity.start_at ||
@@ -705,6 +745,41 @@ export async function updateActivityStatusAction(
   });
   revalidateActivity(activityId);
   return { success: true, message: "Status updated." };
+}
+
+export async function updateActivityPriorityAction(
+  activityId: string,
+  priority: ActivityPriority,
+): Promise<ActionResult> {
+  if (!(ACTIVITY_PRIORITIES as readonly string[]).includes(priority)) {
+    return { success: false, error: "Invalid priority value." };
+  }
+  const access = await loadActivityAccess(activityId);
+  if (!access) return { success: false, error: "Activity not found." };
+  if (!access.canManage) {
+    return {
+      success: false,
+      error: "Only the chair or officers can change project priority.",
+    };
+  }
+
+  const { error } = await createAdminClient()
+    .from("activities")
+    .update({
+      priority,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", activityId);
+
+  if (error && !error.message?.toLowerCase().includes("priority")) {
+    return { success: false, error: error.message };
+  }
+
+  await logActivity(activityId, access.user.id, "PRIORITY_CHANGED", {
+    priority,
+  });
+  revalidateActivity(activityId);
+  return { success: true, message: "Priority updated." };
 }
 
 export async function archiveActivityAction(
@@ -1643,6 +1718,117 @@ export async function addCommentAction(input: {
 
   revalidateActivity(parsed.data.activityId);
   return { success: true, commentId: data.id };
+}
+
+export async function postDiscussionSketchAction(
+  formData: FormData,
+): Promise<ActionResult<{ commentId: string }>> {
+  const activityId = String(formData.get("activityId") || "");
+  const title = String(formData.get("title") || "")
+    .trim()
+    .slice(0, 120);
+  const summary = String(formData.get("summary") || "")
+    .trim()
+    .slice(0, 4000);
+  const file = formData.get("file");
+
+  if (!uuidString.safeParse(activityId).success) {
+    return { success: false, error: "Invalid activity." };
+  }
+  if (title.length < 2) {
+    return {
+      success: false,
+      error: "Please give your drawing a short title (at least 2 characters).",
+    };
+  }
+  if (!(file instanceof File) || file.size <= 0) {
+    return { success: false, error: "Please draw on the canvas before posting." };
+  }
+  if (!(ALLOWED_MEDIA_TYPES as readonly string[]).includes(file.type)) {
+    return {
+      success: false,
+      error: "Only PNG, JPG, or WEBP sketch images are allowed.",
+    };
+  }
+  if (file.size > MAX_MEDIA_BYTES) {
+    return {
+      success: false,
+      error: "Sketch image exceeds the 3 MB limit.",
+    };
+  }
+
+  const access = await loadActivityAccess(activityId);
+  if (!access) return { success: false, error: "Activity not found." };
+  if (!access.isParticipant && !access.canManage) {
+    return {
+      success: false,
+      error: "Only club members can post discussion sketches.",
+    };
+  }
+
+  const admin = createAdminClient();
+  const ext = EXTENSION_BY_TYPE[file.type] || "png";
+  const storagePath = `${access.activity.club_id}/${activityId}/sketches/${randomUUID()}.${ext}`;
+  const buffer = Buffer.from(await file.arrayBuffer());
+
+  const { error: uploadError } = await admin.storage
+    .from(MEDIA_BUCKET)
+    .upload(storagePath, buffer, { contentType: file.type, upsert: false });
+
+  if (uploadError) {
+    return {
+      success: false,
+      error: `Could not upload sketch image: ${uploadError.message}`,
+    };
+  }
+
+  const encodedBody = encodeSketchCommentBody({
+    storagePath,
+    title,
+    summary,
+  });
+
+  const { data: inserted, error: insertError } = await admin
+    .from("activity_comments")
+    .insert({
+      activity_id: activityId,
+      author_id: access.user.id,
+      body: encodedBody,
+    })
+    .select("id")
+    .single();
+
+  if (insertError || !inserted) {
+    await admin.storage.from(MEDIA_BUCKET).remove([storagePath]);
+    return {
+      success: false,
+      error: "Sketch uploaded, but could not post to discussion thread.",
+    };
+  }
+
+  await admin.from("activity_followers").upsert({
+    activity_id: activityId,
+    profile_id: access.user.id,
+  });
+
+  const authorName = access.user.fullName || "A member";
+  notifyProjectAudience({
+    activityId,
+    clubId: access.activity.club_id,
+    title: `Visual sketch posted in ${access.activity.title}`,
+    message: `${authorName} shared "${title}" in Discussion.`,
+    type: "COMMENT",
+    excludeProfileIds: [access.user.id],
+    dedupePrefix: `sketch_${inserted.id}`,
+  }).catch((e) => console.warn("Failed sketch notification:", e));
+
+  await logActivity(activityId, access.user.id, "SKETCH_POSTED", { title });
+  revalidateActivity(activityId);
+  return {
+    success: true,
+    commentId: inserted.id,
+    message: "Visual summary sketch posted to Discussion.",
+  };
 }
 
 export async function deleteCommentAction(
