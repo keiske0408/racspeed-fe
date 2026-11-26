@@ -633,14 +633,16 @@ export async function updateActivityAction(
     parsed.data.ownerId !== access.activity.owner_id
   ) {
     updatePayload.owner_id = parsed.data.ownerId;
-    await admin.from("activity_team").upsert(
-      {
-        activity_id: activityId,
-        profile_id: parsed.data.ownerId,
-        team_role: "CHAIR",
-      },
-      { onConflict: "activity_id,profile_id" },
-    );
+    if (!Array.isArray(input.committeeMembers)) {
+      await admin.from("activity_team").upsert(
+        {
+          activity_id: activityId,
+          profile_id: parsed.data.ownerId,
+          team_role: "CHAIR",
+        },
+        { onConflict: "activity_id,profile_id" },
+      );
+    }
     await logActivity(activityId, access.user.id, "REASSIGNED_OWNER", {
       from: access.activity.owner_id,
       to: parsed.data.ownerId,
@@ -666,6 +668,115 @@ export async function updateActivityAction(
       success: false,
       error: `Failed to update activity: ${error.message}`,
     };
+
+  if (Array.isArray(input.committeeMembers)) {
+    const effectiveOwnerId =
+      parsed.data.ownerId && access.canReassignOwner
+        ? parsed.data.ownerId
+        : access.activity.owner_id;
+
+    const { data: existingTeam, error: teamFetchError } = await admin
+      .from("activity_team")
+      .select("profile_id, team_role")
+      .eq("activity_id", activityId);
+
+    if (teamFetchError) {
+      return {
+        success: false,
+        error: `Failed to load team roster: ${teamFetchError.message}`,
+      };
+    }
+
+    const existingMap = new Map<string, TeamRole>();
+    for (const row of existingTeam || []) {
+      existingMap.set(row.profile_id, row.team_role as TeamRole);
+    }
+
+    const desiredMap = new Map<string, TeamRole>();
+    if (effectiveOwnerId) {
+      desiredMap.set(effectiveOwnerId, "CHAIR");
+    }
+    for (const cm of parsed.data.committeeMembers) {
+      if (cm.profileId !== effectiveOwnerId) {
+        desiredMap.set(cm.profileId, cm.role as TeamRole);
+      }
+    }
+
+    const removedIds = Array.from(existingMap.keys()).filter(
+      (id) => !desiredMap.has(id),
+    );
+    const toUpsert = Array.from(desiredMap.entries())
+      .filter(([id, role]) => existingMap.get(id) !== role)
+      .map(([profile_id, team_role]) => ({
+        activity_id: activityId,
+        profile_id,
+        team_role,
+      }));
+    const newlyAdded = Array.from(desiredMap.entries()).filter(
+      ([id]) => !existingMap.has(id) && id !== effectiveOwnerId,
+    );
+
+    if (removedIds.length > 0) {
+      const { error: deleteTeamError } = await admin
+        .from("activity_team")
+        .delete()
+        .eq("activity_id", activityId)
+        .in("profile_id", removedIds);
+      if (deleteTeamError) {
+        return {
+          success: false,
+          error: `Failed to update committee roster: ${deleteTeamError.message}`,
+        };
+      }
+    }
+
+    if (toUpsert.length > 0) {
+      const { error: upsertTeamError } = await admin
+        .from("activity_team")
+        .upsert(toUpsert, { onConflict: "activity_id,profile_id" });
+      if (upsertTeamError) {
+        return {
+          success: false,
+          error: `Failed to save committee members: ${upsertTeamError.message}`,
+        };
+      }
+    }
+
+    if (newlyAdded.length > 0) {
+      await admin.from("activity_followers").upsert(
+        newlyAdded.map(([profile_id]) => ({
+          activity_id: activityId,
+          profile_id,
+        })),
+        { onConflict: "activity_id,profile_id", ignoreDuplicates: true },
+      );
+
+      const notifBatchStamp = Date.now();
+      for (const [profileId, role] of newlyAdded) {
+        if (profileId !== access.user.id) {
+          dispatchNotification({
+            profileId,
+            clubId: access.activity.club_id,
+            title: "Appointed to Project Committee",
+            message: `You were appointed to the committee for "${parsed.data.title}" as ${role.replaceAll("_", " ")}.`,
+            type: "GENERAL",
+            linkUrl: `/project-center/${activityId}`,
+            dedupeKey: `committee_add_${activityId}_${profileId}_${notifBatchStamp}`,
+            sendPush: true,
+            sendTelegram: true,
+          }).catch((e) => console.warn("Failed committee notif:", e));
+        }
+      }
+    }
+
+    if (removedIds.length > 0 || toUpsert.length > 0) {
+      await logActivity(activityId, access.user.id, "TEAM_UPDATED", {
+        addedCount: newlyAdded.length,
+        removedCount: removedIds.length,
+        totalCount: desiredMap.size,
+      });
+    }
+  }
 
   if (parsed.data.priority) {
     await logActivity(activityId, access.user.id, "PRIORITY_CHANGED", {

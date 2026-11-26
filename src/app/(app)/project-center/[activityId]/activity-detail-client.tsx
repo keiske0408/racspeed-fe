@@ -66,7 +66,7 @@ import {
   uploadActivityMediaAction,
 } from "@/features/activities/actions";
 import { updateTaskStatusAction } from "@/features/tasks/actions";
-import { archiveActivityAction, hardDeleteActivityAction, updateActivityAction } from "@/features/activities/actions";
+import { archiveActivityAction, hardDeleteActivityAction } from "@/features/activities/actions";
 import type { MemberDTO } from "@/features/members/queries";
 import {
   isProjectKind,
@@ -89,7 +89,8 @@ import {
   QR_EXPIRATION_OPTIONS,
   type QrSessionStatus,
 } from "@/features/activities/rules";
-import { formatManila, isoToManilaLocal } from "@/lib/utils/dates";
+import { formatManila } from "@/lib/utils/dates";
+import { EditActivityModal, type EditModalSection } from "./edit-activity-modal";
 import { notifyToast } from "@/components/shared/toast-viewport";
 import { uploadActivityPhotos } from "@/features/activities/media-upload";
 import {
@@ -166,8 +167,15 @@ export function ActivityDetailClient({
   );
   const [pending, startTransition] = useTransition();
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editModalSection, setEditModalSection] =
+    useState<EditModalSection>("BASICS");
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  function openEditModal(section: EditModalSection = "BASICS") {
+    setEditModalSection(section);
+    setIsEditOpen(true);
+  }
 
   async function handleHardDelete() {
     setIsDeleting(true);
@@ -438,8 +446,8 @@ export function ActivityDetailClient({
                 <>
                   <button
                     type="button"
-                    onClick={() => setIsEditOpen(true)}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow-2xs hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition"
+                    onClick={() => openEditModal("BASICS")}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow-2xs hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
                   >
                     <Pencil className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
                     Edit {isProject ? "Project" : "Activity"}
@@ -681,6 +689,8 @@ export function ActivityDetailClient({
           tasks={tasks}
           isProject={isProject}
           isUnlocked={isUnlocked}
+          canEdit={canEdit}
+          onManageCommittee={() => openEditModal("TEAM")}
           onUnlock={handleUnlockGoing}
           onNavigateTab={setTab}
           pending={pending}
@@ -790,6 +800,7 @@ export function ActivityDetailClient({
           partnerClubs={partnerClubs}
           canReassignOwner={canReassignOwner}
           isOpen={isEditOpen}
+          initialSection={editModalSection}
           onClose={() => setIsEditOpen(false)}
           onSaved={() => router.refresh()}
         />
@@ -896,6 +907,8 @@ function OverviewPanel({
   tasks = [],
   isProject,
   isUnlocked = true,
+  canEdit = false,
+  onManageCommittee,
   onUnlock,
   onNavigateTab,
   pending = false,
@@ -904,6 +917,8 @@ function OverviewPanel({
   tasks?: GroupTaskDTO[];
   isProject: boolean;
   isUnlocked?: boolean;
+  canEdit?: boolean;
+  onManageCommittee?: () => void;
   onUnlock?: () => void;
   onNavigateTab?: (tab: Tab) => void;
   pending?: boolean;
@@ -1047,34 +1062,52 @@ function OverviewPanel({
               "No detailed description or agenda has been added yet."}
           </p>
 
-          {activity.team && activity.team.length > 0 && (
+          {((activity.team && activity.team.length > 0) || canEdit) && (
             <div className="mt-6 border-t border-[#EDEDF2] pt-5 dark:border-slate-800">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-1.5">
-                <Users className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
-                Organizing Committee &amp; Leads ({activity.team.length})
-              </h3>
-              <div className="grid gap-2.5 sm:grid-cols-2">
-                {activity.team.map((member) => (
-                  <div
-                    key={member.profileId}
-                    className="flex items-center gap-2.5 rounded-lg border border-[#EDEDF2] bg-slate-50/60 p-2.5 dark:border-slate-800 dark:bg-slate-900/40"
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-500">
+                  <Users className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                  Organizing Committee &amp; Leads ({activity.team?.length || 0})
+                </h3>
+                {canEdit && onManageCommittee && (
+                  <button
+                    type="button"
+                    onClick={onManageCommittee}
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-[#DDE1EA] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#0D3594] transition hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-800 dark:text-blue-300 dark:hover:bg-slate-700"
                   >
-                    <Avatar
-                      name={member.fullName}
-                      url={member.avatarUrl}
-                      size={30}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-semibold text-[#111625] dark:text-white truncate">
-                        {member.fullName}
-                      </p>
-                      <span className="inline-block text-[10px] font-medium text-[#0D3594] dark:text-blue-300">
-                        {member.role.replace("_", " ")}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                    <Pencil className="h-3 w-3" />
+                    Manage Committee
+                  </button>
+                )}
               </div>
+              {activity.team && activity.team.length > 0 ? (
+                <div className="grid gap-2.5 sm:grid-cols-2">
+                  {activity.team.map((member) => (
+                    <div
+                      key={member.profileId}
+                      className="flex items-center gap-2.5 rounded-lg border border-[#EDEDF2] bg-slate-50/60 p-2.5 dark:border-slate-800 dark:bg-slate-900/40"
+                    >
+                      <Avatar
+                        name={member.fullName}
+                        url={member.avatarUrl}
+                        size={30}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-semibold text-[#111625] dark:text-white">
+                          {member.fullName}
+                        </p>
+                        <span className="inline-block text-[10px] font-medium text-[#0D3594] dark:text-blue-300">
+                          {member.role.replace("_", " ")}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="rounded-lg border border-dashed border-slate-200 px-3 py-3 text-xs text-slate-500 dark:border-slate-700">
+                  No organizing committee members appointed yet. Click Manage Committee to assign leads and collaborators.
+                </p>
+              )}
             </div>
           )}
 
@@ -4203,870 +4236,3 @@ function ShowcaseCopy({ activity }: { activity: ActivityDetailDTO }) {
 
 const fieldClass =
   "mt-1.5 block w-full rounded-lg border border-[#DDE1EA] bg-white px-3 py-2 text-sm font-normal text-[#111625] outline-none focus:border-[#0D3594] focus:ring-2 focus:ring-[#0D3594]/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white";
-
-
-interface EditActivityModalProps {
-  activity: ActivityDetailDTO;
-  members: MemberDTO[];
-  partnerClubs?: PartnerClubOption[];
-  canReassignOwner: boolean;
-  isOpen: boolean;
-  onClose: () => void;
-  onSaved: () => void;
-}
-
-function EditActivityModal({
-  activity,
-  members,
-  partnerClubs = [],
-  canReassignOwner,
-  isOpen,
-  onClose,
-  onSaved,
-}: EditActivityModalProps) {
-  const isProject = isProjectKind(activity.kind);
-  const [title, setTitle] = useState(activity.title);
-  const [ownerId, setOwnerId] = useState(activity.ownerId || "");
-  const [shortDescription, setShortDescription] = useState(activity.shortDescription || "");
-  const [description, setDescription] = useState(activity.description || "");
-  const [location, setLocation] = useState(activity.location || "");
-  const [startAt, setStartAt] = useState(() => isoToManilaLocal(activity.startAt));
-  const [endAt, setEndAt] = useState(() => isoToManilaLocal(activity.endAt));
-  const [allDay, setAllDay] = useState(Boolean(activity.allDay));
-  const [priority, setPriority] = useState<ActivityPriority>(
-    activity.priority ?? "MEDIUM",
-  );
-  const [committee, setCommittee] = useState<string>(activity.committee || "");
-  const [capacity, setCapacity] = useState(activity.capacity ? String(activity.capacity) : "");
-  const [minMembersEnabled, setMinMembersEnabled] = useState(Boolean(activity.minMembersRequired));
-  const [minMembersRequired, setMinMembersRequired] = useState(
-    activity.minMembersRequired ? String(activity.minMembersRequired) : ""
-  );
-  const [rsvpEnabled, setRsvpEnabled] = useState(Boolean(activity.rsvpEnabled));
-  const [rsvpDeadline, setRsvpDeadline] = useState(() =>
-    activity.rsvpDeadline ? isoToManilaLocal(activity.rsvpDeadline) : ""
-  );
-  const [volunteerHoursDefault, setVolunteerHoursDefault] = useState(
-    String(activity.volunteerHoursDefault ?? 0)
-  );
-  const [qrCheckInEnabled, setQrCheckInEnabled] = useState(activity.qrCheckInEnabled ?? true);
-  const [selfCheckInEnabled, setSelfCheckInEnabled] = useState(Boolean(activity.selfCheckInEnabled));
-
-  // Project details
-  const [objective, setObjective] = useState(activity.projectDetails?.objective || "");
-  const [beneficiaryType, setBeneficiaryType] = useState(activity.projectDetails?.beneficiaryType || "");
-  const [beneficiaryTarget, setBeneficiaryTarget] = useState(
-    String(activity.projectDetails?.beneficiaryCount ?? 0)
-  );
-  const [fundingTarget, setFundingTarget] = useState(
-    String(activity.projectDetails?.fundingTotal ?? 0)
-  );
-  const [fundingSource, setFundingSource] = useState(activity.projectDetails?.fundingSource || "");
-
-  // Joint / Partner Clubs & External Partner Organizations
-  const [selectedPartnerIds, setSelectedPartnerIds] = useState<string[]>(() => {
-    const existingPartners = activity.projectDetails?.partners || [];
-    const matchedIds: string[] = [];
-    for (const p of existingPartners) {
-      const match =
-        (p.sisterClubId &&
-          partnerClubs.find((club) => club.id === p.sisterClubId)) ||
-        partnerClubs.find(
-          (club) =>
-            club.name.trim().toLowerCase() === p.name.trim().toLowerCase(),
-        );
-      if (match && !matchedIds.includes(match.id)) {
-        matchedIds.push(match.id);
-      }
-    }
-    return matchedIds;
-  });
-  const [selectedPartnerDropdown, setSelectedPartnerDropdown] = useState("");
-  const [customPartners, setCustomPartners] = useState<string[]>(() => {
-    const existingPartners = activity.projectDetails?.partners || [];
-    return existingPartners
-      .filter((p) => {
-        const matchedClub =
-          (p.sisterClubId &&
-            partnerClubs.some((club) => club.id === p.sisterClubId)) ||
-          partnerClubs.some(
-            (club) =>
-              club.name.trim().toLowerCase() === p.name.trim().toLowerCase(),
-          );
-        return !matchedClub && p.name.trim().length > 0;
-      })
-      .map((p) => p.name.trim());
-  });
-  const [customPartnerInput, setCustomPartnerInput] = useState("");
-
-  const selectedPartnerClubs = selectedPartnerIds.flatMap((id) => {
-    const club = partnerClubs.find((c) => c.id === id);
-    return club ? [club] : [];
-  });
-
-  function handleAddCustomPartner() {
-    const trimmed = customPartnerInput.trim();
-    if (!trimmed) return;
-    if (
-      !customPartners.some(
-        (existing) => existing.toLowerCase() === trimmed.toLowerCase(),
-      )
-    ) {
-      setCustomPartners((prev) => [...prev, trimmed]);
-    }
-    setCustomPartnerInput("");
-  }
-
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  if (!isOpen) return null;
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    if (!title.trim() || title.trim().length < 3) {
-      setError("Title must be at least 3 characters.");
-      return;
-    }
-    if (!startAt || !endAt) {
-      setError("Please specify valid start and end dates.");
-      return;
-    }
-    if (endAt < startAt) {
-      setError("End date and time must be after the start date and time.");
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const basePayload = {
-        clubId: activity.clubId,
-        ownerId: ownerId || undefined,
-        title: title.trim(),
-        shortDescription: shortDescription.trim(),
-        description: description.trim(),
-        location: location.trim(),
-        startAt,
-        endAt,
-        allDay,
-        priority,
-        committee: committee ? (committee as any) : undefined,
-        status: activity.status,
-        minMembersEnabled,
-        minMembersRequired: minMembersEnabled && minMembersRequired ? Number(minMembersRequired) : undefined,
-        capacity: capacity ? Number(capacity) : undefined,
-        rsvpEnabled,
-        rsvpDeadline: rsvpEnabled && rsvpDeadline ? rsvpDeadline : undefined,
-        selfCheckInEnabled,
-        qrCheckInEnabled,
-        checkInWindowMinutes: activity.checkInWindowMinutes || 180,
-        volunteerHoursDefault: Number(volunteerHoursDefault) || 0,
-      };
-
-      let inputPayload: any;
-      if (activity.kind === "MEETING") {
-        inputPayload = {
-          ...basePayload,
-          kind: "MEETING",
-          meetingType: activity.meetingType || "GENERAL_ASSEMBLY",
-        };
-      } else if (isProject) {
-        const finalCustomNames = [
-          ...customPartners,
-          ...(customPartnerInput.trim() ? [customPartnerInput.trim()] : []),
-        ];
-        const combinedPartners = [
-          ...selectedPartnerClubs.map((club) => ({
-            name: club.name,
-            role: "SISTER_CLUB" as const,
-            sisterClubId: club.id,
-          })),
-          ...finalCustomNames.map((name) => ({
-            name,
-            role: "IMPLEMENTING_PARTNER" as const,
-          })),
-        ];
-
-        if (
-          activity.kind === "JOINT_PROJECT" &&
-          combinedPartners.length === 0
-        ) {
-          setError(
-            "Joint Projects require at least one Twin/Friendship/Partner club or external partner organization.",
-          );
-          setSaving(false);
-          return;
-        }
-
-        const primarySisterClub = selectedPartnerClubs[0];
-        inputPayload = {
-          ...basePayload,
-          kind: activity.kind,
-          objective: objective.trim(),
-          beneficiaryType: beneficiaryType.trim(),
-          beneficiaryTarget: Number(beneficiaryTarget) || 0,
-          fundingTarget: Number(fundingTarget) || 0,
-          fundingSource: fundingSource.trim(),
-          areasOfFocus: activity.projectDetails?.areasOfFocus || [],
-          sdgs: activity.projectDetails?.sdgs || [],
-          sisterClubId: primarySisterClub?.id,
-          sisterClubName: primarySisterClub?.name,
-          partners: combinedPartners,
-        };
-      } else {
-        inputPayload = {
-          ...basePayload,
-          kind: activity.kind,
-        };
-      }
-
-      const res = await updateActivityAction(activity.id, inputPayload);
-      if (!res.success) {
-        setError(res.error || "Failed to update activity.");
-        setSaving(false);
-        return;
-      }
-      notifyToast({
-        message: isProject ? "Project updated successfully." : "Activity updated successfully.",
-        kind: "success",
-      });
-      onSaved();
-      onClose();
-    } catch (err: any) {
-      setError(err?.message || "An unexpected error occurred.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/60 backdrop-blur-xs">
-      <div className="w-full max-w-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-6 py-4">
-          <div>
-            <h2 className="text-base font-bold text-slate-900 dark:text-white">
-              Edit {isProject ? "Project" : "Activity"}
-            </h2>
-            <p className="text-xs text-slate-500">
-              Update project details, assign project owner leadership, and configure attendance rules.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:text-slate-200 dark:hover:bg-slate-800 transition"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
-          <div className="overflow-y-auto p-6 space-y-6 flex-1">
-            {error && (
-              <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">
-                {error}
-              </div>
-            )}
-
-            {/* Section 1: Leadership & Basic Info */}
-            <div className="space-y-4">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                <UserCheck className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                Project Leadership & Ownership
-              </h3>
-
-              {canReassignOwner ? (
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
-                    Bond Project Owner
-                  </label>
-                  <select
-                    value={ownerId}
-                    onChange={(e) => setOwnerId(e.target.value)}
-                    className={fieldClass}
-                  >
-                    <option value="">Select Project Owner...</option>
-                    {members.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name} {m.role ? `(${m.role})` : ""} - {m.email}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="mt-1 text-[11px] text-slate-500">
-                    As an administrator, you can bond this project to a member. The project owner will gain full management and editing permissions over this project.
-                  </p>
-                </div>
-              ) : (
-                <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 dark:border-slate-800 dark:bg-slate-900/40">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-500">Assigned Project Owner:</span>
-                    <span className="font-semibold text-slate-800 dark:text-white">
-                      {activity.ownerName || "Current Lead"}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-[11px] text-slate-400">
-                    Only club administrators have permission to reassign project ownership to another member.
-                  </p>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
-                  Title <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Literacy Drive or Coastal Clean-Up"
-                  className={fieldClass}
-                />
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
-                    Priority
-                  </label>
-                  <select
-                    value={priority}
-                    onChange={(e) =>
-                      setPriority(e.target.value as ActivityPriority)
-                    }
-                    className={fieldClass}
-                  >
-                    {ACTIVITY_PRIORITIES.map((p) => (
-                      <option key={p} value={p}>
-                        {ACTIVITY_PRIORITY_META[p].label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
-                    Committee
-                  </label>
-                  <select
-                    value={committee}
-                    onChange={(e) => setCommittee(e.target.value)}
-                    className={fieldClass}
-                  >
-                    <option value="">None / Unassigned</option>
-                    {COMMITTEES.map((c) => (
-                      <option key={c} value={c}>
-                        {c.replace(/_/g, " ")}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
-                    Location / Venue
-                  </label>
-                  <input
-                    type="text"
-                    value={location}
-                    onChange={(e) => setLocation(e.target.value)}
-                    placeholder="e.g. San Pedro City Hall or Google Meet"
-                    className={fieldClass}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
-                  Short Description
-                </label>
-                <input
-                  type="text"
-                  maxLength={280}
-                  value={shortDescription}
-                  onChange={(e) => setShortDescription(e.target.value)}
-                  placeholder="Brief one-line summary (max 280 characters)"
-                  className={fieldClass}
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
-                  Full Description
-                </label>
-                <textarea
-                  rows={4}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Comprehensive activity overview, agenda, reminders, and directions..."
-                  className={fieldClass}
-                />
-              </div>
-            </div>
-
-            {/* Section 2: Dates & Schedule */}
-            <div className="space-y-4 border-t border-slate-100 dark:border-slate-800 pt-5">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                <Clock className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                Schedule & Timeframe
-              </h3>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
-                    Start Date & Time (Asia/Manila) <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="datetime-local"
-                    required
-                    value={startAt}
-                    onChange={(e) => setStartAt(e.target.value)}
-                    className={fieldClass}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
-                    End Date & Time (Asia/Manila) <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="datetime-local"
-                    required
-                    value={endAt}
-                    onChange={(e) => setEndAt(e.target.value)}
-                    className={fieldClass}
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <input
-                  id="edit-allday"
-                  type="checkbox"
-                  checked={allDay}
-                  onChange={(e) => setAllDay(e.target.checked)}
-                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                />
-                <label htmlFor="edit-allday" className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                  All-day event
-                </label>
-              </div>
-            </div>
-
-            {/* Section 3: Project Goals & Budget (if project) */}
-            {isProject && (
-              <div className="space-y-4 border-t border-slate-100 dark:border-slate-800 pt-5">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                  <ShieldCheck className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                  Project Goals & Impact Details
-                </h3>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
-                    Objective
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={objective}
-                    onChange={(e) => setObjective(e.target.value)}
-                    placeholder="What does this project aim to achieve in the community?"
-                    className={fieldClass}
-                  />
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
-                      Beneficiary Type
-                    </label>
-                    <input
-                      type="text"
-                      value={beneficiaryType}
-                      onChange={(e) => setBeneficiaryType(e.target.value)}
-                      placeholder="e.g. Out of school youth, Barangay 3 residents"
-                      className={fieldClass}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
-                      Beneficiary Target Count
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={beneficiaryTarget}
-                      onChange={(e) => setBeneficiaryTarget(e.target.value)}
-                      className={fieldClass}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
-                      Funding Target (PHP)
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={fundingTarget}
-                      onChange={(e) => setFundingTarget(e.target.value)}
-                      className={fieldClass}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
-                      Funding Source
-                    </label>
-                    <input
-                      type="text"
-                      value={fundingSource}
-                      onChange={(e) => setFundingSource(e.target.value)}
-                      placeholder="e.g. Club Treasury, Corporate Sponsor, District Grant"
-                      className={fieldClass}
-                    />
-                  </div>
-                </div>
-
-                {/* Joint Partners / Twin & Sister Club Selection */}
-                <div className="pt-2 space-y-3 border-t border-slate-100 dark:border-slate-800">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
-                      <HeartHandshake className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                      Partnerships (Twin / Friendship / Partner Clubs)
-                      {activity.kind === "JOINT_PROJECT" && (
-                        <span className="text-rose-500">*</span>
-                      )}
-                    </label>
-                    <p className="mt-0.5 text-[11px] text-slate-500">
-                      {activity.kind === "JOINT_PROJECT"
-                        ? "Select one or more registered Twin, Friendship, or Partner clubs co-implementing this joint project."
-                        : "Optionally link any Twin, Friendship, or Partner clubs collaborating on this project."}
-                    </p>
-
-                    {selectedPartnerClubs.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {selectedPartnerClubs.map((partner) => (
-                          <div
-                            key={partner.id}
-                            className="inline-flex max-w-full items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100"
-                          >
-                            <span className="min-w-0 break-words font-medium">
-                              {partner.name}
-                            </span>
-                            <span className="text-[10px] text-emerald-700 dark:text-emerald-300">
-                              (D{partner.district})
-                            </span>
-                            <button
-                              type="button"
-                              aria-label={`Remove partner ${partner.name}`}
-                              onClick={() =>
-                                setSelectedPartnerIds((prev) =>
-                                  prev.filter((id) => id !== partner.id),
-                                )
-                              }
-                              className="shrink-0 rounded p-0.5 hover:bg-emerald-100 dark:hover:bg-emerald-900 cursor-pointer text-emerald-800 dark:text-emerald-200"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    <select
-                      aria-label="Add partnership club"
-                      value={selectedPartnerDropdown}
-                      disabled={
-                        partnerClubs.filter(
-                          (c) => !selectedPartnerIds.includes(c.id),
-                        ).length === 0
-                      }
-                      onChange={(e) => {
-                        const partnerId = e.target.value;
-                        if (partnerId) {
-                          setSelectedPartnerIds((prev) =>
-                            prev.includes(partnerId)
-                              ? prev
-                              : [...prev, partnerId],
-                          );
-                          setSelectedPartnerDropdown("");
-                        }
-                      }}
-                      className={fieldClass}
-                    >
-                      <option value="">
-                        {partnerClubs.filter(
-                          (c) => !selectedPartnerIds.includes(c.id),
-                        ).length === 0
-                          ? partnerClubs.length === 0
-                            ? "No partner clubs registered yet"
-                            : "All available partner clubs added"
-                          : selectedPartnerIds.length === 0
-                            ? "+ Select a Twin / Friendship / Partner club..."
-                            : `+ Add another partner club (${
-                                partnerClubs.filter(
-                                  (c) => !selectedPartnerIds.includes(c.id),
-                                ).length
-                              } remaining)...`}
-                      </option>
-                      {partnerClubs
-                        .filter((club) => !selectedPartnerIds.includes(club.id))
-                        .map((club) => (
-                          <option key={club.id} value={club.id}>
-                            {club.name} · District {club.district},{" "}
-                            {club.country}
-                          </option>
-                        ))}
-                    </select>
-
-                    {partnerClubs.length === 0 && (
-                      <Link
-                        href="/partnerships"
-                        className="mt-1.5 inline-flex text-xs font-semibold text-[#0D3594] dark:text-blue-300 hover:underline"
-                      >
-                        Register a Twin or Partner club in Partnerships &rarr;
-                      </Link>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
-                      Additional Partner Organizations
-                    </label>
-                    <p className="mt-0.5 text-[11px] text-slate-500">
-                      External non-Rotary partners, NGOs, LGUs, schools, or corporate co-organizers.
-                    </p>
-
-                    {customPartners.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {customPartners.map((partnerName) => (
-                          <span
-                            key={partnerName}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                          >
-                            {partnerName}
-                            <button
-                              type="button"
-                              aria-label={`Remove ${partnerName}`}
-                              onClick={() =>
-                                setCustomPartners((prev) =>
-                                  prev.filter((name) => name !== partnerName),
-                                )
-                              }
-                              className="rounded p-0.5 text-slate-400 hover:text-rose-600 cursor-pointer"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-
-                    <div className="mt-1.5 flex gap-2">
-                      <input
-                        type="text"
-                        maxLength={200}
-                        value={customPartnerInput}
-                        onChange={(e) => setCustomPartnerInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            handleAddCustomPartner();
-                          }
-                        }}
-                        placeholder="e.g. Barangay San Antonio LGU or Red Cross"
-                        className={`${fieldClass} mt-0 flex-1`}
-                      />
-                      <button
-                        type="button"
-                        onClick={handleAddCustomPartner}
-                        disabled={!customPartnerInput.trim()}
-                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer shrink-0"
-                      >
-                        <Plus className="h-3.5 w-3.5" /> Add Partner
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Section 4: Attendance & Check-In Configuration */}
-            <div className="space-y-4 border-t border-slate-100 dark:border-slate-800 pt-5">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                <QrCode className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                Attendance & QR Verification Settings
-              </h3>
-
-              {/* QR Check-In Toggle */}
-              <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-900/40 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <label htmlFor="edit-qr-check-in" className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                      <QrCode className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
-                      Enable QR Attendance Check-In
-                    </label>
-                    <p className="text-[11px] text-slate-500">
-                      Generate rolling time-limited QR codes for members to scan on-site.
-                    </p>
-                  </div>
-                  <input
-                    id="edit-qr-check-in"
-                    type="checkbox"
-                    checked={qrCheckInEnabled}
-                    onChange={(e) => setQrCheckInEnabled(e.target.checked)}
-                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                  />
-                </div>
-                {!qrCheckInEnabled ? (
-                  <p className="text-[11px] font-medium text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 rounded-md p-2">
-                    QR check-in is disabled. Perfect for promotional campaigns, recruitments, or digital initiatives that do not require physical attendance check-in.
-                  </p>
-                ) : (
-                  <p className="text-[11px] text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 rounded-md p-2">
-                    QR check-in is enabled. Dynamic rolling-code sessions will be available on the Events & Attendance dashboard.
-                  </p>
-                )}
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
-                    Default Volunteer Hours
-                  </label>
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="0"
-                    max="24"
-                    value={volunteerHoursDefault}
-                    onChange={(e) => setVolunteerHoursDefault(e.target.value)}
-                    className={fieldClass}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
-                    Capacity (Optional)
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={capacity}
-                    onChange={(e) => setCapacity(e.target.value)}
-                    placeholder="No limit"
-                    className={fieldClass}
-                  />
-                </div>
-              </div>
-
-              {/* RSVP Setting */}
-              <div className="space-y-2 rounded-xl border border-slate-200 p-3.5 dark:border-slate-800">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <label htmlFor="edit-rsvp-toggle" className="text-xs font-semibold text-slate-800 dark:text-slate-200">
-                      Enable Member RSVPs
-                    </label>
-                    <p className="text-[11px] text-slate-500">Allow members to indicate Going, Maybe, or Can&apos;t Go.</p>
-                  </div>
-                  <input
-                    id="edit-rsvp-toggle"
-                    type="checkbox"
-                    checked={rsvpEnabled}
-                    onChange={(e) => setRsvpEnabled(e.target.checked)}
-                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                  />
-                </div>
-                {rsvpEnabled && (
-                  <div className="pt-2">
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
-                      RSVP Deadline (Optional)
-                    </label>
-                    <input
-                      type="datetime-local"
-                      value={rsvpDeadline}
-                      onChange={(e) => setRsvpDeadline(e.target.value)}
-                      className={fieldClass}
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* Self Check-in Setting */}
-              <div className="flex items-center justify-between rounded-xl border border-slate-200 p-3.5 dark:border-slate-800">
-                <div>
-                  <label htmlFor="edit-self-check-in" className="text-xs font-semibold text-slate-800 dark:text-slate-200">
-                    Allow Self Check-In
-                  </label>
-                  <p className="text-[11px] text-slate-500">Allow members to check in themselves from the web interface.</p>
-                </div>
-                <input
-                  id="edit-self-check-in"
-                  type="checkbox"
-                  checked={selfCheckInEnabled}
-                  onChange={(e) => setSelfCheckInEnabled(e.target.checked)}
-                  className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                />
-              </div>
-
-              {/* Min Members Setting */}
-              <div className="space-y-2 rounded-xl border border-slate-200 p-3.5 dark:border-slate-800">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <label htmlFor="edit-min-members-toggle" className="text-xs font-semibold text-slate-800 dark:text-slate-200">
-                      Minimum Members Required
-                    </label>
-                    <p className="text-[11px] text-slate-500">Set quorum or volunteer commitment target.</p>
-                  </div>
-                  <input
-                    id="edit-min-members-toggle"
-                    type="checkbox"
-                    checked={minMembersEnabled}
-                    onChange={(e) => setMinMembersEnabled(e.target.checked)}
-                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                  />
-                </div>
-                {minMembersEnabled && (
-                  <div className="pt-2">
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
-                      Required Count
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={minMembersRequired}
-                      onChange={(e) => setMinMembersRequired(e.target.value)}
-                      placeholder="e.g. 10"
-                      className={fieldClass}
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800 px-6 py-4 bg-slate-50/50 dark:bg-slate-900/50">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={saving}
-              className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 transition"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-[#0D3594] px-5 py-2 text-xs font-semibold text-white shadow-2xs hover:bg-[#0b2c7a] disabled:opacity-60 transition"
-            >
-              {saving ? "Saving..." : "Save Changes"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
