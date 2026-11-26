@@ -1,5 +1,6 @@
 import { assertPageAccess } from "@/lib/auth/session";
 import { listActivities } from "@/features/activities/queries";
+import { getClubSettings } from "@/features/settings/queries";
 import { getGroupTasksList } from "@/features/tasks/queries";
 import { rotaryYearFor } from "@/lib/utils/rotary-year";
 import { ProjectCenterClient } from "./project-center-client";
@@ -21,9 +22,10 @@ export default async function ProjectCenterPage() {
     context.isPlatformAdmin ||
     context.permissions.has("EVENT_UPDATE") ||
     context.permissions.has("PROJECT_UPDATE");
-  const [activities, tasks] = await Promise.all([
+  const [activities, tasks, clubSettings] = await Promise.all([
     listActivities(clubId, context.user.id, { includeDrafts: canManageClub }),
     getGroupTasksList(clubId),
+    getClubSettings(clubId),
   ]);
   const canCreate =
     context.isPlatformAdmin ||
@@ -39,6 +41,7 @@ export default async function ProjectCenterPage() {
       currentUserId={context.user.id}
       currentUserName={context.user.fullName}
       defaultRotaryYear={rotaryYearFor()}
+      draftReadinessDays={clubSettings.notificationSla.draftReadinessDays}
     />
   );
 }

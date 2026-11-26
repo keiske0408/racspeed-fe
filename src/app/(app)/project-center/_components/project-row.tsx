@@ -154,6 +154,7 @@ export function ProjectRow({
           activityTitle={activity.title}
           isArchived={Boolean(activity.isArchived)}
           canManage={canManage}
+          showOpenItem={action.label !== "Open"}
           pending={pending}
           onRequestArchive={() => onRequestArchive(activity)}
           onRestore={() => onRestore(activity)}

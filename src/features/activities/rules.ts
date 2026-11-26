@@ -534,6 +534,53 @@ export function formatActivityLogEntry(
         isMilestone: false,
       };
     }
+    case "TASK_STATUS_UPDATED": {
+      const taskTitle =
+        typeof details.title === "string" && details.title.trim()
+          ? `"${details.title.trim()}"`
+          : "a task";
+      const taskStatus =
+        typeof details.status === "string"
+          ? details.status.trim().toUpperCase()
+          : "";
+      if (taskStatus === "COMPLETED") {
+        return {
+          title: `Completed task ${taskTitle}`,
+          tone: "emerald",
+          isMilestone: false,
+        };
+      }
+      if (taskStatus === "IN_REVIEW") {
+        return {
+          title: `Moved ${taskTitle} to Needs Review`,
+          tone: "amber",
+          isMilestone: false,
+        };
+      }
+      if (taskStatus === "IN_PROGRESS") {
+        return {
+          title: `Started work on ${taskTitle}`,
+          tone: "blue",
+          isMilestone: false,
+        };
+      }
+      return {
+        title: `Moved ${taskTitle} back to Task Ready`,
+        tone: "slate",
+        isMilestone: false,
+      };
+    }
+    case "TASK_UPDATED": {
+      const taskTitle =
+        typeof details.title === "string" && details.title.trim()
+          ? `"${details.title.trim()}"`
+          : "a task";
+      return {
+        title: `Updated task ${taskTitle}`,
+        tone: "blue",
+        isMilestone: false,
+      };
+    }
     case "TEAM_UPDATED": {
       const role =
         typeof details.role === "string"

@@ -3,6 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import {
+  DRAFT_STARTING_SOON_DAYS,
   needsAttention,
   type ProjectStageTab,
 } from "@/features/activities/project-center-rules";
@@ -22,6 +23,7 @@ export function ProjectList({
   canManageActivity,
   pending = false,
   now,
+  draftReadinessDays = DRAFT_STARTING_SOON_DAYS,
   onClearFilters,
   onSwitchTab,
   onOpenGuide,
@@ -39,6 +41,7 @@ export function ProjectList({
   canManageActivity: (activity: ActivitySummaryDTO) => boolean;
   pending?: boolean;
   now?: Date;
+  draftReadinessDays?: number;
   onClearFilters: () => void;
   onSwitchTab: (tab: ProjectStageTab) => void;
   onOpenGuide: () => void;
@@ -68,6 +71,46 @@ export function ProjectList({
           </div>
         );
       }
+    }
+
+    if (activeTab === "MISSED") {
+      return (
+        <div className="rounded-xl border border-[#EDEDF2] bg-white px-6 py-12 text-center dark:border-slate-800 dark:bg-[#161B26]">
+          <p className="text-sm font-semibold text-[#111625] dark:text-white">
+            No missed or overdue activities.
+          </p>
+          <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
+            Every draft and planned schedule is currently up to date.
+          </p>
+          <button
+            type="button"
+            onClick={() => onSwitchTab("UPCOMING")}
+            className="mt-4 inline-flex min-h-[44px] cursor-pointer items-center rounded-xl border border-[#DDE1EA] bg-white px-4 py-2 text-xs font-semibold text-[#111625] transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:hover:bg-slate-700"
+          >
+            View upcoming
+          </button>
+        </div>
+      );
+    }
+
+    if (activeTab === "ARCHIVED") {
+      return (
+        <div className="rounded-xl border border-[#EDEDF2] bg-white px-6 py-12 text-center dark:border-slate-800 dark:bg-[#161B26]">
+          <p className="text-sm font-semibold text-[#111625] dark:text-white">
+            No archived activities yet.
+          </p>
+          <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
+            Archived projects and activities are preserved read-only for District reporting and audit trails.
+          </p>
+          <button
+            type="button"
+            onClick={() => onSwitchTab("UPCOMING")}
+            className="mt-4 inline-flex min-h-[44px] cursor-pointer items-center rounded-xl border border-[#DDE1EA] bg-white px-4 py-2 text-xs font-semibold text-[#111625] transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:hover:bg-slate-700"
+          >
+            View upcoming
+          </button>
+        </div>
+      );
     }
 
     if (activeTab === "ONGOING") {
@@ -152,23 +195,21 @@ export function ProjectList({
 
   if (activeTab === "UPCOMING") {
     const attentionItems = items.filter((item) =>
-      needsAttention(item, referenceNow),
+      needsAttention(item, referenceNow, draftReadinessDays),
     );
     const comingUpItems = items
-      .filter((item) => !needsAttention(item, referenceNow))
+      .filter((item) => !needsAttention(item, referenceNow, draftReadinessDays))
       .sort((a, b) =>
-        sortBy === "SCHEDULE"
-          ? a.startAt.localeCompare(b.startAt)
-          : 0,
+        sortBy === "PRIORITY" ? 0 : a.startAt.localeCompare(b.startAt),
       );
 
     return (
-      <div className="overflow-hidden rounded-xl border border-[#EDEDF2] bg-white dark:border-slate-800 dark:bg-[#161B26]">
+      <div className="space-y-4">
         {attentionItems.length > 0 && (
           <ProjectGroup
             title="Needs attention"
             count={attentionItems.length}
-            subtitle="Dates have passed, or a draft starts soon"
+            subtitle={`Drafts starting within ${draftReadinessDays} ${draftReadinessDays === 1 ? "day" : "days"}`}
             tone="attention"
           >
             {attentionItems.map((activity) => (
@@ -192,7 +233,9 @@ export function ProjectList({
             title="Coming up"
             count={comingUpItems.length}
             subtitle={
-              sortBy === "PRIORITY" ? "In priority order" : "In date order"
+              sortBy === "PRIORITY"
+                ? "Sorted by priority"
+                : "Sorted by start date"
             }
           >
             {comingUpItems.map((activity) => (
@@ -211,6 +254,36 @@ export function ProjectList({
           </ProjectGroup>
         )}
       </div>
+    );
+  }
+
+  if (activeTab === "MISSED") {
+    const missedSorted =
+      sortBy === "PRIORITY"
+        ? items
+        : [...items].sort((a, b) => b.endAt.localeCompare(a.endAt));
+
+    return (
+      <ProjectGroup
+        title="Missed"
+        count={missedSorted.length}
+        subtitle="Scheduled end date has passed — update status or reschedule"
+        tone="attention"
+      >
+        {missedSorted.map((activity) => (
+          <ProjectRow
+            key={activity.id}
+            activity={activity}
+            currentUserId={currentUserId}
+            assignedTaskProjectIds={assignedTaskProjectIds}
+            canManage={canManageActivity(activity)}
+            pending={pending}
+            now={referenceNow}
+            onRequestArchive={onRequestArchive}
+            onRestore={onRestore}
+          />
+        ))}
+      </ProjectGroup>
     );
   }
 

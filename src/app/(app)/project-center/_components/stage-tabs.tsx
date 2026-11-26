@@ -30,9 +30,11 @@ export function StageTabs({
 
   const tabs: { id: ProjectStageTab; label: string; count: number }[] = [
     { id: "UPCOMING", label: "Upcoming", count: counts.UPCOMING },
+    { id: "MISSED", label: "Missed", count: counts.MISSED },
     { id: "ONGOING", label: "Ongoing", count: counts.ONGOING },
     { id: "REPORT_DUE", label: "Report due", count: counts.REPORT_DUE },
     { id: "ACCOMPLISHED", label: "Accomplished", count: counts.ACCOMPLISHED },
+    { id: "ARCHIVED", label: "Archived", count: counts.ARCHIVED },
   ];
 
   return (
@@ -61,9 +63,11 @@ export function StageTabs({
                 <span>{tab.label}</span>
                 <span
                   className={`rounded-full px-1.5 py-0.2 text-[11px] font-bold ${
-                    selected
-                      ? "bg-slate-200 text-[#111625] dark:bg-slate-700 dark:text-white"
-                      : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+                    tab.id === "MISSED" && tab.count > 0 && !selected
+                      ? "bg-amber-100 text-amber-900 dark:bg-amber-950/70 dark:text-amber-200"
+                      : selected
+                        ? "bg-slate-200 text-[#111625] dark:bg-slate-700 dark:text-white"
+                        : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
                   }`}
                 >
                   {tab.count}

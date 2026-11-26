@@ -14,9 +14,11 @@ export const LAST_VIEW_STORAGE_KEY_PREFIX = "racspeed:project-center:view:";
 
 export type ProjectStageTab =
   | "UPCOMING"
+  | "MISSED"
   | "ONGOING"
   | "REPORT_DUE"
-  | "ACCOMPLISHED";
+  | "ACCOMPLISHED"
+  | "ARCHIVED";
 
 export type ProjectCenterView = "LIST" | "BOARD" | "CALENDAR";
 
@@ -91,13 +93,14 @@ export function isPastDue(
 export function isDraftStartingSoon(
   activity: Pick<ActivitySummaryDTO, "status" | "startAt" | "endAt">,
   now: Date = new Date(),
+  draftStartingSoonDays: number = DRAFT_STARTING_SOON_DAYS,
 ): boolean {
   if (activity.status !== "DRAFT") return false;
   if (isPastDue(activity, now)) return false;
   const startDate = new Date(activity.startAt);
   if (Number.isNaN(startDate.getTime())) return false;
   const diffDays = manilaDayIndex(startDate) - manilaDayIndex(now);
-  return diffDays >= 0 && diffDays <= DRAFT_STARTING_SOON_DAYS;
+  return diffDays >= 0 && diffDays <= draftStartingSoonDays;
 }
 
 /**
@@ -106,14 +109,21 @@ export function isDraftStartingSoon(
 export function needsAttention(
   activity: Pick<ActivitySummaryDTO, "status" | "startAt" | "endAt">,
   now: Date = new Date(),
+  draftStartingSoonDays: number = DRAFT_STARTING_SOON_DAYS,
 ): boolean {
-  return isPastDue(activity, now) || isDraftStartingSoon(activity, now);
+  return (
+    isPastDue(activity, now) ||
+    isDraftStartingSoon(activity, now, draftStartingSoonDays)
+  );
 }
 
 export function getProjectStageTab(
-  status: ActivityStatus,
+  activity: Pick<ActivitySummaryDTO, "status" | "endAt" | "isArchived">,
+  now: Date = new Date(),
 ): ProjectStageTab | null {
-  switch (status) {
+  if (activity.isArchived) return "ARCHIVED";
+  if (isPastDue(activity, now)) return "MISSED";
+  switch (activity.status) {
     case "DRAFT":
     case "PLANNED":
       return "UPCOMING";
@@ -239,6 +249,7 @@ export function formatCompactWhenManila(
 export function formatRelativeWhenManila(
   activity: Pick<ActivitySummaryDTO, "status" | "startAt" | "endAt">,
   now: Date = new Date(),
+  draftStartingSoonDays: number = DRAFT_STARTING_SOON_DAYS,
 ): string {
   const nowDay = manilaDayIndex(now);
   const start = new Date(activity.startAt);
@@ -253,7 +264,7 @@ export function formatRelativeWhenManila(
 
   if (Number.isNaN(start.getTime())) return "Date TBD";
   const diffDays = manilaDayIndex(start) - nowDay;
-  const draftSoon = isDraftStartingSoon(activity, now);
+  const draftSoon = isDraftStartingSoon(activity, now, draftStartingSoonDays);
 
   if (diffDays < 0) {
     if (!Number.isNaN(end.getTime())) {

@@ -214,15 +214,16 @@ describe("ProjectCenterClient redesign", () => {
     expect(screen.getByRole("heading", { name: "Project Center" })).toBeDefined();
     expect(screen.getByLabelText("Rotary Year")).toHaveValue("2026-27");
 
-    // Stage tabs show accurate counts
-    expect(screen.getByRole("tab", { name: /Upcoming.*3/i })).toBeDefined();
+    // Stage tabs show accurate counts across Upcoming | Missed | Ongoing | Report due | Accomplished | Archived
+    expect(screen.getByRole("tab", { name: /Upcoming.*2/i })).toBeDefined();
+    expect(screen.getByRole("tab", { name: /Missed.*1/i })).toBeDefined();
     expect(screen.getByRole("tab", { name: /Ongoing.*0/i })).toBeDefined();
     expect(screen.getByRole("tab", { name: /Report due.*0/i })).toBeDefined();
     expect(screen.getByRole("tab", { name: /Accomplished.*2/i })).toBeDefined();
+    expect(screen.getByRole("tab", { name: /Archived.*0/i })).toBeDefined();
 
-    // Needs attention & Coming up groups on Upcoming tab
+    // Needs attention (draft starting soon) & Coming up groups on Upcoming tab
     const attentionGroup = screen.getByRole("region", { name: "Needs attention" });
-    expect(within(attentionGroup).getByText("Recruitment Campaign Launch")).toBeDefined();
     expect(within(attentionGroup).getByText("Project ELEMENOPI")).toBeDefined();
 
     const comingUpGroup = screen.getByRole("region", { name: "Coming up" });
@@ -237,18 +238,27 @@ describe("ProjectCenterClient redesign", () => {
     const draftRow = screen.getByTestId("project-row-draft-soon-1");
     expect(within(draftRow).queryByText("Medium")).toBeNull();
 
-    // Subtle Min N quorum badge + person indicator shown
-    const pastRow = screen.getByTestId("project-row-past-due-1");
-    expect(within(pastRow).getByText("Min 10")).toBeDefined();
-    expect(within(pastRow).getByText("Lead: Alice Director")).toBeDefined();
+    // Person indicator & contextual row CTAs
     expect(within(comingRow).getByText("You (Co-Chair) · Lead: Alice Director")).toBeDefined();
-
-    // Contextual row CTAs
-    expect(within(pastRow).getByRole("link", { name: "Update status" })).toBeDefined();
     expect(within(draftRow).getByRole("link", { name: "Finish draft" })).toBeDefined();
     expect(within(comingRow).getByRole("link", { name: "Open" })).toBeDefined();
 
-    // Bottom AccomplishedBar
+    // Overflow menu on an "Open" row must NOT repeat "Open"
+    fireEvent.click(
+      screen.getByLabelText("More actions for Big Ate, Kuya 2026"),
+    );
+    expect(screen.queryByRole("menuitem", { name: /Open/i })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "Archive" })).toBeDefined();
+
+    // Switch to Missed tab -> shows past-due item with "Ended N days ago", "Min 10", and "Update status"
+    fireEvent.click(screen.getByRole("tab", { name: /Missed/i }));
+    const pastRow = screen.getByTestId("project-row-past-due-1");
+    expect(within(pastRow).getByText("Min 10")).toBeDefined();
+    expect(within(pastRow).getByText("Lead: Alice Director")).toBeDefined();
+    expect(within(pastRow).getByRole("link", { name: "Update status" })).toBeDefined();
+
+    // Switch to Accomplished tab -> shows "Archive 2 finished" inside Accomplished tab
+    fireEvent.click(screen.getByRole("tab", { name: /Accomplished/i }));
     expect(screen.getByRole("button", { name: "Archive 2 finished" })).toBeDefined();
   });
 
@@ -307,13 +317,13 @@ describe("ProjectCenterClient redesign", () => {
       />,
     );
 
-    // Priority filter inside More filters popover
+    // Switch to Missed tab, filter by Priority -> High, and archive via overflow menu
+    fireEvent.click(screen.getByRole("tab", { name: /Missed/i }));
     fireEvent.click(screen.getByRole("button", { name: /More filters/i }));
     fireEvent.change(screen.getByLabelText("Priority"), {
       target: { value: "HIGH" },
     });
     expect(screen.getByText("Recruitment Campaign Launch")).toBeDefined();
-    expect(screen.queryByText("Big Ate, Kuya 2026")).toBeNull();
 
     // Archive via overflow menu -> confirmation -> Undo callback
     fireEvent.click(
@@ -350,7 +360,11 @@ describe("ProjectCenterClient redesign", () => {
       );
     });
 
-    // Bulk Archive confirmation states exact count (wait for Undo transition to settle)
+    // Reset priority, switch to Accomplished tab -> Bulk Archive confirmation states exact count
+    fireEvent.change(screen.getByLabelText("Priority"), {
+      target: { value: "ALL" },
+    });
+    fireEvent.click(screen.getByRole("tab", { name: /Accomplished/i }));
     const bulkBtn = screen.getByRole("button", { name: "Archive 2 finished" });
     await waitFor(() => {
       expect(bulkBtn).not.toBeDisabled();

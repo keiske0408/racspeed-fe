@@ -272,8 +272,32 @@ describe("Project Center lifecycle, attention & Manila date rules", () => {
     });
 
     expect(
-      getProjectStageTab("AWAITING_REPORT"),
+      getProjectStageTab({
+        status: "AWAITING_REPORT",
+        endAt: "2026-12-01T12:00:00+08:00",
+        isArchived: false,
+      }),
     ).toBe("REPORT_DUE");
+    expect(
+      getProjectStageTab(
+        {
+          status: "PLANNED",
+          endAt: "2026-11-21T12:00:00+08:00",
+          isArchived: false,
+        },
+        NOW,
+      ),
+    ).toBe("MISSED");
+    expect(
+      getProjectStageTab(
+        {
+          status: "ACCOMPLISHED",
+          endAt: "2026-11-21T12:00:00+08:00",
+          isArchived: true,
+        },
+        NOW,
+      ),
+    ).toBe("ARCHIVED");
   });
 });
 

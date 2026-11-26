@@ -9,10 +9,9 @@ import { ProjectCenterHeader } from "./_components/project-center-header";
 import { StageTabs } from "./_components/stage-tabs";
 import { ProjectToolbar } from "./_components/project-toolbar";
 import { ProjectList } from "./_components/project-list";
-import { AccomplishedBar } from "./_components/accomplished-bar";
 import { StatusPill } from "./_components/status-pill";
-import { ProjectRow } from "./_components/project-row";
 import {
+  DRAFT_STARTING_SOON_DAYS,
   getAssignmentInfo,
   getProjectStageTab,
   LAST_VIEW_STORAGE_KEY_PREFIX,
@@ -34,10 +33,11 @@ import type { GroupTaskDTO } from "@/lib/data/tasks-types";
 import { rotaryYearFor } from "@/lib/utils/rotary-year";
 import { notifyToast } from "@/components/shared/toast-viewport";
 
-type WorkspaceScope = "ACTIVE" | "ARCHIVED";
-
 function parseStageTab(raw: string | null): ProjectStageTab {
   switch (raw?.toUpperCase()) {
+    case "MISSED":
+    case "PAST_DUE":
+      return "MISSED";
     case "ONGOING":
       return "ONGOING";
     case "REPORT_DUE":
@@ -46,6 +46,8 @@ function parseStageTab(raw: string | null): ProjectStageTab {
     case "ACCOMPLISHED":
     case "FINISHED":
       return "ACCOMPLISHED";
+    case "ARCHIVED":
+      return "ARCHIVED";
     default:
       return "UPCOMING";
   }
@@ -84,6 +86,7 @@ export function ProjectCenterClient({
   currentUserId,
   currentUserName,
   defaultRotaryYear,
+  draftReadinessDays = DRAFT_STARTING_SOON_DAYS,
 }: {
   initialActivities: ActivitySummaryDTO[];
   initialTasks: GroupTaskDTO[];
@@ -92,6 +95,7 @@ export function ProjectCenterClient({
   currentUserId: string;
   currentUserName: string;
   defaultRotaryYear?: string;
+  draftReadinessDays?: number;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -110,14 +114,12 @@ export function ProjectCenterClient({
 
   // URL-backed filters and navigation state
   const urlView = parseViewMode(searchParams.get("view"));
-  const [scope, setScope] = useState<WorkspaceScope>(
-    searchParams.get("scope")?.toUpperCase() === "ARCHIVED"
-      ? "ARCHIVED"
-      : "ACTIVE",
-  );
-  const [activeTab, setActiveTab] = useState<ProjectStageTab>(
-    parseStageTab(searchParams.get("tab") || searchParams.get("status")),
-  );
+  const [activeTab, setActiveTab] = useState<ProjectStageTab>(() => {
+    if (searchParams.get("scope")?.toUpperCase() === "ARCHIVED") {
+      return "ARCHIVED";
+    }
+    return parseStageTab(searchParams.get("tab") || searchParams.get("status"));
+  });
   const [view, setView] = useState<ProjectCenterView>(urlView || "LIST");
   const [rotaryYear, setRotaryYear] = useState<string>(
     searchParams.get("ry") || fallbackRotaryYear,
@@ -189,7 +191,6 @@ export function ProjectCenterClient({
   const currentSearchString = searchParams.toString();
   useEffect(() => {
     const params = new URLSearchParams();
-    if (scope === "ARCHIVED") params.set("scope", "archived");
     if (activeTab !== "UPCOMING") params.set("tab", activeTab.toLowerCase());
     if (view !== "LIST") params.set("view", view.toLowerCase());
     if (rotaryYear !== fallbackRotaryYear) params.set("ry", rotaryYear);
@@ -216,7 +217,6 @@ export function ProjectCenterClient({
     priorityFilter,
     rotaryYear,
     router,
-    scope,
     sortBy,
     view,
   ]);
@@ -246,21 +246,13 @@ export function ProjectCenterClient({
     return set;
   }, [currentUserId, currentUserName, initialTasks]);
 
-  const activeActivities = useMemo(
-    () =>
-      activities.filter((a) => !a.isArchived && a.status !== "CANCELLED"),
-    [activities],
-  );
-  const archivedActivities = useMemo(
-    () => activities.filter((a) => Boolean(a.isArchived)),
-    [activities],
-  );
-
-  // Apply global RY + toolbar filters (before splitting by StageTab)
+  // Apply global RY + toolbar filters across all non-cancelled activities
   const filteredPool = useMemo(() => {
-    const base = scope === "ARCHIVED" ? archivedActivities : activeActivities;
     const text = debouncedQuery.trim().toLowerCase();
-    const matched = base.filter((activity) => {
+    const matched = activities.filter((activity) => {
+      if (!activity.isArchived && activity.status === "CANCELLED") {
+        return false;
+      }
       if (rotaryYear !== "ALL" && activity.rotaryYear !== rotaryYear) {
         return false;
       }
@@ -291,8 +283,7 @@ export function ProjectCenterClient({
         : a.startAt.localeCompare(b.startAt),
     );
   }, [
-    activeActivities,
-    archivedActivities,
+    activities,
     assignedTaskProjectIds,
     assignedToMe,
     currentUserId,
@@ -300,66 +291,31 @@ export function ProjectCenterClient({
     kind,
     priorityFilter,
     rotaryYear,
-    scope,
     sortBy,
   ]);
 
-  // Stage counts across filteredPool (for Active workspace tabs)
+  // Stage counts across filteredPool
   const stageCounts = useMemo(() => {
     const counts: Record<ProjectStageTab, number> = {
       UPCOMING: 0,
+      MISSED: 0,
       ONGOING: 0,
       REPORT_DUE: 0,
       ACCOMPLISHED: 0,
+      ARCHIVED: 0,
     };
-    const activeMatchingFilters = activeActivities.filter((activity) => {
-      if (rotaryYear !== "ALL" && activity.rotaryYear !== rotaryYear) {
-        return false;
-      }
-      if (kind !== "ALL" && activity.kind !== kind) return false;
-      if (priorityFilter !== "ALL" && activity.priority !== priorityFilter) {
-        return false;
-      }
-      if (assignedToMe) {
-        const assignment = getAssignmentInfo(
-          activity,
-          currentUserId,
-          assignedTaskProjectIds,
-        );
-        if (!assignment.isAssignedToMe) return false;
-      }
-      const text = debouncedQuery.trim().toLowerCase();
-      if (!text) return true;
-      return [
-        activity.title,
-        activity.shortDescription,
-        activity.location,
-        activity.ownerName,
-      ].some((value) => value?.toLowerCase().includes(text));
-    });
-
-    for (const item of activeMatchingFilters) {
-      const stage = getProjectStageTab(item.status);
+    for (const item of filteredPool) {
+      const stage = getProjectStageTab(item);
       if (stage) counts[stage] += 1;
     }
     return counts;
-  }, [
-    activeActivities,
-    assignedTaskProjectIds,
-    assignedToMe,
-    currentUserId,
-    debouncedQuery,
-    kind,
-    priorityFilter,
-    rotaryYear,
-  ]);
+  }, [filteredPool]);
 
-  const tabItems = useMemo(() => {
-    if (scope === "ARCHIVED") return filteredPool;
-    return filteredPool.filter(
-      (item) => getProjectStageTab(item.status) === activeTab,
-    );
-  }, [activeTab, filteredPool, scope]);
+  const tabItems = useMemo(
+    () =>
+      filteredPool.filter((item) => getProjectStageTab(item) === activeTab),
+    [activeTab, filteredPool],
+  );
 
   // Finished items in active workspace (respecting selected RY) eligible for bulk archive
   const archivableFinishedIds = useMemo(
@@ -497,36 +453,14 @@ export function ProjectCenterClient({
         canCreate={canCreate}
       />
 
-      {scope === "ACTIVE" ? (
-        <StageTabs
-          activeTab={activeTab}
-          counts={stageCounts}
-          onTabChange={setActiveTab}
-          guideOpen={guideOpen}
-          onOpenGuide={() => setGuideOpen(true)}
-          onCloseGuide={() => setGuideOpen(false)}
-        />
-      ) : (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#EDEDF2] bg-slate-50 px-4 py-3 text-xs text-slate-700 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
-          <div className="flex items-center gap-2">
-            <Archive className="h-4 w-4 shrink-0" aria-hidden="true" />
-            <span>
-              <strong>Archive:</strong> Viewing archived activities and past
-              reports ({archivedActivities.length} total).
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setScope("ACTIVE");
-              setActiveTab("UPCOMING");
-            }}
-            className="min-h-[44px] cursor-pointer font-semibold text-[#0D3594] hover:underline dark:text-blue-300"
-          >
-            Back to active workspace
-          </button>
-        </div>
-      )}
+      <StageTabs
+        activeTab={activeTab}
+        counts={stageCounts}
+        onTabChange={setActiveTab}
+        guideOpen={guideOpen}
+        onOpenGuide={() => setGuideOpen(true)}
+        onCloseGuide={() => setGuideOpen(false)}
+      />
 
       <ProjectToolbar
         searchInput={searchInput}
@@ -543,55 +477,61 @@ export function ProjectCenterClient({
         onViewChange={handleViewChange}
       />
 
-      {/* Main Content Area: List | Board | Calendar */}
-      {scope === "ARCHIVED" ? (
-        tabItems.length > 0 ? (
-          <div className="overflow-hidden rounded-xl border border-[#EDEDF2] bg-white dark:border-slate-800 dark:bg-[#161B26]">
-            {tabItems.map((activity) => (
-              <ProjectRow
-                key={activity.id}
-                activity={activity}
-                currentUserId={currentUserId}
-                assignedTaskProjectIds={assignedTaskProjectIds}
-                canManage={canManageActivity(activity)}
-                pending={pending}
-                onRequestArchive={(item) => setArchiveCandidate(item)}
-                onRestore={(item) => executeArchive(item, false, false)}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="rounded-xl border border-[#EDEDF2] bg-white px-6 py-12 text-center dark:border-slate-800 dark:bg-[#161B26]">
-            <p className="text-sm font-semibold text-[#111625] dark:text-white">
-              No archived activities match this view.
-            </p>
+      {/* Contextual Header Bars for Accomplished & Archived Tabs */}
+      {activeTab === "ACCOMPLISHED" &&
+        canManageClub &&
+        archivableFinishedIds.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-300/70 bg-emerald-50/75 px-4 py-3 text-xs dark:border-emerald-500/30 dark:bg-emerald-950/35">
+            <span className="font-medium text-emerald-900 dark:text-emerald-200">
+              Finished projects with a published report. Ready to clean up past
+              items?
+            </span>
             <button
               type="button"
-              onClick={() => {
-                clearFilters();
-                setScope("ACTIVE");
-              }}
-              className="mt-4 inline-flex min-h-[44px] cursor-pointer items-center rounded-xl border border-[#DDE1EA] px-4 py-2 text-xs font-semibold text-[#111625] hover:bg-slate-50 dark:border-slate-700 dark:text-white dark:hover:bg-slate-800"
+              disabled={pending}
+              onClick={() => setBulkArchiveOpen(true)}
+              className="inline-flex min-h-[44px] cursor-pointer items-center rounded-xl border border-emerald-300 bg-white px-3.5 py-2 text-xs font-semibold text-emerald-900 transition hover:bg-emerald-100/70 disabled:opacity-50 dark:border-emerald-500/40 dark:bg-[#161B26] dark:text-emerald-200 dark:hover:bg-emerald-900/40"
             >
-              Back to active workspace
+              Archive {archivableFinishedIds.length} finished
             </button>
           </div>
-        )
-      ) : view === "CALENDAR" ? (
-        <ActivityCalendar activities={filteredPool} tasks={initialTasks} />
+        )}
+
+      {activeTab === "ARCHIVED" && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[#EDEDF2] bg-slate-50 px-4 py-3 text-xs text-slate-700 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
+          <Archive className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>
+            Archived projects and activities are preserved read-only for
+            District reporting and audit trails. Use the{" "}
+            <strong>&hellip;</strong> menu on any item to restore it.
+          </span>
+        </div>
+      )}
+
+      {/* Main Content Area: List | Board | Calendar */}
+      {view === "CALENDAR" ? (
+        <ActivityCalendar
+          activities={filteredPool.filter((a) => !a.isArchived)}
+          tasks={initialTasks}
+        />
       ) : view === "BOARD" ? (
         <div className="grid gap-4 xl:grid-cols-4">
           {(
             [
-              ["UPCOMING", "Upcoming", "Draft & Planned"],
+              ["UPCOMING", "Upcoming & Missed", "Draft, Planned & Overdue"],
               ["ONGOING", "Ongoing", "Active execution"],
               ["REPORT_DUE", "Report due", "Needs accomplishment report"],
               ["ACCOMPLISHED", "Accomplished", "Verified & completed"],
             ] as [ProjectStageTab, string, string][]
           ).map(([stageKey, stageLabel, subtitle]) => {
-            const rows = filteredPool.filter(
-              (item) => getProjectStageTab(item.status) === stageKey,
-            );
+            const rows = filteredPool.filter((item) => {
+              if (item.isArchived) return false;
+              const stage = getProjectStageTab(item);
+              if (stageKey === "UPCOMING") {
+                return stage === "UPCOMING" || stage === "MISSED";
+              }
+              return stage === stageKey;
+            });
             const sampleStatus =
               stageKey === "UPCOMING"
                 ? "PLANNED"
@@ -641,7 +581,7 @@ export function ProjectCenterClient({
         <ProjectList
           activeTab={activeTab}
           items={tabItems}
-          totalInWorkspace={activeActivities.length}
+          totalInWorkspace={activities.filter((a) => !a.isArchived).length}
           hasActiveFilters={hasActiveFilters}
           sortBy={sortBy}
           currentUserId={currentUserId}
@@ -649,31 +589,12 @@ export function ProjectCenterClient({
           canCreate={canCreate}
           canManageActivity={canManageActivity}
           pending={pending}
+          draftReadinessDays={draftReadinessDays}
           onClearFilters={clearFilters}
           onSwitchTab={setActiveTab}
           onOpenGuide={() => setGuideOpen(true)}
           onRequestArchive={(item) => setArchiveCandidate(item)}
           onRestore={(item) => executeArchive(item, false, false)}
-        />
-      )}
-
-      {/* Bottom Collapsed Accomplished Bar */}
-      {scope === "ACTIVE" && (
-        <AccomplishedBar
-          accomplishedCount={stageCounts.ACCOMPLISHED}
-          archivableCount={archivableFinishedIds.length}
-          archivedCount={archivedActivities.length}
-          canManageClub={canManageClub}
-          pending={pending}
-          onViewAccomplished={() => {
-            setView("LIST");
-            setActiveTab("ACCOMPLISHED");
-          }}
-          onRequestBulkArchive={() => setBulkArchiveOpen(true)}
-          onViewArchived={() => {
-            setView("LIST");
-            setScope("ARCHIVED");
-          }}
         />
       )}
 

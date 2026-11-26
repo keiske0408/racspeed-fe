@@ -9,6 +9,7 @@ export function RowActionMenu({
   activityTitle,
   isArchived,
   canManage,
+  showOpenItem = true,
   pending = false,
   onRequestArchive,
   onRestore,
@@ -17,12 +18,14 @@ export function RowActionMenu({
   activityTitle: string;
   isArchived: boolean;
   canManage: boolean;
+  showOpenItem?: boolean;
   pending?: boolean;
   onRequestArchive: () => void;
   onRestore: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const hasSecondaryActions = showOpenItem || canManage;
 
   useEffect(() => {
     if (!open) return;
@@ -45,6 +48,8 @@ export function RowActionMenu({
     };
   }, [open]);
 
+  if (!hasSecondaryActions) return null;
+
   return (
     <div ref={containerRef} className="relative">
       <button
@@ -65,15 +70,17 @@ export function RowActionMenu({
           aria-label={`Actions for ${activityTitle}`}
           className="absolute right-0 z-30 mt-1 w-44 rounded-xl border border-[#EDEDF2] bg-white p-1.5 shadow-lg dark:border-slate-700 dark:bg-[#161B26]"
         >
-          <Link
-            role="menuitem"
-            href={`/project-center/${activityId}`}
-            onClick={() => setOpen(false)}
-            className="flex min-h-[44px] w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
-          >
-            <ExternalLink className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            <span>Open</span>
-          </Link>
+          {showOpenItem && (
+            <Link
+              role="menuitem"
+              href={`/project-center/${activityId}`}
+              onClick={() => setOpen(false)}
+              className="flex min-h-[44px] w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              <ExternalLink className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span>Open details</span>
+            </Link>
+          )}
 
           {canManage && !isArchived && (
             <button
