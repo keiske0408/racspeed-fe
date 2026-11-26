@@ -240,6 +240,9 @@ export interface ActivitySummaryDTO {
   committee: Committee | null;
   ownerId: string | null;
   ownerName: string | null;
+  isTeamMember?: boolean;
+  myTeamRole?: TeamRole | null;
+  teamMembers?: { profileId: string; fullName: string; role: TeamRole }[];
   minMembersRequired: number | null;
   capacity: number | null;
   rsvpEnabled: boolean;

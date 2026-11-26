@@ -32,6 +32,7 @@ const SUMMARY_COLUMNS = `
   status, committee, owner_id, min_members_required, capacity, rsvp_enabled, rsvp_deadline,
   self_check_in_enabled, check_in_window_minutes, volunteer_hours_default, cover_storage_path, rotary_year,
   owner:profiles!activities_owner_id_fkey(full_name),
+  activity_team(profile_id, team_role, profiles(full_name)),
   activity_rsvps(profile_id, response),
   attendance_records(profile_id),
   activity_comments(count), activity_media(count),
@@ -67,6 +68,16 @@ interface ActivitySummaryRow {
   cover_storage_path: string | null;
   is_published?: boolean;
   rotary_year?: string;
+  activity_team?:
+    | {
+        profile_id: string;
+        team_role: TeamRole;
+        profiles?:
+          | { full_name: string | null }
+          | { full_name: string | null }[]
+          | null;
+      }[]
+    | null;
   activity_rsvps?: { profile_id: string; response: RsvpResponse }[] | null;
   attendance_records?: { profile_id: string }[] | null;
   tasks?: { status: string }[] | null;
@@ -207,6 +218,17 @@ function mapSummary(
     row.activity_rsvps || [];
   const attendance: { profile_id: string }[] = row.attendance_records || [];
   const tasks: { status: string }[] = row.tasks || [];
+  const teamMembers = (row.activity_team || []).map((member) => {
+    const profileObj = Array.isArray(member.profiles)
+      ? member.profiles[0]
+      : member.profiles;
+    return {
+      profileId: member.profile_id,
+      fullName: profileObj?.full_name || "Club Member",
+      role: member.team_role,
+    };
+  });
+  const myTeamEntry = teamMembers.find((member) => member.profileId === userId);
   const archiveState = resolveArchiveState({
     is_archived: row.is_archived,
     archived_at: row.archived_at,
@@ -231,6 +253,10 @@ function mapSummary(
     committee: (row.committee as Committee) || null,
     ownerId: row.owner_id,
     ownerName: row.owner?.full_name || null,
+    isTeamMember: Boolean(myTeamEntry) || row.owner_id === userId,
+    myTeamRole:
+      myTeamEntry?.role || (row.owner_id === userId ? "CHAIR" : null),
+    teamMembers,
     minMembersRequired: row.min_members_required,
     capacity: row.capacity,
     rsvpEnabled: Boolean(row.rsvp_enabled),

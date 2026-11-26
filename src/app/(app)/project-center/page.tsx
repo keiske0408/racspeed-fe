@@ -1,6 +1,7 @@
 import { assertPageAccess } from "@/lib/auth/session";
 import { listActivities } from "@/features/activities/queries";
 import { getGroupTasksList } from "@/features/tasks/queries";
+import { rotaryYearFor } from "@/lib/utils/rotary-year";
 import { ProjectCenterClient } from "./project-center-client";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +38,7 @@ export default async function ProjectCenterPage() {
       canManageClub={canManageClub}
       currentUserId={context.user.id}
       currentUserName={context.user.fullName}
+      defaultRotaryYear={rotaryYearFor()}
     />
   );
 }

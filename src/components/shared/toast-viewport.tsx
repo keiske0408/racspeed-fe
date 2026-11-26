@@ -10,6 +10,8 @@ export interface ToastPayload {
   message: string;
   kind?: ToastKind;
   duration?: number;
+  actionLabel?: string;
+  onAction?: () => void;
 }
 
 interface ToastItem extends ToastPayload {
@@ -91,6 +93,20 @@ export function ToastViewport() {
               >
                 {toast.message}
               </p>
+              {toast.actionLabel && toast.onAction && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    toast.onAction?.();
+                    setToasts((current) =>
+                      current.filter((item) => item.id !== toast.id),
+                    );
+                  }}
+                  className="mt-1.5 inline-flex min-h-[32px] cursor-pointer items-center rounded-md border border-current/25 px-2.5 py-1 text-[11px] font-bold hover:bg-black/5 dark:hover:bg-white/10"
+                >
+                  {toast.actionLabel}
+                </button>
+              )}
             </div>
             <button
               type="button"
