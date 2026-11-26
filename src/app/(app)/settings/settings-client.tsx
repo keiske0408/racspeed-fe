@@ -1,16 +1,22 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import {
   Settings,
   Save,
   Shield,
   Database,
-  FileSpreadsheet,
+  BellRing,
+  Play,
   Sliders,
 } from "lucide-react";
-import { updateClubSettingsAction } from "@/features/settings/actions";
+import {
+  runNotificationSlaCheckAction,
+  updateClubSettingsAction,
+} from "@/features/settings/actions";
 import { ClubSettingsDTO } from "@/features/settings/queries";
+import { DEFAULT_NOTIFICATION_SLA_CONFIG } from "@/lib/services/notifications/sla-config";
 import { PermissionMatrixEditor } from "@/components/permissions/permission-matrix-editor";
 import {
   RoleConfigDTO,
@@ -60,16 +66,53 @@ export function SettingsClient({
   const [retentionServiceDaysThreshold, setRetentionServiceDaysThreshold] =
     useState(initialSettings.retentionServiceDaysThreshold);
 
+  const initialSla =
+    initialSettings.notificationSla ?? DEFAULT_NOTIFICATION_SLA_CONFIG;
+  const [taskDueSoonHours, setTaskDueSoonHours] = useState(
+    initialSla.taskDueSoonHours,
+  );
+  const [taskOverdueReminderEnabled, setTaskOverdueReminderEnabled] = useState(
+    initialSla.taskOverdueReminderEnabled,
+  );
+  const [projectNearbyHours, setProjectNearbyHours] = useState(
+    initialSla.projectNearbyHours,
+  );
+  const [projectDeadlineHours, setProjectDeadlineHours] = useState(
+    initialSla.projectDeadlineHours,
+  );
+  const [draftReadinessDays, setDraftReadinessDays] = useState(
+    initialSla.draftReadinessDays,
+  );
+  const [reportDueSlaDays, setReportDueSlaDays] = useState(
+    initialSla.reportDueSlaDays,
+  );
+  const [notifyOnTaskAssigned, setNotifyOnTaskAssigned] = useState(
+    initialSla.notifyOnTaskAssigned,
+  );
+  const [notifyOnTaskMarked, setNotifyOnTaskMarked] = useState(
+    initialSla.notifyOnTaskMarked,
+  );
+
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRunningSlaCheck, setIsRunningSlaCheck] = useState(false);
 
   async function handleSave(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setIsSubmitting(true);
     const formData = new FormData(e.currentTarget);
-    formData.append(
+    formData.set(
       "requireRegistrationApproval",
       requireRegistrationApproval ? "true" : "false",
     );
+    formData.set(
+      "taskOverdueReminderEnabled",
+      taskOverdueReminderEnabled ? "true" : "false",
+    );
+    formData.set(
+      "notifyOnTaskAssigned",
+      notifyOnTaskAssigned ? "true" : "false",
+    );
+    formData.set("notifyOnTaskMarked", notifyOnTaskMarked ? "true" : "false");
 
     try {
       const res = await updateClubSettingsAction(formData);
@@ -93,6 +136,42 @@ export function SettingsClient({
       });
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function handleRunSlaCheck() {
+    setIsRunningSlaCheck(true);
+    try {
+      const res = await runNotificationSlaCheckAction(initialSettings.clubId, {
+        taskDueSoonHours,
+        taskOverdueReminderEnabled,
+        projectNearbyHours,
+        projectDeadlineHours,
+        draftReadinessDays,
+        reportDueSlaDays,
+        notifyOnTaskAssigned,
+        notifyOnTaskMarked,
+      });
+      if (res.success) {
+        notifyToast({
+          message: res.message || "SLA check completed.",
+          kind: "success",
+        });
+      } else {
+        notifyToast({
+          title: "SLA check failed",
+          message: res.error || "Could not evaluate notification SLA rules.",
+          kind: "error",
+        });
+      }
+    } catch (err: any) {
+      notifyToast({
+        title: "SLA check failed",
+        message: err?.message || "Could not evaluate notification SLA rules.",
+        kind: "error",
+      });
+    } finally {
+      setIsRunningSlaCheck(false);
     }
   }
 
@@ -330,6 +409,208 @@ export function SettingsClient({
                     days).
                   </p>
                 </div>
+              </div>
+            </div>
+
+            {/* Notification & Deadline SLA Configuration */}
+            <div
+              id="sla-configuration"
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-5"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                    <BellRing className="w-4 h-4 text-rose-500" />
+                    Notification &amp; Deadline SLA Configuration
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    Configure when task assignments, status updates, and
+                    nearing/missed project or task deadlines trigger alerts.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Link
+                    href="/settings/notifications"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-[11px] font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
+                  >
+                    <Sliders className="w-3.5 h-3.5" />
+                    Channels &amp; Templates
+                  </Link>
+                  <button
+                    type="button"
+                    disabled={isRunningSlaCheck}
+                    onClick={() => void handleRunSlaCheck()}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 dark:bg-slate-800 text-white text-[11px] font-semibold hover:bg-slate-800 dark:hover:bg-slate-700 cursor-pointer disabled:opacity-50"
+                  >
+                    <Play className="w-3 h-3" />
+                    {isRunningSlaCheck ? "Checking SLA..." : "Run SLA Check Now"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Task Due Soon Alert (Hours)
+                  </label>
+                  <input
+                    type="number"
+                    name="taskDueSoonHours"
+                    min={1}
+                    max={336}
+                    value={taskDueSoonHours}
+                    onChange={(e) =>
+                      setTaskDueSoonHours(Number(e.target.value))
+                    }
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Notify assignees when an open task is due within this many
+                    hours (default: 48h).
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Project / Activity Nearby Alert (Hours)
+                  </label>
+                  <input
+                    type="number"
+                    name="projectNearbyHours"
+                    min={1}
+                    max={336}
+                    value={projectNearbyHours}
+                    onChange={(e) =>
+                      setProjectNearbyHours(Number(e.target.value))
+                    }
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Notify committee, followers, and RSVPs ahead of a planned
+                    activity start (default: 48h).
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Project / RSVP Deadline Alert (Hours)
+                  </label>
+                  <input
+                    type="number"
+                    name="projectDeadlineHours"
+                    min={1}
+                    max={336}
+                    value={projectDeadlineHours}
+                    onChange={(e) =>
+                      setProjectDeadlineHours(Number(e.target.value))
+                    }
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Alert leads and attendees when an RSVP or activity deadline
+                    is within this window (default: 24h).
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Draft Readiness SLA (Days)
+                  </label>
+                  <input
+                    type="number"
+                    name="draftReadinessDays"
+                    min={1}
+                    max={30}
+                    value={draftReadinessDays}
+                    onChange={(e) =>
+                      setDraftReadinessDays(Number(e.target.value))
+                    }
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Flags unpublished Drafts in Project Center &amp; sends
+                    readiness alerts (default: 7 days).
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Report Submission SLA (Days)
+                  </label>
+                  <input
+                    type="number"
+                    name="reportDueSlaDays"
+                    min={1}
+                    max={60}
+                    value={reportDueSlaDays}
+                    onChange={(e) =>
+                      setReportDueSlaDays(Number(e.target.value))
+                    }
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Target days after project end to submit the 6 Rotary
+                    Showcase fields (default: 7 days).
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <label className="flex items-start gap-2.5 cursor-pointer rounded-xl border border-slate-200/80 dark:border-slate-800 p-3">
+                  <input
+                    type="checkbox"
+                    checked={notifyOnTaskAssigned}
+                    onChange={(e) => setNotifyOnTaskAssigned(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 text-rose-600 rounded border-slate-300 focus:ring-rose-500"
+                  />
+                  <span>
+                    <span className="block text-xs font-semibold text-slate-800 dark:text-slate-200">
+                      Notify on task assignment
+                    </span>
+                    <span className="block text-[11px] text-slate-400 mt-0.5">
+                      Alert members immediately when assigned to a club or
+                      project task.
+                    </span>
+                  </span>
+                </label>
+
+                <label className="flex items-start gap-2.5 cursor-pointer rounded-xl border border-slate-200/80 dark:border-slate-800 p-3">
+                  <input
+                    type="checkbox"
+                    checked={notifyOnTaskMarked}
+                    onChange={(e) => setNotifyOnTaskMarked(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 text-rose-600 rounded border-slate-300 focus:ring-rose-500"
+                  />
+                  <span>
+                    <span className="block text-xs font-semibold text-slate-800 dark:text-slate-200">
+                      Notify when task is marked
+                    </span>
+                    <span className="block text-[11px] text-slate-400 mt-0.5">
+                      Send updates when task status or checklist items are
+                      marked complete.
+                    </span>
+                  </span>
+                </label>
+
+                <label className="flex items-start gap-2.5 cursor-pointer rounded-xl border border-slate-200/80 dark:border-slate-800 p-3">
+                  <input
+                    type="checkbox"
+                    checked={taskOverdueReminderEnabled}
+                    onChange={(e) =>
+                      setTaskOverdueReminderEnabled(e.target.checked)
+                    }
+                    className="mt-0.5 w-4 h-4 text-rose-600 rounded border-slate-300 focus:ring-rose-500"
+                  />
+                  <span>
+                    <span className="block text-xs font-semibold text-slate-800 dark:text-slate-200">
+                      Escalate overdue tasks daily
+                    </span>
+                    <span className="block text-[11px] text-slate-400 mt-0.5">
+                      Remind assignees and project owners when open tasks pass
+                      their due date.
+                    </span>
+                  </span>
+                </label>
               </div>
             </div>
 

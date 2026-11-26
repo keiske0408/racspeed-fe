@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { env } from "@/lib/env";
 import { getActiveNotificationUser } from "@/lib/services/notifications/auth";
+import { ensureSlaNotificationsEvaluated } from "@/lib/services/notifications/sla-reminders";
 
 const uuidSchema = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
 
@@ -30,6 +32,11 @@ export async function GET(request: NextRequest) {
     ? Math.min(Math.max(requestedLimit, 1), 50)
     : 25;
   const before = request.nextUrl.searchParams.get("before");
+  if (!before && process.env.NODE_ENV !== "test") {
+    await ensureSlaNotificationsEvaluated(env.NEXT_PUBLIC_DEFAULT_CLUB_ID).catch(
+      (err) => console.warn("Background SLA evaluation failed:", err),
+    );
+  }
   let cursor: { createdAt: string; id?: string } | null = null;
   if (before) {
     if (before.length > 512) {

@@ -2,8 +2,40 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Bell, CheckCheck, ChevronDown, Settings2 } from "lucide-react";
+
+type NotificationFilter = "ALL" | "UNREAD" | "TASKS_DEADLINES" | "PROJECTS";
+
+const TASK_DEADLINE_TYPES = new Set([
+  "TASK_ASSIGNED",
+  "TASK_UPDATED",
+  "TASK_DEADLINE",
+  "PROJECT_DEADLINE",
+  "REPORT_DUE",
+]);
+
+const PROJECT_TYPES = new Set([
+  "ACTIVITY_REMINDER",
+  "RSVP_REMINDER",
+  "MIN_MEMBERS_ALERT",
+  "COMMENT",
+  "MENTION",
+  "REPORT_REVIEW",
+]);
+
+function getTypeBadgeClass(type: string): string {
+  if (type === "TASK_DEADLINE" || type === "PROJECT_DEADLINE" || type === "REPORT_DUE") {
+    return "bg-amber-50 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300";
+  }
+  if (type === "TASK_ASSIGNED" || type === "TASK_UPDATED") {
+    return "bg-blue-50 text-[#0D3594] dark:bg-blue-500/15 dark:text-blue-300";
+  }
+  if (type === "RETENTION_NUDGE" || type === "ATTENDANCE_ALERT") {
+    return "bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300";
+  }
+  return "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300";
+}
 
 interface NotificationItem {
   id: string;
@@ -29,6 +61,21 @@ export default function NotificationsPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeFilter, setActiveFilter] = useState<NotificationFilter>("ALL");
+
+  const filteredNotifications = useMemo(() => {
+    switch (activeFilter) {
+      case "UNREAD":
+        return notifications.filter((n) => !n.is_read);
+      case "TASKS_DEADLINES":
+        return notifications.filter((n) => TASK_DEADLINE_TYPES.has(n.type));
+      case "PROJECTS":
+        return notifications.filter((n) => PROJECT_TYPES.has(n.type));
+      case "ALL":
+      default:
+        return notifications;
+    }
+  }, [activeFilter, notifications]);
 
   async function load(before?: string) {
     const response = await fetch(
@@ -150,16 +197,62 @@ export default function NotificationsPage() {
       </header>
 
       {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-950/30 dark:text-rose-300">{error}</p>}
+
+      {!loading && notifications.length > 0 && (
+        <div
+          role="tablist"
+          aria-label="Filter notifications"
+          className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3 dark:border-slate-800"
+        >
+          {(
+            [
+              ["ALL", `All (${notifications.length})`],
+              ["UNREAD", `Unread (${unreadCount})`],
+              ["TASKS_DEADLINES", "Tasks & Deadlines"],
+              ["PROJECTS", "Projects"],
+            ] as [NotificationFilter, string][]
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={activeFilter === key}
+              onClick={() => setActiveFilter(key)}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
+                activeFilter === key
+                  ? "bg-[#0D3594] text-white"
+                  : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {loading ? (
         <p className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900">Loading notifications...</p>
-      ) : notifications.length === 0 ? (
+      ) : filteredNotifications.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-12 text-center dark:border-slate-700 dark:bg-slate-900">
           <Bell className="mx-auto h-8 w-8 text-slate-400" />
-          <p className="mt-3 font-semibold text-slate-800 dark:text-white">You are all caught up.</p>
+          <p className="mt-3 font-semibold text-slate-800 dark:text-white">
+            {notifications.length === 0
+              ? "You are all caught up."
+              : "No notifications match this filter."}
+          </p>
+          {notifications.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setActiveFilter("ALL")}
+              className="mt-3 text-xs font-semibold text-[#0D3594] hover:underline dark:text-blue-300 cursor-pointer"
+            >
+              View all notifications
+            </button>
+          )}
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-          {notifications.map((item) => (
+          {filteredNotifications.map((item) => (
             <button
               key={item.id}
               type="button"
@@ -170,7 +263,7 @@ export default function NotificationsPage() {
               <span className="min-w-0 flex-1">
                 <span className="flex flex-wrap items-center gap-2">
                   <span className="font-semibold text-slate-900 dark:text-white">{item.title}</span>
-                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500 dark:bg-slate-800">{item.type.replaceAll("_", " ")}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${getTypeBadgeClass(item.type)}`}>{item.type.replaceAll("_", " ")}</span>
                 </span>
                 <span className="mt-1 block whitespace-pre-wrap text-sm leading-relaxed text-slate-600 dark:text-slate-300">{item.message}</span>
                 <span className="mt-2 block text-xs text-slate-400">

@@ -29,6 +29,10 @@ export const NOTIFICATION_TYPES = [
   "BADGE_EARNED",
   "MEMBERSHIP_UPDATE",
   "PUBLIC_ANNOUNCEMENT",
+  "TASK_ASSIGNED",
+  "TASK_UPDATED",
+  "TASK_DEADLINE",
+  "PROJECT_DEADLINE",
 ] as const satisfies readonly NotificationType[];
 
 const PLACEHOLDERS = new Set(["title", "message"]);
@@ -44,7 +48,14 @@ export function getNotificationCategory(
   ) {
     return "treasury";
   }
-  if (type === "REPORT_DUE" || type === "REPORT_REVIEW") return "reporting";
+  if (
+    type === "REPORT_DUE" ||
+    type === "REPORT_REVIEW" ||
+    type === "TASK_DEADLINE" ||
+    type === "PROJECT_DEADLINE"
+  ) {
+    return "reporting";
+  }
   if (type === "PUBLIC_ANNOUNCEMENT") return "administration";
   return "activity";
 }
@@ -55,6 +66,10 @@ export function shouldSendImmediately(type: NotificationType) {
     "PAYMENT_STATUS",
     "BUDGET_ACTION",
     "REPORT_REVIEW",
+    "TASK_ASSIGNED",
+    "TASK_UPDATED",
+    "TASK_DEADLINE",
+    "PROJECT_DEADLINE",
   ].includes(type);
 }
 

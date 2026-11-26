@@ -1,4 +1,10 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { readNotificationSlaStore } from "@/lib/data/notification-sla-storage";
+import {
+  DEFAULT_NOTIFICATION_SLA_CONFIG,
+  normalizeNotificationSlaConfig,
+  type NotificationSlaConfig,
+} from "@/lib/services/notifications/sla-config";
 
 export interface ClubSettingsDTO {
   clubId: string;
@@ -10,6 +16,7 @@ export interface ClubSettingsDTO {
   budgetApprovalPolicy: "PRESIDENT_AND_TREASURER" | "PRESIDENT_ONLY" | "TREASURER_ONLY" | "EITHER";
   retentionConsecutiveGasThreshold: number;
   retentionServiceDaysThreshold: number;
+  notificationSla: NotificationSlaConfig;
 }
 
 export const DEFAULT_CLUB_SETTINGS: ClubSettingsDTO = {
@@ -22,9 +29,12 @@ export const DEFAULT_CLUB_SETTINGS: ClubSettingsDTO = {
   budgetApprovalPolicy: "PRESIDENT_AND_TREASURER",
   retentionConsecutiveGasThreshold: 3,
   retentionServiceDaysThreshold: 60,
+  notificationSla: DEFAULT_NOTIFICATION_SLA_CONFIG,
 };
 
 export async function getClubSettings(clubId = "00000000-0000-0000-0000-000000000001"): Promise<ClubSettingsDTO> {
+  const localSla = readNotificationSlaStore(clubId);
+
   try {
     const admin = createAdminClient();
 
@@ -35,6 +45,7 @@ export async function getClubSettings(clubId = "00000000-0000-0000-0000-00000000
 
     const club = clubRes.data;
     const settings = settingsRes.data;
+    const rawSla = settings?.notification_sla_config ?? localSla;
 
     return {
       clubId,
@@ -46,9 +57,14 @@ export async function getClubSettings(clubId = "00000000-0000-0000-0000-00000000
       budgetApprovalPolicy: settings?.budget_approval_policy || DEFAULT_CLUB_SETTINGS.budgetApprovalPolicy,
       retentionConsecutiveGasThreshold: Number(settings?.retention_consecutive_gas_threshold ?? DEFAULT_CLUB_SETTINGS.retentionConsecutiveGasThreshold),
       retentionServiceDaysThreshold: Number(settings?.retention_service_days_threshold ?? DEFAULT_CLUB_SETTINGS.retentionServiceDaysThreshold),
+      notificationSla: normalizeNotificationSlaConfig(rawSla),
     };
   } catch (err) {
     console.warn("Could not query club settings from Supabase, using defaults:", err);
-    return DEFAULT_CLUB_SETTINGS;
+    return {
+      ...DEFAULT_CLUB_SETTINGS,
+      clubId,
+      notificationSla: normalizeNotificationSlaConfig(localSla),
+    };
   }
 }

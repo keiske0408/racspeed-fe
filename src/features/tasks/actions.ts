@@ -6,6 +6,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireUser, getUserAccessContext } from "@/lib/auth/session";
 import { getGroupTasksList } from "./queries";
 import { awardEngagementPoints } from "@/lib/services/rewards";
+import {
+  notifyTaskAssigned,
+  notifyTaskChecklistMarked,
+  notifyTaskStatusMarked,
+} from "@/lib/services/notifications/task-notifications";
 
 async function assertTaskAdmin() {
   const user = await requireUser();
@@ -174,6 +179,14 @@ export async function createGroupTaskAction(formData: FormData) {
       console.warn("Could not sync task insert to Supabase:", dbErr);
     }
 
+    await notifyTaskAssigned({
+      clubId: created.clubId,
+      task: created,
+      assigneeIds: created.assignedMemberIds,
+      actorId: user.id,
+      actorName: user.fullName || user.email,
+    });
+
     revalidatePath("/tasks");
     revalidatePath("/dashboard");
     revalidatePath("/project-center");
@@ -235,6 +248,21 @@ export async function updateTaskStatusAction(
         .from("tasks")
         .update({ status, updated_at: nowIso })
         .eq("id", taskId);
+
+      if (
+        taskBefore.status !== status &&
+        taskBefore.projectId &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          taskBefore.projectId,
+        )
+      ) {
+        await admin.from("activity_log").insert({
+          activity_id: taskBefore.projectId,
+          actor_id: user.id,
+          action: "TASK_STATUS_UPDATED",
+          details: { title: taskBefore.title, status },
+        });
+      }
     } catch (dbErr) {
       console.warn("Could not sync task status to Supabase:", dbErr);
     }
@@ -249,6 +277,15 @@ export async function updateTaskStatusAction(
       });
     }
 
+    await notifyTaskStatusMarked({
+      clubId: updated.clubId,
+      task: updated,
+      previousStatus: taskBefore.status,
+      nextStatus: status,
+      actorId: user.id,
+      actorName: user.fullName || user.email,
+    });
+
     revalidatePath("/tasks");
     revalidatePath("/project-center");
     if (taskBefore.projectId) {
@@ -258,10 +295,12 @@ export async function updateTaskStatusAction(
 
     const statusLabel =
       status === "TODO"
-        ? "To Do"
+        ? "Task Ready"
         : status === "IN_PROGRESS"
           ? "In Progress"
-          : "Done";
+          : status === "IN_REVIEW"
+            ? "Needs Review"
+            : "Done";
 
     return {
       success: true,
@@ -281,9 +320,12 @@ export async function toggleChecklistItemAction(
   itemId: string,
   forcedState?: boolean,
 ) {
-  await requireUser();
+  const user = await requireUser();
 
   try {
+    const taskBefore = (await getGroupTasksList()).find(
+      (task) => task.id === taskId,
+    );
     const updated = toggleChecklistItem(taskId, itemId, forcedState);
     if (!updated) {
       return { success: false, error: "Task or checklist item not found." };
@@ -303,7 +345,36 @@ export async function toggleChecklistItemAction(
       console.warn("Could not sync checklist toggle to Supabase:", dbErr);
     }
 
+    const toggledItem = updated.checklist.find((item) => item.id === itemId);
+    const autoCompleted =
+      updated.status === "COMPLETED" && taskBefore?.status !== "COMPLETED";
+
+    if (autoCompleted) {
+      await awardEngagementPoints({
+        clubId: updated.clubId,
+        profileId: user.id,
+        sourceType: "TASK_COMPLETED",
+        sourceId: taskId,
+        reason: `Completed task: ${updated.title}`,
+      });
+    }
+
+    if (toggledItem?.completed) {
+      await notifyTaskChecklistMarked({
+        clubId: updated.clubId,
+        task: updated,
+        itemId,
+        itemTitle: toggledItem.title,
+        autoCompleted,
+        actorId: user.id,
+        actorName: user.fullName || user.email,
+      });
+    }
+
     revalidatePath("/tasks");
+    if (updated.projectId) {
+      revalidatePath(`/project-center/${updated.projectId}`);
+    }
 
     return {
       success: true,
@@ -408,8 +479,10 @@ export async function updateGroupTaskAction(
   taskId: string,
   formData: FormData,
 ) {
+  let actor;
   try {
-    await assertTaskAdmin();
+    const res = await assertTaskAdmin();
+    actor = res.user;
   } catch (err: any) {
     return { success: false, error: err.message || "Unauthorized" };
   }
@@ -437,6 +510,9 @@ export async function updateGroupTaskAction(
   }
 
   try {
+    const taskBefore = (await getGroupTasksList()).find(
+      (task) => task.id === taskId,
+    );
     const updated = updateTask(taskId, {
       title,
       description,
@@ -474,6 +550,40 @@ export async function updateGroupTaskAction(
       console.warn("Could not sync task update to Supabase:", dbErr);
     }
 
+    const previousIds = taskBefore?.assignedMemberIds || [];
+    const newlyAssignedIds = assignedMemberIds.filter(
+      (id) => !previousIds.includes(id),
+    );
+    if (newlyAssignedIds.length > 0) {
+      await notifyTaskAssigned({
+        clubId: updated.clubId,
+        task: updated,
+        assigneeIds: newlyAssignedIds,
+        actorId: actor.id,
+        actorName: actor.fullName || actor.email,
+      });
+    }
+
+    if (taskBefore && taskBefore.status !== status) {
+      if (status === "COMPLETED") {
+        await awardEngagementPoints({
+          clubId: updated.clubId,
+          profileId: actor.id,
+          sourceType: "TASK_COMPLETED",
+          sourceId: taskId,
+          reason: `Completed task: ${updated.title}`,
+        });
+      }
+      await notifyTaskStatusMarked({
+        clubId: updated.clubId,
+        task: updated,
+        previousStatus: taskBefore.status,
+        nextStatus: status,
+        actorId: actor.id,
+        actorName: actor.fullName || actor.email,
+      });
+    }
+
     revalidatePath("/tasks");
     revalidatePath("/dashboard");
 
@@ -495,13 +605,18 @@ export async function assignMembersToTaskAction(
   assignedMemberIds: string[],
   assignedMemberNames: string[],
 ) {
+  let actor;
   try {
-    await assertTaskAdmin();
+    const res = await assertTaskAdmin();
+    actor = res.user;
   } catch (err: any) {
     return { success: false, error: err.message || "Unauthorized" };
   }
 
   try {
+    const taskBefore = (await getGroupTasksList()).find(
+      (task) => task.id === taskId,
+    );
     const updated = updateTask(taskId, {
       assignedMemberIds,
       assignedMemberNames,
@@ -509,6 +624,34 @@ export async function assignMembersToTaskAction(
 
     if (!updated) {
       return { success: false, error: "Task not found." };
+    }
+
+    try {
+      const admin = createAdminClient();
+      await admin
+        .from("tasks")
+        .update({
+          assigned_member_ids: assignedMemberIds,
+          assigned_member_names: assignedMemberNames,
+          updated_at: updated.updatedAt,
+        })
+        .eq("id", taskId);
+    } catch (dbErr) {
+      console.warn("Could not sync task assignees to Supabase:", dbErr);
+    }
+
+    const previousIds = taskBefore?.assignedMemberIds || [];
+    const newlyAssignedIds = assignedMemberIds.filter(
+      (id) => !previousIds.includes(id),
+    );
+    if (newlyAssignedIds.length > 0) {
+      await notifyTaskAssigned({
+        clubId: updated.clubId,
+        task: updated,
+        assigneeIds: newlyAssignedIds,
+        actorId: actor.id,
+        actorName: actor.fullName || actor.email,
+      });
     }
 
     revalidatePath("/tasks");

@@ -1,7 +1,7 @@
 import "server-only";
 import { Resend } from "resend";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { env } from "@/lib/env";
+import { env, getAppBaseUrl } from "@/lib/env";
 import {
   NotificationProviderError,
   type NotificationDeliveryMessage,
@@ -53,7 +53,7 @@ export class EmailProvider implements NotificationProvider {
     let absoluteLink: string | null = null;
     if (input.linkUrl) {
       try {
-        absoluteLink = new URL(input.linkUrl, env.NEXT_PUBLIC_APP_URL).toString();
+        absoluteLink = new URL(input.linkUrl, getAppBaseUrl()).toString();
       } catch {
         throw new NotificationProviderError("Notification link is invalid.", {
           code: "INVALID_LINK",

@@ -89,8 +89,83 @@ describe("Telegram notification provider", () => {
     );
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
       chat_id: "123456",
-      text: "Test title\n\nTest message",
+      parse_mode: "HTML",
+      text: "<b>Test title</b>\n\nTest message",
     });
+  });
+
+  it("renders HTTPS links as Telegram inline buttons, escapes HTML, and keeps localhost links in text", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ ok: true, result: { message_id: 43 } }), {
+        status: 200,
+      }),
+    );
+
+    await new TelegramProvider().send({
+      ...delivery,
+      title: "Task <Urgent> & Due",
+      message: "Check <b>budget</b> > 500",
+      linkUrl: "https://racspeed-fe.vercel.app/project-center/123?tab=tasks",
+    });
+
+    const httpsBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(httpsBody.text).toBe(
+      "<b>Task &lt;Urgent&gt; &amp; Due</b>\n\nCheck &lt;b&gt;budget&lt;/b&gt; &gt; 500",
+    );
+    expect(httpsBody.reply_markup).toEqual({
+      inline_keyboard: [
+        [
+          {
+            text: "Open in RacSpeed",
+            url: "https://racspeed-fe.vercel.app/project-center/123?tab=tasks",
+          },
+        ],
+      ],
+    });
+
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ ok: true, result: { message_id: 44 } }), {
+        status: 200,
+      }),
+    );
+    await new TelegramProvider().send({
+      ...delivery,
+      linkUrl: "http://localhost:3000/project-center/123?tab=tasks",
+    });
+    const localBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(localBody.reply_markup).toBeUndefined();
+    expect(localBody.text).toContain("http://localhost:3000/project-center/123?tab=tasks");
+  });
+
+  it("resolves getAppBaseUrl with Vercel production fallback over stale or local URLs", async () => {
+    const { getAppBaseUrl } = await import("@/lib/env");
+
+    expect(
+      getAppBaseUrl({
+        NEXT_PUBLIC_APP_URL: "https://racspeed.vercel.app",
+        VERCEL_PROJECT_PRODUCTION_URL: "racspeed-fe.vercel.app",
+      }),
+    ).toBe("https://racspeed-fe.vercel.app");
+
+    expect(
+      getAppBaseUrl({
+        NEXT_PUBLIC_APP_URL: "http://localhost:3000",
+        VERCEL_PROJECT_PRODUCTION_URL: "racspeed-fe.vercel.app",
+      }),
+    ).toBe("https://racspeed-fe.vercel.app");
+
+    expect(
+      getAppBaseUrl({
+        NEXT_PUBLIC_APP_URL: "https://custom.racspeed.org",
+        VERCEL_PROJECT_PRODUCTION_URL: "racspeed-fe.vercel.app",
+      }),
+    ).toBe("https://custom.racspeed.org");
+
+    expect(
+      getAppBaseUrl({
+        NEXT_PUBLIC_APP_URL: "http://localhost:3000",
+      }),
+    ).toBe("http://localhost:3000");
   });
 
   it("classifies rate limits as retryable and non-deliverable chats as permanent", async () => {

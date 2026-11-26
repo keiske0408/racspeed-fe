@@ -11,6 +11,8 @@ const envSchema = z.object({
     .default("placeholder_anon_key"),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
   NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
+  VERCEL_PROJECT_PRODUCTION_URL: z.string().optional(),
+  VERCEL_URL: z.string().optional(),
   NEXT_PUBLIC_APP_NAME: z.string().default("Rotaract Club Operations Platform"),
   NEXT_PUBLIC_DEFAULT_CLUB_ID: z
     .string()
@@ -46,6 +48,8 @@ export const env = envSchema.parse({
   NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
   NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+  VERCEL_PROJECT_PRODUCTION_URL: process.env.VERCEL_PROJECT_PRODUCTION_URL,
+  VERCEL_URL: process.env.VERCEL_URL,
   NEXT_PUBLIC_APP_NAME: process.env.NEXT_PUBLIC_APP_NAME,
   NEXT_PUBLIC_DEFAULT_CLUB_ID: process.env.NEXT_PUBLIC_DEFAULT_CLUB_ID,
   NEXT_PUBLIC_DEFAULT_DISTRICT: process.env.NEXT_PUBLIC_DEFAULT_DISTRICT,
@@ -62,3 +66,46 @@ export const env = envSchema.parse({
   GEMINI_API_KEY: process.env.GEMINI_API_KEY,
   GEMINI_MODEL: process.env.GEMINI_MODEL || "gemini-2.5-flash",
 });
+
+function normalizeBaseUrl(raw?: string | null): string | null {
+  const trimmed = raw?.trim();
+  if (!trimmed) return null;
+  const withProtocol = /^https?:\/\//i.test(trimmed)
+    ? trimmed
+    : `https://${trimmed}`;
+  try {
+    return new URL(withProtocol).origin;
+  } catch {
+    return null;
+  }
+}
+
+export function getAppBaseUrl(overrideEnv?: {
+  NEXT_PUBLIC_APP_URL?: string;
+  VERCEL_PROJECT_PRODUCTION_URL?: string;
+  VERCEL_URL?: string;
+  NODE_ENV?: string;
+}): string {
+  const configured = normalizeBaseUrl(
+    overrideEnv?.NEXT_PUBLIC_APP_URL ?? env.NEXT_PUBLIC_APP_URL,
+  );
+  const vercelProd = normalizeBaseUrl(
+    overrideEnv?.VERCEL_PROJECT_PRODUCTION_URL ??
+      env.VERCEL_PROJECT_PRODUCTION_URL,
+  );
+  const vercelPreview = normalizeBaseUrl(
+    overrideEnv?.VERCEL_URL ?? env.VERCEL_URL,
+  );
+
+  const isStaleOrLocal =
+    !configured ||
+    configured.includes("localhost") ||
+    configured.includes("127.0.0.1") ||
+    configured === "https://racspeed.vercel.app";
+
+  if ((vercelProd || vercelPreview) && isStaleOrLocal) {
+    return vercelProd || vercelPreview || "http://localhost:3000";
+  }
+
+  return configured || vercelProd || vercelPreview || "http://localhost:3000";
+}

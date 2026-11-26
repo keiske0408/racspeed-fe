@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { env } from "@/lib/env";
+import { env, getAppBaseUrl } from "@/lib/env";
 import { getActiveNotificationUser } from "@/lib/services/notifications/auth";
 
 const settingsSchema = z
@@ -12,6 +12,7 @@ const settingsSchema = z
     telegramTreasuryUpdates: z.boolean().optional(),
     telegramReportingUpdates: z.boolean().optional(),
     telegramAdminUpdates: z.boolean().optional(),
+    telegramSelfActions: z.boolean().optional(),
     pushEnabled: z.boolean().optional(),
   })
   .refine((value) => Object.keys(value).length > 0);
@@ -45,6 +46,7 @@ export async function GET() {
 
   return NextResponse.json({
     preferences: preferences || {},
+    appBaseUrl: getAppBaseUrl(),
     telegram: {
       connected: Boolean(connection),
       username: connection?.username || null,
@@ -104,11 +106,31 @@ export async function PATCH(request: NextRequest) {
   if (values.telegramAdminUpdates !== undefined) {
     updates.telegram_admin_updates = values.telegramAdminUpdates;
   }
+  if (values.telegramSelfActions !== undefined) {
+    updates.telegram_self_actions = values.telegramSelfActions;
+  }
   if (values.pushEnabled !== undefined) updates.push_enabled = values.pushEnabled;
 
-  const { error } = await session.admin
+  let { error } = await session.admin
     .from("notification_preferences")
     .upsert({ profile_id: session.user.id, ...updates }, { onConflict: "profile_id" });
+
+  if (
+    error &&
+    error.message?.includes("telegram_self_actions") &&
+    "telegram_self_actions" in updates
+  ) {
+    const fallbackUpdates = { ...updates };
+    delete fallbackUpdates.telegram_self_actions;
+    const retry = await session.admin
+      .from("notification_preferences")
+      .upsert(
+        { profile_id: session.user.id, ...fallbackUpdates },
+        { onConflict: "profile_id" },
+      );
+    error = retry.error;
+  }
+
   if (error) {
     console.error("Could not save notification settings:", error.message);
     return NextResponse.json({ error: "Could not save notification settings." }, { status: 500 });

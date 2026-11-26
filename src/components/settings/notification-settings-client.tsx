@@ -1,25 +1,31 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   Check,
+  Clock,
   ExternalLink,
   MessageCircle,
   RefreshCw,
   Send,
+  Settings,
   Unlink,
 } from "lucide-react";
 import { PushNotificationControl } from "@/components/settings/push-notification-control";
 import type { NotificationType } from "@/lib/services/notifications/dispatch";
+import type { NotificationSlaConfig } from "@/lib/services/notifications/sla-config";
 import { NOTIFICATION_TYPES } from "@/lib/services/notifications/templates";
 
 interface NotificationSettingsClientProps {
   clubId: string;
   canManage: boolean;
+  slaConfig?: NotificationSlaConfig;
 }
 
 interface SettingsResponse {
   preferences: Record<string, unknown>;
+  appBaseUrl?: string;
   telegram: {
     connected: boolean;
     username: string | null;
@@ -74,6 +80,7 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
 export function NotificationSettingsClient({
   clubId,
   canManage,
+  slaConfig,
 }: NotificationSettingsClientProps) {
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
   const [groups, setGroups] = useState<TelegramGroup[]>([]);
@@ -233,6 +240,30 @@ export function NotificationSettingsClient({
     }
   }
 
+  async function sendTestNotification() {
+    setSaving(true);
+    setError(null);
+    setStatus(null);
+    try {
+      const res = await requestJson<{
+        appBaseUrl: string;
+        deliveryStatuses: string[];
+      }>("/api/notifications/test", { method: "POST" });
+      const sentCount = res.deliveryStatuses.filter((s) => s === "SENT").length;
+      setStatus(
+        sentCount > 0
+          ? `Test notification sent (${sentCount} external delivery succeeded, outbound link base: ${res.appBaseUrl}).`
+          : `In-app test notification created (outbound link base: ${res.appBaseUrl}). Enable Web Push or Telegram to test external delivery.`,
+      );
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Could not send test notification.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function createGroupLink() {
     setSaving(true);
     setError(null);
@@ -336,6 +367,64 @@ export function NotificationSettingsClient({
 
       <PushNotificationControl />
 
+      {slaConfig && (
+        <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <span className="rounded-lg bg-amber-50 p-2 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+                <Clock className="h-4 w-4" />
+              </span>
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Club Notification &amp; Deadline SLA Policy
+                </h2>
+                <p className="mt-1 text-xs text-slate-500">
+                  Active timing thresholds configured in Club Settings for task updates and upcoming deadlines.
+                </p>
+              </div>
+            </div>
+            {canManage && (
+              <Link
+                href="/settings#sla-configuration"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                <Settings className="h-3.5 w-3.5" /> Configure SLA in Club Settings
+              </Link>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 text-xs">
+            <div className="rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-2 dark:border-slate-800 dark:bg-slate-800/40">
+              <span className="block text-[11px] text-slate-500">Task due soon</span>
+              <span className="font-semibold text-slate-900 dark:text-slate-100">{slaConfig.taskDueSoonHours}h before due</span>
+            </div>
+            <div className="rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-2 dark:border-slate-800 dark:bg-slate-800/40">
+              <span className="block text-[11px] text-slate-500">Project nearby</span>
+              <span className="font-semibold text-slate-900 dark:text-slate-100">{slaConfig.projectNearbyHours}h before start</span>
+            </div>
+            <div className="rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-2 dark:border-slate-800 dark:bg-slate-800/40">
+              <span className="block text-[11px] text-slate-500">Project / RSVP deadline</span>
+              <span className="font-semibold text-slate-900 dark:text-slate-100">{slaConfig.projectDeadlineHours}h before cutoff</span>
+            </div>
+            <div className="rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-2 dark:border-slate-800 dark:bg-slate-800/40">
+              <span className="block text-[11px] text-slate-500">Draft readiness SLA</span>
+              <span className="font-semibold text-slate-900 dark:text-slate-100">{slaConfig.draftReadinessDays} days before start</span>
+            </div>
+            <div className="rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-2 dark:border-slate-800 dark:bg-slate-800/40">
+              <span className="block text-[11px] text-slate-500">Report submission SLA</span>
+              <span className="font-semibold text-slate-900 dark:text-slate-100">{slaConfig.reportDueSlaDays} days post-event</span>
+            </div>
+            <div className="rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-2 dark:border-slate-800 dark:bg-slate-800/40">
+              <span className="block text-[11px] text-slate-500">Task triggers</span>
+              <span className="font-semibold text-slate-900 dark:text-slate-100">
+                {slaConfig.notifyOnTaskAssigned ? "Assign" : "No assign"} &middot;{" "}
+                {slaConfig.notifyOnTaskMarked ? "Mark" : "No mark"} &middot;{" "}
+                {slaConfig.taskOverdueReminderEnabled ? "Overdue on" : "Overdue off"}
+              </span>
+            </div>
+          </div>
+        </section>
+      )}
+
       <section className="space-y-5 rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-3">
@@ -352,23 +441,54 @@ export function NotificationSettingsClient({
               </p>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => void sendTestNotification()}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800 cursor-pointer"
+            >
+              <Send className="h-3.5 w-3.5" /> Send test notification
+            </button>
             {settings?.telegram.connected ? (
               <>
-                <button type="button" disabled={saving} onClick={() => void loadSettings().catch((reason) => setError(reason.message))} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200">
+                <button type="button" disabled={saving} onClick={() => void loadSettings().catch((reason) => setError(reason.message))} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 cursor-pointer">
                   <RefreshCw className="h-3.5 w-3.5" /> Refresh
                 </button>
-                <button type="button" disabled={saving} onClick={disconnectTelegram} className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-50 dark:border-rose-900 dark:text-rose-300">
+                <button type="button" disabled={saving} onClick={disconnectTelegram} className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-50 dark:border-rose-900 dark:text-rose-300 cursor-pointer">
                   <Unlink className="h-3.5 w-3.5" /> Disconnect
                 </button>
               </>
             ) : (
-              <button type="button" disabled={saving || !settings?.telegram.botUsername} onClick={connectTelegram} className="inline-flex items-center gap-2 rounded-lg bg-[#0D3594] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">
+              <button type="button" disabled={saving || !settings?.telegram.botUsername} onClick={connectTelegram} className="inline-flex items-center gap-2 rounded-lg bg-[#0D3594] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50 cursor-pointer">
                 <Send className="h-3.5 w-3.5" /> Connect Telegram
               </button>
             )}
           </div>
         </div>
+
+        {canManage && settings?.appBaseUrl && (
+          <div
+            className={`rounded-lg border px-3 py-2 text-[11px] flex flex-wrap items-center justify-between gap-2 ${
+              settings.appBaseUrl.includes("localhost") ||
+              settings.appBaseUrl === "https://racspeed.vercel.app"
+                ? "border-amber-300/70 bg-amber-50/70 text-amber-900 dark:border-amber-500/30 dark:bg-amber-950/25 dark:text-amber-300"
+                : "border-slate-200 bg-slate-50/70 text-slate-600 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-300"
+            }`}
+          >
+            <span>
+              Outbound link base URL:{" "}
+              <code className="font-mono font-semibold">{settings.appBaseUrl}</code>
+            </span>
+            {(settings.appBaseUrl.includes("localhost") ||
+              settings.appBaseUrl === "https://racspeed.vercel.app") && (
+              <span>
+                Update <code>NEXT_PUBLIC_APP_URL</code> to{" "}
+                <code>https://racspeed-fe.vercel.app</code> in Vercel for production deep links.
+              </span>
+            )}
+          </div>
+        )}
 
         {accountLink && (
           <div className="flex flex-wrap items-center gap-2">
@@ -410,6 +530,26 @@ export function NotificationSettingsClient({
               </label>
             ))}
           </div>
+
+          <label className="mt-4 flex items-center justify-between gap-4 border-t border-slate-100 pt-3 dark:border-slate-800">
+            <span>
+              <span className="block text-xs font-semibold text-slate-800 dark:text-slate-100">
+                Receive Telegram copy for my own actions
+              </span>
+              <span className="mt-0.5 block text-[11px] text-slate-500">
+                Off by default to prevent notification noise. Enable when testing self-assignments or self-updated tasks.
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              checked={isEnabled("telegram_self_actions", false)}
+              disabled={saving || !settings?.telegram.connected}
+              onChange={(event) =>
+                void savePreference({ telegramSelfActions: event.target.checked })
+              }
+              className="h-4 w-4 accent-[#0D3594]"
+            />
+          </label>
 
           <label className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs">
             <span className="font-semibold text-slate-800 dark:text-slate-100">Delivery frequency</span>

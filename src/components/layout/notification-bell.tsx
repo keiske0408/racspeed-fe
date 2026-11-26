@@ -48,11 +48,11 @@ export function NotificationBell() {
   async function toggle() {
     const next = !open;
     setOpen(next);
-    if (!next || items.length > 0) return;
-    setLoading(true);
+    if (!next) return;
+    setLoading(items.length === 0);
     setError(null);
     try {
-      const response = await fetch("/api/notifications", { cache: "no-store" });
+      const response = await fetch("/api/notifications?limit=25", { cache: "no-store" });
       const body = await response.json();
       if (!response.ok)
         throw new Error(body.error || "Could not load notifications.");
@@ -94,7 +94,7 @@ export function NotificationBell() {
   }
 
   return (
-    <div className="relative">
+    <div className="relative flex items-center gap-1.5">
       <button
         type="button"
         onClick={toggle}
@@ -110,25 +110,34 @@ export function NotificationBell() {
             {unread > 9 ? "9+" : unread}
           </span>
         )}
-        <Link
-          href="/notifications"
-          onClick={() => setOpen(false)}
-          className="text-[10px] font-semibold text-[#0D3594] hover:underline dark:text-blue-300"
-        >
-          View all
-        </Link>
       </button>
+      <Link
+        href="/notifications"
+        onClick={() => setOpen(false)}
+        className="hidden sm:inline-block text-[10px] font-semibold text-[#0D3594] hover:underline dark:text-blue-300"
+      >
+        View all
+      </Link>
       {open && (
         <section className="absolute right-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-[#EDEDF2] bg-white shadow-lg dark:border-slate-800 dark:bg-[#161B26]">
           <header className="flex items-center justify-between border-b border-[#EDEDF2] px-4 py-3 dark:border-slate-800">
             <h2 className="text-xs font-bold text-[#111625] dark:text-white">
               Notifications
             </h2>
-            {unread > 0 && (
-              <span className="text-[10px] font-semibold text-slate-500">
-                {unread} unread
-              </span>
-            )}
+            <div className="flex items-center gap-2.5">
+              {unread > 0 && (
+                <span className="text-[10px] font-semibold text-slate-500">
+                  {unread} unread
+                </span>
+              )}
+              <Link
+                href="/notifications"
+                onClick={() => setOpen(false)}
+                className="text-[10px] font-semibold text-[#0D3594] hover:underline dark:text-blue-300"
+              >
+                Open center
+              </Link>
+            </div>
           </header>
           <div className="max-h-96 overflow-y-auto">
             {loading && (

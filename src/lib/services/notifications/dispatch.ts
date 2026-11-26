@@ -1,5 +1,5 @@
 import "server-only";
-import { env } from "@/lib/env";
+import { env, getAppBaseUrl } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { EmailProvider } from "./providers/email";
 import {
@@ -35,7 +35,20 @@ export type NotificationType =
   | "REPORT_DUE"
   | "BADGE_EARNED"
   | "MEMBERSHIP_UPDATE"
-  | "PUBLIC_ANNOUNCEMENT";
+  | "PUBLIC_ANNOUNCEMENT"
+  | "TASK_ASSIGNED"
+  | "TASK_UPDATED"
+  | "TASK_DEADLINE"
+  | "PROJECT_DEADLINE";
+
+const LEGACY_NOTIFICATION_TYPE_FALLBACK: Partial<
+  Record<NotificationType, NotificationType>
+> = {
+  TASK_ASSIGNED: "GENERAL",
+  TASK_UPDATED: "GENERAL",
+  TASK_DEADLINE: "ACTIVITY_REMINDER",
+  PROJECT_DEADLINE: "ACTIVITY_REMINDER",
+};
 
 export interface NotificationDispatchInput {
   profileId: string;
@@ -50,6 +63,7 @@ export interface NotificationDispatchInput {
   sendTelegram?: boolean;
   sendToGroups?: boolean;
   deferDelivery?: boolean;
+  isSelfAction?: boolean;
 }
 
 export interface DeliveryRow {
@@ -269,7 +283,7 @@ async function sendClaimedDelivery(delivery: DeliveryRow) {
 
   try {
     const linkUrl = notification.link_url
-      ? new URL(notification.link_url, env.NEXT_PUBLIC_APP_URL).toString()
+      ? new URL(notification.link_url, getAppBaseUrl()).toString()
       : null;
     const message: NotificationDeliveryMessage = {
       notificationId: notification.id,
@@ -347,7 +361,7 @@ export async function dispatchNotification(input: NotificationDispatchInput) {
   }
 
   const [profileResult, preferenceResult, templateResult] = await Promise.all([
-    admin.from("profiles").select("email").eq("id", input.profileId).maybeSingle(),
+    admin.from("profiles").select("email, full_name").eq("id", input.profileId).maybeSingle(),
     admin
       .from("notification_preferences")
       .select("*")
@@ -373,7 +387,7 @@ export async function dispatchNotification(input: NotificationDispatchInput) {
       : null,
     { title: input.title, message: input.message },
   );
-  const { data: notification, error: notificationError } = await admin
+  let { data: notification, error: notificationError } = await admin
     .from("notifications")
     .insert({
       profile_id: input.profileId,
@@ -386,6 +400,30 @@ export async function dispatchNotification(input: NotificationDispatchInput) {
     })
     .select("id")
     .maybeSingle();
+
+  const fallbackType = LEGACY_NOTIFICATION_TYPE_FALLBACK[input.type];
+  if (
+    notificationError &&
+    notificationError.code === "23514" &&
+    fallbackType
+  ) {
+    const retry = await admin
+      .from("notifications")
+      .insert({
+        profile_id: input.profileId,
+        club_id: input.clubId,
+        title: rendered.title,
+        message: rendered.message,
+        type: fallbackType,
+        link_url: input.linkUrl || null,
+        dedupe_key: input.dedupeKey || null,
+      })
+      .select("id")
+      .maybeSingle();
+    notification = retry.data;
+    notificationError = retry.error;
+  }
+
   if (notificationError) {
     if (notificationError.code === "23505" && input.dedupeKey) {
       return { created: false, notificationId: null, deliveryStatuses: [] };
@@ -425,7 +463,11 @@ export async function dispatchNotification(input: NotificationDispatchInput) {
     }
   }
 
-  if (input.sendTelegram && preferences?.telegram_enabled === true) {
+  if (
+    input.sendTelegram &&
+    preferences?.telegram_enabled === true &&
+    (!input.isSelfAction || preferences?.telegram_self_actions === true)
+  ) {
     const category = getNotificationCategory(input.type);
     if (preferences[TELEGRAM_CATEGORY_COLUMNS[category]] !== false) {
       const { data: connection, error } = await admin
@@ -593,7 +635,7 @@ export async function processClaimedDeliveries(deliveries: DeliveryRow[]) {
       let remaining = 3800;
       for (const { notification } of prepared) {
         const link = notification.link_url
-          ? new URL(notification.link_url, env.NEXT_PUBLIC_APP_URL).toString()
+          ? new URL(notification.link_url, getAppBaseUrl()).toString()
           : "";
         const item = [
           `- ${notification.title}`,

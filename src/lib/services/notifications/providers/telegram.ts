@@ -14,6 +14,27 @@ interface TelegramResponse {
   parameters?: { retry_after?: number };
 }
 
+function escapeTelegramHtml(text: string): string {
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function isTelegramButtonUrl(url: string | null): url is string {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return (
+      parsed.protocol === "https:" &&
+      parsed.hostname !== "localhost" &&
+      parsed.hostname !== "127.0.0.1"
+    );
+  } catch {
+    return false;
+  }
+}
+
 export class TelegramProvider implements NotificationProvider {
   async send(input: NotificationDeliveryMessage) {
     if (!env.TELEGRAM_BOT_TOKEN) {
@@ -31,6 +52,30 @@ export class TelegramProvider implements NotificationProvider {
       });
     }
 
+    const useInlineButton = isTelegramButtonUrl(input.linkUrl);
+    const formattedText = [
+      `<b>${escapeTelegramHtml(input.title)}</b>`,
+      escapeTelegramHtml(input.message),
+      !useInlineButton && input.linkUrl
+        ? escapeTelegramHtml(input.linkUrl)
+        : null,
+    ]
+      .filter(Boolean)
+      .join("\n\n")
+      .slice(0, 4096);
+
+    const payload: Record<string, unknown> = {
+      chat_id: targetId,
+      text: formattedText,
+      parse_mode: "HTML",
+      link_preview_options: { is_disabled: true },
+    };
+    if (useInlineButton && input.linkUrl) {
+      payload.reply_markup = {
+        inline_keyboard: [[{ text: "Open in RacSpeed", url: input.linkUrl }]],
+      };
+    }
+
     let response: Response;
     try {
       response = await fetch(
@@ -38,18 +83,7 @@ export class TelegramProvider implements NotificationProvider {
         {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            chat_id: targetId,
-            text: [
-              input.title,
-              input.message,
-              input.linkUrl,
-            ]
-              .filter(Boolean)
-              .join("\n\n")
-              .slice(0, 4096),
-            link_preview_options: { is_disabled: true },
-          }),
+          body: JSON.stringify(payload),
           cache: "no-store",
           signal: AbortSignal.timeout(10_000),
         },

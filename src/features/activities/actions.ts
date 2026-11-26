@@ -12,6 +12,11 @@ import {
   dispatchNotification,
   type NotificationType,
 } from "@/lib/services/notifications/dispatch";
+import {
+  notifyTaskAssigned,
+  notifyTaskStatusMarked,
+} from "@/lib/services/notifications/task-notifications";
+import { getGroupTasksList } from "@/features/tasks/queries";
 import type { TeamRole } from "./types";
 import {
   createTask,
@@ -574,6 +579,16 @@ export async function createActivityAction(
         created_at: orderedTimestamp,
         updated_at: orderedTimestamp,
       });
+
+      if (assignedMemberIds.length > 0) {
+        await notifyTaskAssigned({
+          clubId: taskRecord.clubId,
+          task: taskRecord,
+          assigneeIds: assignedMemberIds,
+          actorId: user.id,
+          actorName: user.fullName || user.email,
+        });
+      }
     }
   }
 
@@ -838,7 +853,31 @@ export async function updateActivityStatusAction(
     .eq("id", activityId);
   if (error) return { success: false, error: error.message };
 
-  if (status === "CANCELLED") {
+  if (status === "ONGOING") {
+    await notifyProjectAudience({
+      activityId,
+      clubId: access.activity.club_id,
+      title: "Activity is now Ongoing",
+      message: `${access.activity.title} is now live and ongoing.`,
+      type: "ACTIVITY_REMINDER",
+      excludeProfileIds: [],
+      dedupePrefix: `activity-ongoing_${activityId}`,
+    });
+  } else if (status === "AWAITING_REPORT") {
+    const reportTargetId = access.activity.owner_id || access.user.id;
+    await dispatchNotification({
+      profileId: reportTargetId,
+      clubId: access.activity.club_id,
+      type: "REPORT_DUE",
+      title: "Project ready for accomplishment report",
+      message: `Complete the report details and photos for "${access.activity.title}" to publish it as accomplished.`,
+      linkUrl: `/project-center/${activityId}?tab=REPORT`,
+      dedupeKey: `report-due:${activityId}`,
+      sendPush: true,
+      sendEmail: true,
+      sendTelegram: true,
+    }).catch((e) => console.warn("Failed awaiting report notif:", e));
+  } else if (status === "CANCELLED") {
     await notifyProjectAudience({
       activityId,
       clubId: access.activity.club_id,
@@ -2720,6 +2759,9 @@ const activityTaskSchema = z.object({
   description: z.string().trim().max(2000).default(""),
   committee: z.enum(COMMITTEES).default("CLUB_SERVICE"),
   priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).default("MEDIUM"),
+  status: z
+    .enum(["TODO", "IN_PROGRESS", "IN_REVIEW", "COMPLETED"])
+    .default("TODO"),
   dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Due date is required"),
   assigneeIds: z.array(uuidString).max(20).default([]),
 });
@@ -2755,7 +2797,7 @@ export async function createActivityTaskAction(
     description: parsed.data.description,
     committee: parsed.data.committee as TaskCommittee,
     priority: parsed.data.priority as TaskPriority,
-    status: "TODO",
+    status: parsed.data.status as TaskStatus,
     dueDate: parsed.data.dueDate,
     assignedMemberIds: (assignees || []).map((a) => a.id),
     assignedMemberNames: (assignees || []).map((a) => a.full_name),
@@ -2786,24 +2828,18 @@ export async function createActivityTaskAction(
     console.warn("Could not sync activity task to Supabase:", error.message);
 
   // 1. Notify assignees directly
-  for (const assignee of assignees || []) {
-    if (assignee.id !== access.user.id) {
-      dispatchNotification({
-        profileId: assignee.id,
-        clubId: access.activity.club_id,
-        title: `Task assigned: ${created.title}`,
-        message: `You were assigned to "${created.title}" in ${access.activity.title}. Due: ${created.dueDate}.`,
-        type: "GENERAL",
-        linkUrl: `/project-center/${parsed.data.activityId}?tab=tasks`,
-        dedupeKey: `task_assign_${created.id}_${assignee.id}`,
-        sendPush: true,
-        sendTelegram: true,
-      }).catch((e) => console.warn("Failed assignee task notif:", e));
-    }
+  const assignedIds = (assignees || []).map((a) => a.id);
+  if (assignedIds.length > 0) {
+    await notifyTaskAssigned({
+      clubId: access.activity.club_id,
+      task: created,
+      assigneeIds: assignedIds,
+      actorId: access.user.id,
+      actorName: access.user.fullName || access.user.email,
+    });
   }
 
   // 2. Notify other committee & going members about the new task
-  const assignedIds = (assignees || []).map((a) => a.id);
   notifyProjectAudience({
     activityId: parsed.data.activityId,
     clubId: access.activity.club_id,
@@ -2873,7 +2909,10 @@ export async function updateActivityTaskAction(
   const assignedMemberIds = (assignees || []).map((a) => a.id);
   const assignedMemberNames = (assignees || []).map((a) => a.full_name);
 
-  updateTask(parsed.data.taskId, {
+  const existingTasks = await getGroupTasksList(access.activity.club_id);
+  const taskBefore = existingTasks.find((t) => t.id === parsed.data.taskId);
+
+  const updatedTask = updateTask(parsed.data.taskId, {
     title: parsed.data.title,
     description: parsed.data.description,
     committee: parsed.data.committee as TaskCommittee,
@@ -2907,20 +2946,47 @@ export async function updateActivityTaskAction(
     );
   }
 
-  for (const assignee of assignees || []) {
-    if (assignee.id !== access.user.id) {
-      dispatchNotification({
-        profileId: assignee.id,
-        clubId: access.activity.club_id,
-        title: `Task assigned: ${parsed.data.title}`,
-        message: `You were assigned to "${parsed.data.title}" in ${access.activity.title}. Due: ${parsed.data.dueDate}.`,
-        type: "GENERAL",
-        linkUrl: `/project-center/${parsed.data.activityId}?tab=tasks`,
-        dedupeKey: `task_assign_${parsed.data.taskId}_${assignee.id}`,
-        sendPush: true,
-        sendTelegram: true,
-      }).catch((e) => console.warn("Failed assignee task notif:", e));
-    }
+  const previousIds = taskBefore?.assignedMemberIds || [];
+  const newlyAssignedIds = taskBefore
+    ? assignedMemberIds.filter((id) => !previousIds.includes(id))
+    : assignedMemberIds;
+  const taskSnapshot = updatedTask || {
+    id: parsed.data.taskId,
+    title: parsed.data.title,
+    dueDate: parsed.data.dueDate,
+    assignedMemberIds,
+    projectId: parsed.data.activityId,
+    projectTitle: access.activity.title,
+  };
+
+  if (newlyAssignedIds.length > 0) {
+    await notifyTaskAssigned({
+      clubId: access.activity.club_id,
+      task: taskSnapshot,
+      assigneeIds: newlyAssignedIds,
+      actorId: access.user.id,
+      actorName: access.user.fullName || access.user.email,
+    });
+  }
+
+  if (taskBefore && taskBefore.status !== parsed.data.status) {
+    await logActivity(
+      parsed.data.activityId,
+      access.user.id,
+      "TASK_STATUS_UPDATED",
+      {
+        title: parsed.data.title,
+        status: parsed.data.status,
+      },
+    );
+    await notifyTaskStatusMarked({
+      clubId: access.activity.club_id,
+      task: taskSnapshot,
+      previousStatus: taskBefore.status,
+      nextStatus: parsed.data.status as TaskStatus,
+      actorId: access.user.id,
+      actorName: access.user.fullName || access.user.email,
+    });
   }
 
   revalidateActivity(parsed.data.activityId);
