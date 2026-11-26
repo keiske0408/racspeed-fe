@@ -2,10 +2,12 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getActiveNotificationUser } from "@/lib/services/notifications/auth";
 
+const uuidSchema = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+
 const readSchema = z
   .object({
-    id: z.string().uuid().optional(),
-    notificationId: z.string().uuid().optional(),
+    id: uuidSchema.optional(),
+    notificationId: uuidSchema.optional(),
     markAllRead: z.boolean().optional(),
   })
   .refine((value) => {
@@ -14,7 +16,7 @@ const readSchema = z
   });
 const cursorSchema = z.object({
   createdAt: z.string().datetime({ offset: true }),
-  id: z.string().uuid(),
+  id: uuidSchema,
 });
 
 export async function GET(request: NextRequest) {

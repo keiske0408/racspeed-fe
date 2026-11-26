@@ -4,11 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/services/notifications/auth", () => ({
   getActiveNotificationUser: vi.fn(),
+  getNotificationAdmin: vi.fn(),
 }));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: vi.fn(),
 }));
 
+const seededClubId = "00000000-0000-0000-0000-000000000001";
 const profileId = "00000000-0000-4000-8000-000000000001";
 
 function createAdminMock() {
@@ -21,7 +23,12 @@ function createAdminMock() {
       eq: vi.fn(() => deleteQuery),
       is: vi.fn(async () => ({ error: null })),
     };
+    const selectQuery = {
+      eq: vi.fn(() => selectQuery),
+      order: vi.fn(async () => ({ data: [], error: null })),
+    };
     return {
+      select: vi.fn(() => selectQuery),
       delete: vi.fn(() => deleteQuery),
       insert: vi.fn(async (value: Record<string, unknown>) => {
         inserts.push({ table, value });
@@ -129,5 +136,41 @@ describe("Telegram account linking routes", () => {
         }),
       },
     ]);
+  });
+
+  it("accepts seeded non-RFC4122 clubId UUIDs for groups and templates and rejects malformed clubIds", async () => {
+    const mock = createAdminMock();
+    const auth = await import("@/lib/services/notifications/auth");
+    vi.mocked(auth.getNotificationAdmin).mockResolvedValue({
+      user: { id: profileId },
+      admin: mock.admin,
+    } as never);
+    const { NextRequest } = await import("next/server");
+    const { GET: getGroups } = await import("@/app/api/notifications/telegram/groups/route");
+    const { GET: getTemplates } = await import("@/app/api/notifications/templates/route");
+
+    const groupsRes = await getGroups(
+      new NextRequest(`https://racspeed.example/api/notifications/telegram/groups?clubId=${seededClubId}`),
+    );
+    expect(groupsRes.status).toBe(200);
+    expect(await groupsRes.json()).toEqual({ groups: [] });
+
+    const templatesRes = await getTemplates(
+      new NextRequest(`https://racspeed.example/api/notifications/templates?clubId=${seededClubId}`),
+    );
+    expect(templatesRes.status).toBe(200);
+    expect(await templatesRes.json()).toEqual({ templates: [] });
+
+    const badGroupsRes = await getGroups(
+      new NextRequest("https://racspeed.example/api/notifications/telegram/groups?clubId=not-a-uuid"),
+    );
+    expect(badGroupsRes.status).toBe(400);
+    expect(await badGroupsRes.json()).toEqual({ error: "Invalid club." });
+
+    const badTemplatesRes = await getTemplates(
+      new NextRequest("https://racspeed.example/api/notifications/templates?clubId=not-a-uuid"),
+    );
+    expect(badTemplatesRes.status).toBe(400);
+    expect(await badTemplatesRes.json()).toEqual({ error: "Invalid club." });
   });
 });

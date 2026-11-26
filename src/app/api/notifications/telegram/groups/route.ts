@@ -4,11 +4,12 @@ import { z } from "zod";
 import { env } from "@/lib/env";
 import { getNotificationAdmin } from "@/lib/services/notifications/auth";
 
-const clubIdSchema = z.string().uuid();
+const uuidSchema = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+const clubIdSchema = uuidSchema;
 const linkSchema = z.object({ clubId: clubIdSchema });
 const unlinkSchema = z.object({
   clubId: clubIdSchema,
-  groupId: z.string().uuid(),
+  groupId: uuidSchema,
 });
 
 export async function GET(request: NextRequest) {

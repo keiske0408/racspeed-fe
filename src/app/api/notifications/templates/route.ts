@@ -6,7 +6,7 @@ import {
   validateNotificationTemplate,
 } from "@/lib/services/notifications/templates";
 
-const clubIdSchema = z.string().uuid();
+const clubIdSchema = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
 const templateSchema = z.object({
   clubId: clubIdSchema,
   type: z.enum(NOTIFICATION_TYPES),
