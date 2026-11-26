@@ -252,7 +252,7 @@ describe("POST /api/attendance/check-in — Endpoint Integration Scenarios", () 
   beforeEach(async () => {
     vi.clearAllMocks();
     const { resetCheckInRateLimiter } = await import(
-      "@/app/api/attendance/check-in/route"
+      "@/app/api/attendance/check-in/rate-limit"
     );
     resetCheckInRateLimiter();
   });
