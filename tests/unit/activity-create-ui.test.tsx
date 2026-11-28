@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import {
   afterAll,
   afterEach,
+  beforeAll,
   beforeEach,
   describe,
   expect,
@@ -32,12 +33,8 @@ const members = [
   { id: bobId, fullName: "Bob Cruz", role: "MEMBER" },
 ];
 
-beforeEach(async () => {
+beforeAll(async () => {
   vi.resetModules();
-  mocks.createActivityAction.mockClear();
-  mocks.push.mockClear();
-  mocks.refresh.mockClear();
-  mocks.notifyToast.mockClear();
 
   vi.doMock("next/navigation", () => ({
     useRouter: () => ({ push: mocks.push, refresh: mocks.refresh }),
@@ -66,6 +63,13 @@ beforeEach(async () => {
 
   const mod = await import("@/app/(app)/project-center/new/activity-create-client");
   ActivityCreateClient = mod.ActivityCreateClient;
+}, 30_000);
+
+beforeEach(() => {
+  mocks.createActivityAction.mockClear();
+  mocks.push.mockClear();
+  mocks.refresh.mockClear();
+  mocks.notifyToast.mockClear();
 });
 
 afterEach(() => {

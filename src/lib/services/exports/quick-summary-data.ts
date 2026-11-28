@@ -388,3 +388,36 @@ export function formatQuickSummaryPlainText(data: QuickSummaryData): string {
   return lines.join("\n").trim();
 }
 
+export function recalculateQuickSummaryStats(
+  data: QuickSummaryData,
+  allProjects: QuickSummaryProjectItem[] = data.projects,
+  allTasks: QuickSummaryTaskItem[] = data.tasks,
+): QuickSummaryData {
+  let subtasksTotal = 0;
+  let subtasksDone = 0;
+  for (const t of allTasks) {
+    subtasksTotal += t.checklist.length;
+    subtasksDone += t.checklist.filter((c) => c.completed).length;
+  }
+
+  return {
+    ...data,
+    projects: data.mode === "TASKS_ONLY" ? [] : allProjects,
+    tasks: data.mode === "PROJECTS_ONLY" ? [] : allTasks,
+    stats: {
+      projectsCount: allProjects.length,
+      sessionsCount:
+        allProjects.length === 0
+          ? 0
+          : Math.max(data.stats.sessionsCount, allProjects.length),
+      openTasksCount: allTasks.length,
+      urgentTasksCount: allTasks.filter((t) => {
+        const up = t.priority.toUpperCase();
+        return up === "URGENT" || up === "HIGH";
+      }).length,
+      subtasksDone,
+      subtasksTotal,
+    },
+  };
+}
+

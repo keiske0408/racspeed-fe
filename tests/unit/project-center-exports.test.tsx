@@ -27,6 +27,7 @@ import type { ProjectCenterHeader as ProjectCenterHeaderType } from "@/app/(app)
 import {
   buildQuickSummaryData,
   formatQuickSummaryPlainText,
+  recalculateQuickSummaryStats,
 } from "@/lib/services/exports/quick-summary-data";
 
 let buildDeterministicDeck: typeof BuildDeterministicDeckType;
@@ -546,6 +547,52 @@ describe("Project Center Excel Calendar & Presentation Exports", () => {
     expect(
       screen.getByText("Member Tasks & Subtasks Summary"),
     ).toBeInTheDocument();
+
+    // Switch back to Combined and test inline editing + Reset to DB
+    fireEvent.click(screen.getByRole("button", { name: "Combined" }));
+    fireEvent.click(screen.getByRole("tab", { name: /Edit Content/i }));
+    fireEvent.change(screen.getByLabelText("Summary headline"), {
+      target: { value: "Revised December GC Briefing" },
+    });
+    expect(screen.getByText("Revised December GC Briefing")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Project 1 title"), {
+      target: { value: "Project ELEMENOPI (Updated Venue)" },
+    });
+    expect(
+      screen.getByText("Project ELEMENOPI (Updated Venue)"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Add Task/i }));
+    expect(screen.getByText("[High] New Action Item")).toBeInTheDocument();
+
+    // Test Reset to DB restores baseline data
+    fireEvent.click(screen.getByRole("button", { name: /Reset to DB/i }));
+    expect(
+      screen.queryByText("[High] New Action Item"),
+    ).toBeNull();
+    expect(
+      screen.getByText("Projects & Action Tasks Summary"),
+    ).toBeInTheDocument();
+
+    // Direct KPI recalculation sanity check
+    const recalced = recalculateQuickSummaryStats(
+      buildQuickSummaryData({
+        activities: sampleActivities,
+        tasks: sampleTasks,
+        mode: "COMBINED",
+        timeframe: "TWO_MONTHS",
+        rotaryYear: "2026-27",
+        clubName: "Rotaract Club of San Pedro East",
+        districtCode: "3820",
+        referenceNow: new Date("2026-11-24T04:00:00Z"),
+      }),
+      [],
+      [],
+    );
+    expect(recalced.stats.projectsCount).toBe(0);
+    expect(recalced.stats.openTasksCount).toBe(0);
+    expect(recalced.stats.subtasksTotal).toBe(0);
 
     cleanup();
 
