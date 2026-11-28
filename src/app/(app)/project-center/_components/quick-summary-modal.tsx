@@ -2,29 +2,43 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowDown,
+  ArrowUp,
   Check,
   Copy,
   Download,
   Image as ImageIcon,
   Layers,
   Loader2,
+  Palette,
   Pencil,
   Plus,
   RotateCcw,
   SlidersHorizontal,
+  Star,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 import type { ActivitySummaryDTO } from "@/features/activities/types";
 import type { GroupTaskDTO } from "@/lib/data/tasks-types";
 import { manilaDateKey } from "@/lib/utils/dates";
 import {
+  DEFAULT_QUICK_SUMMARY_DESIGN,
+  QUICK_SUMMARY_COLOR_PRESETS,
   buildQuickSummaryData,
   formatQuickSummaryPlainText,
   recalculateQuickSummaryStats,
+  type QuickSummaryCardRadius,
+  type QuickSummaryDesignConfig,
+  type QuickSummaryFontScale,
+  type QuickSummaryHeaderAlign,
   type QuickSummaryLayout,
+  type QuickSummaryLogoSize,
   type QuickSummaryMode,
+  type QuickSummaryNoteTone,
   type QuickSummaryProjectItem,
+  type QuickSummarySectionOrder,
   type QuickSummaryTaskItem,
   type QuickSummaryTheme,
   type QuickSummaryTimeframe,
@@ -57,6 +71,15 @@ function downloadBlob(blob: Blob, filename: string) {
   window.URL.revokeObjectURL(url);
 }
 
+function moveArrayItem<T>(items: T[], index: number, delta: -1 | 1): T[] {
+  const target = index + delta;
+  if (target < 0 || target >= items.length) return items;
+  const copy = [...items];
+  const [moved] = copy.splice(index, 1);
+  copy.splice(target, 0, moved);
+  return copy;
+}
+
 const smallInputClass =
   "w-full rounded-lg border border-[#DDE1EA] bg-white px-2.5 py-1.5 text-xs text-[#111625] outline-none focus:border-[#0D3594] dark:border-slate-700 dark:bg-slate-900 dark:text-white";
 
@@ -70,7 +93,7 @@ export function QuickSummaryModal({
   districtCode,
   canManageClub,
 }: QuickSummaryModalProps) {
-  const [leftTab, setLeftTab] = useState<"CONFIG" | "EDIT">("CONFIG");
+  const [leftTab, setLeftTab] = useState<"CONFIG" | "DESIGN" | "EDIT">("CONFIG");
   const [mode, setMode] = useState<QuickSummaryMode>("COMBINED");
   const [timeframe, setTimeframe] =
     useState<QuickSummaryTimeframe>("NEXT_14_DAYS");
@@ -79,6 +102,10 @@ export function QuickSummaryModal({
   const [includeSubtasks, setIncludeSubtasks] = useState(true);
   const [includeDrafts, setIncludeDrafts] = useState(false);
   const [customNote, setCustomNote] = useState("");
+  const [design, setDesign] = useState<QuickSummaryDesignConfig>(
+    DEFAULT_QUICK_SUMMARY_DESIGN,
+  );
+  const [logoImg, setLogoImg] = useState<HTMLImageElement | null>(null);
   const [busyAction, setBusyAction] = useState<
     "PNG" | "SEPARATE" | "COPY_IMAGE" | "COPY_TEXT" | null
   >(null);
@@ -86,7 +113,6 @@ export function QuickSummaryModal({
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Baseline DB snapshot (always includes both projects & tasks so mode switches preserve data)
   const baseCombined = useMemo(
     () =>
       buildQuickSummaryData({
@@ -115,7 +141,6 @@ export function QuickSummaryModal({
     ],
   );
 
-  // Editable state seeded from baseCombined and kept in sync unless user clears/resets
   const [headlineOverride, setHeadlineOverride] = useState<string | null>(null);
   const [timeframeLabelOverride, setTimeframeLabelOverride] = useState<
     string | null
@@ -134,7 +159,38 @@ export function QuickSummaryModal({
     setHeadlineOverride(null);
     setTimeframeLabelOverride(null);
     setIsEdited(false);
-  }, [baseCombined.projects, baseCombined.tasks, timeframe, includeDrafts, includeSubtasks]);
+  }, [
+    baseCombined.projects,
+    baseCombined.tasks,
+    timeframe,
+    includeDrafts,
+    includeSubtasks,
+  ]);
+
+  useEffect(() => {
+    if (!design.logoDataUrl || typeof Image === "undefined") {
+      setLogoImg(null);
+      return;
+    }
+    let cancelled = false;
+    const img = new Image();
+    img.onload = () => {
+      if (!cancelled) setLogoImg(img);
+    };
+    img.onerror = () => {
+      if (!cancelled) setLogoImg(null);
+    };
+    img.src = design.logoDataUrl;
+    return () => {
+      cancelled = true;
+    };
+  }, [design.logoDataUrl]);
+
+  const isDesignModified = useMemo(
+    () =>
+      JSON.stringify(design) !== JSON.stringify(DEFAULT_QUICK_SUMMARY_DESIGN),
+    [design],
+  );
 
   const defaultHeadline =
     mode === "PROJECTS_ONLY"
@@ -177,7 +233,32 @@ export function QuickSummaryModal({
     setEditableTasks(baseCombined.tasks);
     setHeadlineOverride(null);
     setTimeframeLabelOverride(null);
+    setDesign(DEFAULT_QUICK_SUMMARY_DESIGN);
     setIsEdited(false);
+  }
+
+  function updateDesign(patch: Partial<QuickSummaryDesignConfig>) {
+    setDesign((prev) => ({ ...prev, ...patch }));
+  }
+
+  function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      notifyToast({
+        title: "Invalid file",
+        message: "Please select an image file (PNG, JPG, WebP, SVG).",
+        kind: "error",
+      });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        updateDesign({ logoDataUrl: reader.result });
+      }
+    };
+    reader.readAsDataURL(file);
   }
 
   function updateProjectItem(
@@ -188,6 +269,11 @@ export function QuickSummaryModal({
     setEditableProjects((prev) =>
       prev.map((item, idx) => (idx === index ? { ...item, ...patch } : item)),
     );
+  }
+
+  function moveProjectItem(index: number, delta: -1 | 1) {
+    setIsEdited(true);
+    setEditableProjects((prev) => moveArrayItem(prev, index, delta));
   }
 
   function removeProjectItem(index: number) {
@@ -211,6 +297,7 @@ export function QuickSummaryModal({
         rsvpGoing: 0,
         minMembersRequired: null,
         tasksProgressLabel: null,
+        highlighted: false,
       },
       ...prev,
     ]);
@@ -221,6 +308,11 @@ export function QuickSummaryModal({
     setEditableTasks((prev) =>
       prev.map((item, idx) => (idx === index ? { ...item, ...patch } : item)),
     );
+  }
+
+  function moveTaskItem(index: number, delta: -1 | 1) {
+    setIsEdited(true);
+    setEditableTasks((prev) => moveArrayItem(prev, index, delta));
   }
 
   function removeTaskItem(index: number) {
@@ -241,6 +333,7 @@ export function QuickSummaryModal({
         projectTitle: null,
         assignees: ["Club Team"],
         checklist: [],
+        highlighted: false,
       },
       ...prev,
     ]);
@@ -311,9 +404,11 @@ export function QuickSummaryModal({
     const result = renderQuickSummaryCanvas(canvasRef.current, summaryData, {
       theme,
       layout,
+      design,
+      logoImage: logoImg,
     });
     setCanvasRendered(Boolean(result));
-  }, [isOpen, layout, summaryData, theme]);
+  }, [design, isOpen, layout, logoImg, summaryData, theme]);
 
   if (!isOpen) return null;
 
@@ -325,6 +420,7 @@ export function QuickSummaryModal({
       const blob = await exportQuickSummaryPngBlob(summaryData, {
         theme,
         layout,
+        design,
       });
       if (!blob) {
         throw new Error("Could not render image in this browser.");
@@ -385,8 +481,16 @@ export function QuickSummaryModal({
       );
 
       const [projBlob, taskBlob] = await Promise.all([
-        exportQuickSummaryPngBlob(projectsData, { theme, layout: "PORTRAIT" }),
-        exportQuickSummaryPngBlob(tasksData, { theme, layout: "PORTRAIT" }),
+        exportQuickSummaryPngBlob(projectsData, {
+          theme,
+          layout: "PORTRAIT",
+          design,
+        }),
+        exportQuickSummaryPngBlob(tasksData, {
+          theme,
+          layout: "PORTRAIT",
+          design,
+        }),
       ]);
       if (!projBlob || !taskBlob) {
         throw new Error("Could not render images in this browser.");
@@ -396,7 +500,7 @@ export function QuickSummaryModal({
       notifyToast({
         title: "2 Summary Images Downloaded",
         message:
-          "Saved separate Projects PNG and Tasks PNG with your revisions.",
+          "Saved separate Projects PNG and Tasks PNG with your design & revisions.",
         kind: "success",
       });
     } catch (err) {
@@ -417,6 +521,7 @@ export function QuickSummaryModal({
       const blob = await exportQuickSummaryPngBlob(summaryData, {
         theme,
         layout,
+        design,
       });
       if (
         !blob ||
@@ -474,6 +579,11 @@ export function QuickSummaryModal({
     }
   }
 
+  const orderedSections: ("PROJECTS" | "TASKS")[] =
+    design.sectionOrder === "TASKS_FIRST"
+      ? ["TASKS", "PROJECTS"]
+      : ["PROJECTS", "TASKS"];
+
   return (
     <div
       role="dialog"
@@ -500,7 +610,7 @@ export function QuickSummaryModal({
                 Export Quick Summary Image
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Customize layout, revise any project/task wording inline, preview live, and export PNG or text for your GC.
+                Customize visual elements, colors, logo, section order, and content before exporting to your GC.
               </p>
             </div>
           </div>
@@ -516,10 +626,10 @@ export function QuickSummaryModal({
         </div>
 
         {/* Body */}
-        <div className="grid flex-1 gap-5 overflow-hidden p-5 lg:grid-cols-[410px_1fr]">
-          {/* Left Column: Configure | Edit Content */}
+        <div className="grid flex-1 gap-5 overflow-hidden p-5 lg:grid-cols-[430px_1fr]">
+          {/* Left Column: Configure | Design | Edit Content */}
           <div className="flex max-h-[64vh] flex-col overflow-hidden">
-            <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div
                 role="tablist"
                 aria-label="Quick summary customization tabs"
@@ -530,7 +640,7 @@ export function QuickSummaryModal({
                   role="tab"
                   aria-selected={leftTab === "CONFIG"}
                   onClick={() => setLeftTab("CONFIG")}
-                  className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                  className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${
                     leftTab === "CONFIG"
                       ? "bg-[#0D3594] text-white"
                       : "text-slate-600 hover:text-[#111625] dark:text-slate-300"
@@ -542,9 +652,26 @@ export function QuickSummaryModal({
                 <button
                   type="button"
                   role="tab"
+                  aria-selected={leftTab === "DESIGN"}
+                  onClick={() => setLeftTab("DESIGN")}
+                  className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${
+                    leftTab === "DESIGN"
+                      ? "bg-[#0D3594] text-white"
+                      : "text-slate-600 hover:text-[#111625] dark:text-slate-300"
+                  }`}
+                >
+                  <Palette className="h-3.5 w-3.5" />
+                  Design
+                  {isDesignModified && (
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  role="tab"
                   aria-selected={leftTab === "EDIT"}
                   onClick={() => setLeftTab("EDIT")}
-                  className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                  className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${
                     leftTab === "EDIT"
                       ? "bg-[#0D3594] text-white"
                       : "text-slate-600 hover:text-[#111625] dark:text-slate-300"
@@ -558,7 +685,7 @@ export function QuickSummaryModal({
                 </button>
               </div>
 
-              {isEdited && (
+              {(isEdited || isDesignModified) && (
                 <button
                   type="button"
                   onClick={handleResetToDb}
@@ -571,7 +698,7 @@ export function QuickSummaryModal({
             </div>
 
             <div className="flex-1 space-y-4 overflow-y-auto pr-1">
-              {leftTab === "CONFIG" ? (
+              {leftTab === "CONFIG" && (
                 <>
                   <div className="space-y-1.5">
                     <span className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
@@ -746,7 +873,330 @@ export function QuickSummaryModal({
                     </button>
                   </div>
                 </>
-              ) : (
+              )}
+
+              {leftTab === "DESIGN" && (
+                <div className="space-y-4">
+                  {/* Color Palettes */}
+                  <div className="space-y-2 rounded-xl border border-[#EDEDF2] bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900/40">
+                    <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                      Brand Colors &amp; Palettes
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {QUICK_SUMMARY_COLOR_PRESETS.map((preset) => {
+                        const active =
+                          design.primaryColor.toLowerCase() ===
+                            preset.primaryColor.toLowerCase() &&
+                          design.accentColor.toLowerCase() ===
+                            preset.accentColor.toLowerCase();
+                        return (
+                          <button
+                            key={preset.id}
+                            type="button"
+                            onClick={() =>
+                              updateDesign({
+                                primaryColor: preset.primaryColor,
+                                accentColor: preset.accentColor,
+                              })
+                            }
+                            className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] font-semibold transition ${
+                              active
+                                ? "border-[#0D3594] bg-white ring-1 ring-[#0D3594] dark:bg-slate-800"
+                                : "border-[#DDE1EA] bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800"
+                            }`}
+                          >
+                            <span
+                              className="h-3 w-3 rounded-full"
+                              style={{ backgroundColor: preset.primaryColor }}
+                            />
+                            <span className="text-slate-700 dark:text-slate-200">
+                              {preset.name}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <label className="flex items-center justify-between gap-2 rounded-lg border border-[#DDE1EA] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                        <span>Primary</span>
+                        <input
+                          type="color"
+                          aria-label="Primary color"
+                          value={design.primaryColor}
+                          onChange={(e) =>
+                            updateDesign({ primaryColor: e.target.value })
+                          }
+                          className="h-6 w-8 cursor-pointer rounded border-0 bg-transparent p-0"
+                        />
+                      </label>
+                      <label className="flex items-center justify-between gap-2 rounded-lg border border-[#DDE1EA] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                        <span>Accent</span>
+                        <input
+                          type="color"
+                          aria-label="Accent color"
+                          value={design.accentColor}
+                          onChange={(e) =>
+                            updateDesign({ accentColor: e.target.value })
+                          }
+                          className="h-6 w-8 cursor-pointer rounded border-0 bg-transparent p-0"
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Club Logo Element */}
+                  <div className="space-y-2 rounded-xl border border-[#EDEDF2] bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900/40">
+                    <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                      Club Logo / Image Element
+                    </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-[#DDE1EA] bg-white px-3 py-1.5 text-xs font-semibold text-[#0D3594] hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-800 dark:text-blue-300">
+                        <Upload className="h-3.5 w-3.5" />
+                        <span>
+                          {design.logoDataUrl ? "Replace logo" : "Upload logo"}
+                        </span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          aria-label="Upload club logo or image"
+                          onChange={handleLogoUpload}
+                          className="sr-only"
+                        />
+                      </label>
+                      {design.logoDataUrl && (
+                        <>
+                          <div className="inline-flex rounded-lg border border-[#DDE1EA] bg-white p-0.5 dark:border-slate-700 dark:bg-slate-800">
+                            {(["SM", "MD", "LG"] as QuickSummaryLogoSize[]).map(
+                              (sz) => (
+                                <button
+                                  key={sz}
+                                  type="button"
+                                  onClick={() => updateDesign({ logoSize: sz })}
+                                  className={`cursor-pointer rounded px-2 py-0.5 text-[10px] font-bold ${
+                                    design.logoSize === sz
+                                      ? "bg-[#0D3594] text-white"
+                                      : "text-slate-600 dark:text-slate-300"
+                                  }`}
+                                >
+                                  {sz}
+                                </button>
+                              ),
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => updateDesign({ logoDataUrl: null })}
+                            className="cursor-pointer rounded-lg px-2 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 dark:text-rose-400"
+                          >
+                            Remove
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Style & Layout Structure */}
+                  <div className="space-y-3 rounded-xl border border-[#EDEDF2] bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900/40">
+                    <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                      Typography, Cards &amp; Order
+                    </span>
+
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div className="space-y-1">
+                        <span className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                          Card corners
+                        </span>
+                        <div className="grid grid-cols-3 gap-1">
+                          {(
+                            [
+                              ["SHARP", "Sharp"],
+                              ["ROUNDED", "Round"],
+                              ["SOFT", "Soft"],
+                            ] as [QuickSummaryCardRadius, string][]
+                          ).map(([val, label]) => (
+                            <button
+                              key={val}
+                              type="button"
+                              onClick={() => updateDesign({ cardRadius: val })}
+                              className={`cursor-pointer rounded-lg border px-1.5 py-1 text-[11px] font-semibold ${
+                                design.cardRadius === val
+                                  ? "border-[#0D3594] bg-[#0D3594] text-white"
+                                  : "border-[#DDE1EA] bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <span className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                          Text scale
+                        </span>
+                        <div className="grid grid-cols-3 gap-1">
+                          {(
+                            [
+                              ["COMPACT", "Sm"],
+                              ["NORMAL", "Md"],
+                              ["LARGE", "Lg"],
+                            ] as [QuickSummaryFontScale, string][]
+                          ).map(([val, label]) => (
+                            <button
+                              key={val}
+                              type="button"
+                              onClick={() => updateDesign({ fontScale: val })}
+                              className={`cursor-pointer rounded-lg border px-1.5 py-1 text-[11px] font-semibold ${
+                                design.fontScale === val
+                                  ? "border-[#0D3594] bg-[#0D3594] text-white"
+                                  : "border-[#DDE1EA] bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <span className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                          Header align
+                        </span>
+                        <div className="grid grid-cols-2 gap-1">
+                          {(
+                            [
+                              ["LEFT", "Left"],
+                              ["CENTER", "Center"],
+                            ] as [QuickSummaryHeaderAlign, string][]
+                          ).map(([val, label]) => (
+                            <button
+                              key={val}
+                              type="button"
+                              onClick={() => updateDesign({ headerAlign: val })}
+                              className={`cursor-pointer rounded-lg border px-2 py-1 text-[11px] font-semibold ${
+                                design.headerAlign === val
+                                  ? "border-[#0D3594] bg-[#0D3594] text-white"
+                                  : "border-[#DDE1EA] bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <span className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                          Section order
+                        </span>
+                        <div className="grid grid-cols-2 gap-1">
+                          {(
+                            [
+                              ["PROJECTS_FIRST", "Projects 1st"],
+                              ["TASKS_FIRST", "Tasks 1st"],
+                            ] as [QuickSummarySectionOrder, string][]
+                          ).map(([val, label]) => (
+                            <button
+                              key={val}
+                              type="button"
+                              onClick={() => updateDesign({ sectionOrder: val })}
+                              className={`cursor-pointer rounded-lg border px-1.5 py-1 text-[11px] font-semibold ${
+                                design.sectionOrder === val
+                                  ? "border-[#0D3594] bg-[#0D3594] text-white"
+                                  : "border-[#DDE1EA] bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <span className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                        Note banner color
+                      </span>
+                      <div className="grid grid-cols-4 gap-1">
+                        {(
+                          [
+                            ["AMBER", "Amber"],
+                            ["BLUE", "Blue"],
+                            ["RED", "Urgent Red"],
+                            ["GREEN", "Green"],
+                          ] as [QuickSummaryNoteTone, string][]
+                        ).map(([val, label]) => (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => updateDesign({ noteTone: val })}
+                            className={`cursor-pointer rounded-lg border px-1.5 py-1 text-[11px] font-semibold ${
+                              design.noteTone === val
+                                ? "border-[#0D3594] bg-[#0D3594] text-white"
+                                : "border-[#DDE1EA] bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Show / Hide Visual Elements */}
+                  <div className="space-y-2 rounded-xl border border-[#EDEDF2] bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900/40">
+                    <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                      Show / Hide Elements
+                    </span>
+                    <div className="grid grid-cols-2 gap-2 text-xs text-slate-700 dark:text-slate-200">
+                      {(
+                        [
+                          ["showAccentBar", "Header Accent Bar"],
+                          ["showClubTag", "Club & District Tag"],
+                          ["showKpis", "KPI Stat Cards"],
+                          ["showCardStripe", "Card Left Stripe"],
+                          ["showBadges", "Status / Priority Pills"],
+                          ["showMetaLine", "Venue & Lead Line"],
+                          ["showFooter", "Footer Branding"],
+                        ] as [keyof QuickSummaryDesignConfig, string][]
+                      ).map(([key, label]) => (
+                        <label
+                          key={key}
+                          className="flex cursor-pointer items-center gap-2 font-medium"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={Boolean(design[key])}
+                            onChange={(e) =>
+                              updateDesign({ [key]: e.target.checked })
+                            }
+                            className="accent-[#0D3594]"
+                          />
+                          <span>{label}</span>
+                        </label>
+                      ))}
+                    </div>
+
+                    {design.showFooter && (
+                      <label className="block space-y-1 pt-2 text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                        <span>Footer call-to-action text</span>
+                        <input
+                          type="text"
+                          aria-label="Footer call-to-action text"
+                          value={design.footerText}
+                          onChange={(e) =>
+                            updateDesign({ footerText: e.target.value })
+                          }
+                          className={smallInputClass}
+                        />
+                      </label>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {leftTab === "EDIT" && (
                 <div className="space-y-4">
                   {/* Banner Header Fields */}
                   <div className="space-y-2.5 rounded-xl border border-[#EDEDF2] bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900/40">
@@ -819,9 +1269,13 @@ export function QuickSummaryModal({
                       {editableProjects.map((proj, pIdx) => (
                         <div
                           key={proj.id}
-                          className="space-y-2 rounded-xl border border-[#EDEDF2] bg-white p-3 dark:border-slate-800 dark:bg-slate-900/60"
+                          className={`space-y-2 rounded-xl border p-3 ${
+                            proj.highlighted
+                              ? "border-amber-400 bg-amber-50/40 dark:border-amber-500/50 dark:bg-amber-950/20"
+                              : "border-[#EDEDF2] bg-white dark:border-slate-800 dark:bg-slate-900/60"
+                          }`}
                         >
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1.5">
                             <input
                               type="text"
                               aria-label={`Project ${pIdx + 1} title`}
@@ -833,6 +1287,42 @@ export function QuickSummaryModal({
                               }
                               className={`${smallInputClass} font-semibold`}
                             />
+                            <button
+                              type="button"
+                              aria-label={`Highlight project ${pIdx + 1}`}
+                              aria-pressed={Boolean(proj.highlighted)}
+                              onClick={() =>
+                                updateProjectItem(pIdx, {
+                                  highlighted: !proj.highlighted,
+                                })
+                              }
+                              title="Highlight / Feature card"
+                              className={`shrink-0 cursor-pointer rounded-lg p-1.5 ${
+                                proj.highlighted
+                                  ? "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-300"
+                                  : "text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                              }`}
+                            >
+                              <Star className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`Move project ${pIdx + 1} up`}
+                              disabled={pIdx === 0}
+                              onClick={() => moveProjectItem(pIdx, -1)}
+                              className="shrink-0 cursor-pointer rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 disabled:opacity-30 dark:hover:bg-slate-800"
+                            >
+                              <ArrowUp className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`Move project ${pIdx + 1} down`}
+                              disabled={pIdx === editableProjects.length - 1}
+                              onClick={() => moveProjectItem(pIdx, 1)}
+                              className="shrink-0 cursor-pointer rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 disabled:opacity-30 dark:hover:bg-slate-800"
+                            >
+                              <ArrowDown className="h-3.5 w-3.5" />
+                            </button>
                             <button
                               type="button"
                               aria-label={`Remove project ${proj.title}`}
@@ -923,9 +1413,13 @@ export function QuickSummaryModal({
                       {editableTasks.map((task, tIdx) => (
                         <div
                           key={task.id}
-                          className="space-y-2 rounded-xl border border-[#EDEDF2] bg-white p-3 dark:border-slate-800 dark:bg-slate-900/60"
+                          className={`space-y-2 rounded-xl border p-3 ${
+                            task.highlighted
+                              ? "border-amber-400 bg-amber-50/40 dark:border-amber-500/50 dark:bg-amber-950/20"
+                              : "border-[#EDEDF2] bg-white dark:border-slate-800 dark:bg-slate-900/60"
+                          }`}
                         >
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1.5">
                             <input
                               type="text"
                               aria-label={`Task ${tIdx + 1} title`}
@@ -935,6 +1429,42 @@ export function QuickSummaryModal({
                               }
                               className={`${smallInputClass} font-semibold`}
                             />
+                            <button
+                              type="button"
+                              aria-label={`Highlight task ${tIdx + 1}`}
+                              aria-pressed={Boolean(task.highlighted)}
+                              onClick={() =>
+                                updateTaskItem(tIdx, {
+                                  highlighted: !task.highlighted,
+                                })
+                              }
+                              title="Highlight / Feature card"
+                              className={`shrink-0 cursor-pointer rounded-lg p-1.5 ${
+                                task.highlighted
+                                  ? "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-300"
+                                  : "text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                              }`}
+                            >
+                              <Star className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`Move task ${tIdx + 1} up`}
+                              disabled={tIdx === 0}
+                              onClick={() => moveTaskItem(tIdx, -1)}
+                              className="shrink-0 cursor-pointer rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 disabled:opacity-30 dark:hover:bg-slate-800"
+                            >
+                              <ArrowUp className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`Move task ${tIdx + 1} down`}
+                              disabled={tIdx === editableTasks.length - 1}
+                              onClick={() => moveTaskItem(tIdx, 1)}
+                              className="shrink-0 cursor-pointer rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 disabled:opacity-30 dark:hover:bg-slate-800"
+                            >
+                              <ArrowDown className="h-3.5 w-3.5" />
+                            </button>
                             <button
                               type="button"
                               aria-label={`Remove task ${task.title}`}
@@ -1058,18 +1588,28 @@ export function QuickSummaryModal({
             <div className="mb-2 flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
               <span>
                 Live PNG Preview (Asia/Manila)
-                {isEdited ? " · Custom revisions active" : ""}
+                {isEdited || isDesignModified ? " · Customized" : ""}
               </span>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <span>{summaryData.timeframeLabel}</span>
-                {leftTab === "CONFIG" && (
+                {leftTab !== "DESIGN" && (
+                  <button
+                    type="button"
+                    onClick={() => setLeftTab("DESIGN")}
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-bold text-[#0D3594] hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-800 dark:text-blue-300"
+                  >
+                    <Palette className="h-2.5 w-2.5" />
+                    Elements
+                  </button>
+                )}
+                {leftTab !== "EDIT" && (
                   <button
                     type="button"
                     onClick={() => setLeftTab("EDIT")}
                     className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-bold text-[#0D3594] hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-800 dark:text-blue-300"
                   >
                     <Pencil className="h-2.5 w-2.5" />
-                    Edit text
+                    Text
                   </button>
                 )}
               </div>
@@ -1085,7 +1625,7 @@ export function QuickSummaryModal({
                 }
               />
 
-              {/* Accessible HTML preview fallback */}
+              {/* Accessible HTML preview mirroring all design & element controls */}
               {!canvasRendered && (
                 <div
                   className={`space-y-3 rounded-xl p-4 text-xs ${
@@ -1094,10 +1634,33 @@ export function QuickSummaryModal({
                       : "bg-slate-50 text-[#111625]"
                   }`}
                 >
-                  <div className="rounded-xl bg-[#0D3594] p-4 text-white">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-blue-200">
-                      {summaryData.clubName} · District {summaryData.districtCode}
-                    </p>
+                  <div
+                    className={`rounded-xl p-4 text-white ${
+                      design.headerAlign === "CENTER" ? "text-center" : ""
+                    }`}
+                    style={{ backgroundColor: design.primaryColor }}
+                  >
+                    {design.logoDataUrl && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={design.logoDataUrl}
+                        alt="Club logo"
+                        className={`mb-2 inline-block h-10 w-10 rounded-lg object-cover`}
+                      />
+                    )}
+                    {design.showAccentBar && (
+                      <div
+                        className={`mb-2 h-1 w-12 ${
+                          design.headerAlign === "CENTER" ? "mx-auto" : ""
+                        }`}
+                        style={{ backgroundColor: design.accentColor }}
+                      />
+                    )}
+                    {design.showClubTag && (
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-blue-200">
+                        {summaryData.clubName} · District {summaryData.districtCode}
+                      </p>
+                    )}
                     <h3 className="mt-1 text-base font-bold">
                       {summaryData.headline}
                     </h3>
@@ -1106,59 +1669,138 @@ export function QuickSummaryModal({
                     </p>
                   </div>
 
-                  {summaryData.mode !== "TASKS_ONLY" && (
-                    <div className="space-y-1.5">
-                      <p className="text-[11px] font-bold uppercase text-[#0D3594]">
-                        Projects &amp; Schedule ({summaryData.projects.length})
-                      </p>
-                      {summaryData.projects.map((p) => (
-                        <div
-                          key={p.id}
-                          className="rounded-lg border border-slate-200 bg-white p-2.5 text-[#111625]"
-                        >
-                          <p className="font-bold">{p.title}</p>
-                          <p className="text-[11px] text-slate-600">
-                            {p.whenLabel} · {p.location} · Lead: {p.chairName}
-                          </p>
-                        </div>
-                      ))}
+                  {design.showKpis && (
+                    <div
+                      className="grid grid-cols-3 gap-2 text-center text-[11px]"
+                      data-testid="quick-summary-kpi-strip"
+                    >
+                      <div className="rounded-lg border border-slate-200 bg-white p-2 text-[#111625]">
+                        <strong>{summaryData.stats.projectsCount}</strong>{" "}
+                        Projects
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-white p-2 text-[#111625]">
+                        <strong>{summaryData.stats.openTasksCount}</strong>{" "}
+                        Tasks
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-white p-2 text-[#111625]">
+                        <strong>
+                          {summaryData.stats.subtasksDone}/
+                          {summaryData.stats.subtasksTotal}
+                        </strong>{" "}
+                        Subtasks
+                      </div>
                     </div>
                   )}
 
-                  {summaryData.mode !== "PROJECTS_ONLY" && (
-                    <div className="space-y-1.5">
-                      <p className="text-[11px] font-bold uppercase text-[#0D3594]">
-                        Tasks &amp; Deliverables ({summaryData.tasks.length})
-                      </p>
-                      {summaryData.tasks.map((t) => (
+                  {orderedSections.map((sec) => {
+                    if (sec === "PROJECTS" && summaryData.mode !== "TASKS_ONLY") {
+                      return (
                         <div
-                          key={t.id}
-                          className="rounded-lg border border-slate-200 bg-white p-2.5 text-[#111625]"
+                          key="proj"
+                          data-testid="quick-summary-projects-section"
+                          className="space-y-1.5"
                         >
-                          <p className="font-bold">
-                            [{t.priority}] {t.title}
+                          <p
+                            className="text-[11px] font-bold uppercase"
+                            style={{ color: design.primaryColor }}
+                          >
+                            Projects &amp; Schedule ({summaryData.projects.length})
                           </p>
-                          <p className="text-[11px] text-slate-600">
-                            Due {t.dueDateLabel} ·{" "}
-                            {t.assignees.join(", ") || "Unassigned"}
-                          </p>
-                          {summaryData.includeSubtasks &&
-                            t.checklist.map((c, idx) => (
-                              <p
-                                key={idx}
-                                className="ml-2 text-[10px] text-slate-500"
-                              >
-                                {c.completed ? "✓" : "☐"} {c.title}
-                              </p>
-                            ))}
+                          {summaryData.projects.map((p) => (
+                            <div
+                              key={p.id}
+                              className="rounded-lg border bg-white p-2.5 text-[#111625]"
+                              style={{
+                                borderColor: p.highlighted
+                                  ? design.accentColor
+                                  : "#E2E8F0",
+                              }}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="font-bold">{p.title}</p>
+                                {design.showBadges && (
+                                  <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold">
+                                    {p.highlighted ? "★ " : ""}
+                                    {p.statusLabel}
+                                  </span>
+                                )}
+                              </div>
+                              {design.showMetaLine && (
+                                <p className="text-[11px] text-slate-600">
+                                  {p.whenLabel} · {p.location} · Lead:{" "}
+                                  {p.chairName}
+                                </p>
+                              )}
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  )}
+                      );
+                    }
+
+                    if (sec === "TASKS" && summaryData.mode !== "PROJECTS_ONLY") {
+                      return (
+                        <div
+                          key="tasks"
+                          data-testid="quick-summary-tasks-section"
+                          className="space-y-1.5"
+                        >
+                          <p
+                            className="text-[11px] font-bold uppercase"
+                            style={{ color: design.primaryColor }}
+                          >
+                            Tasks &amp; Deliverables ({summaryData.tasks.length})
+                          </p>
+                          {summaryData.tasks.map((t) => (
+                            <div
+                              key={t.id}
+                              className="rounded-lg border bg-white p-2.5 text-[#111625]"
+                              style={{
+                                borderColor: t.highlighted
+                                  ? design.accentColor
+                                  : "#E2E8F0",
+                              }}
+                            >
+                              <p className="font-bold">
+                                {design.showBadges
+                                  ? `[${t.highlighted ? "★ " : ""}${t.priority}] `
+                                  : ""}
+                                {t.title}
+                              </p>
+                              {design.showMetaLine && (
+                                <p className="text-[11px] text-slate-600">
+                                  Due {t.dueDateLabel} ·{" "}
+                                  {t.assignees.join(", ") || "Unassigned"}
+                                </p>
+                              )}
+                              {summaryData.includeSubtasks &&
+                                t.checklist.map((c, idx) => (
+                                  <p
+                                    key={idx}
+                                    className="ml-2 text-[10px] text-slate-500"
+                                  >
+                                    {c.completed ? "✓" : "☐"} {c.title}
+                                  </p>
+                                ))}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    }
+                    return null;
+                  })}
 
                   {summaryData.customNote && (
                     <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-900">
                       Note: {summaryData.customNote}
+                    </div>
+                  )}
+
+                  {design.showFooter && (
+                    <div
+                      data-testid="quick-summary-footer"
+                      className="border-t border-slate-200 pt-2 text-[10px] text-slate-500"
+                    >
+                      {design.footerText}
                     </div>
                   )}
                 </div>

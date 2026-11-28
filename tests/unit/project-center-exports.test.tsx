@@ -566,7 +566,32 @@ describe("Project Center Excel Calendar & Presentation Exports", () => {
     fireEvent.click(screen.getByRole("button", { name: /Add Task/i }));
     expect(screen.getByText("[High] New Action Item")).toBeInTheDocument();
 
-    // Test Reset to DB restores baseline data
+    // Test highlighting & reordering projects
+    fireEvent.click(screen.getByRole("button", { name: "Highlight project 1" }));
+    expect(screen.getByText("★ Ongoing")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Move project 2 up" }));
+    expect(screen.getByLabelText("Project 1 title")).toHaveValue(
+      "Project ELEMENOPI",
+    );
+
+    // Test Design tab element controls (KPI strip toggle, Footer toggle & custom text, Section order)
+    fireEvent.click(screen.getByRole("tab", { name: /Design/i }));
+    expect(screen.getByTestId("quick-summary-kpi-strip")).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("KPI Stat Cards"));
+    expect(screen.queryByTestId("quick-summary-kpi-strip")).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Footer call-to-action text"), {
+      target: { value: "See you all on Saturday!" },
+    });
+    expect(screen.getByTestId("quick-summary-footer")).toHaveTextContent(
+      "See you all on Saturday!",
+    );
+    fireEvent.click(screen.getByLabelText("Footer Branding"));
+    expect(screen.queryByTestId("quick-summary-footer")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Tasks 1st" }));
+
+    // Test Reset to DB restores baseline data & design
     fireEvent.click(screen.getByRole("button", { name: /Reset to DB/i }));
     expect(
       screen.queryByText("[High] New Action Item"),
@@ -574,6 +599,7 @@ describe("Project Center Excel Calendar & Presentation Exports", () => {
     expect(
       screen.getByText("Projects & Action Tasks Summary"),
     ).toBeInTheDocument();
+    expect(screen.getByTestId("quick-summary-kpi-strip")).toBeInTheDocument();
 
     // Direct KPI recalculation sanity check
     const recalced = recalculateQuickSummaryStats(

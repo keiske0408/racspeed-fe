@@ -26,6 +26,90 @@ export type QuickSummaryTimeframe =
   | "ALL_UPCOMING";
 export type QuickSummaryTheme = "LIGHT" | "DARK";
 export type QuickSummaryLayout = "PORTRAIT" | "WIDE";
+export type QuickSummaryNoteTone = "AMBER" | "BLUE" | "RED" | "GREEN";
+export type QuickSummaryCardRadius = "SHARP" | "ROUNDED" | "SOFT";
+export type QuickSummaryFontScale = "COMPACT" | "NORMAL" | "LARGE";
+export type QuickSummaryHeaderAlign = "LEFT" | "CENTER";
+export type QuickSummarySectionOrder = "PROJECTS_FIRST" | "TASKS_FIRST";
+export type QuickSummaryLogoSize = "SM" | "MD" | "LG";
+
+export interface QuickSummaryDesignConfig {
+  primaryColor: string;
+  accentColor: string;
+  cardRadius: QuickSummaryCardRadius;
+  fontScale: QuickSummaryFontScale;
+  headerAlign: QuickSummaryHeaderAlign;
+  sectionOrder: QuickSummarySectionOrder;
+  showAccentBar: boolean;
+  showClubTag: boolean;
+  showKpis: boolean;
+  showCardStripe: boolean;
+  showBadges: boolean;
+  showMetaLine: boolean;
+  showFooter: boolean;
+  footerText: string;
+  noteTone: QuickSummaryNoteTone;
+  logoDataUrl: string | null;
+  logoSize: QuickSummaryLogoSize;
+}
+
+export const DEFAULT_QUICK_SUMMARY_DESIGN: QuickSummaryDesignConfig = {
+  primaryColor: "#0D3594",
+  accentColor: "#F59E0B",
+  cardRadius: "ROUNDED",
+  fontScale: "NORMAL",
+  headerAlign: "LEFT",
+  sectionOrder: "PROJECTS_FIRST",
+  showAccentBar: true,
+  showClubTag: true,
+  showKpis: true,
+  showCardStripe: true,
+  showBadges: true,
+  showMetaLine: true,
+  showFooter: true,
+  footerText: "Open Racspeed to RSVP & update task progress",
+  noteTone: "AMBER",
+  logoDataUrl: null,
+  logoSize: "MD",
+};
+
+export const QUICK_SUMMARY_COLOR_PRESETS: {
+  id: string;
+  name: string;
+  primaryColor: string;
+  accentColor: string;
+}[] = [
+  {
+    id: "rotaract-royal",
+    name: "Rotaract Royal",
+    primaryColor: "#0D3594",
+    accentColor: "#F59E0B",
+  },
+  {
+    id: "rotaract-cranberry",
+    name: "Cranberry",
+    primaryColor: "#9F1239",
+    accentColor: "#FBBF24",
+  },
+  {
+    id: "emerald-service",
+    name: "Emerald",
+    primaryColor: "#065F46",
+    accentColor: "#F59E0B",
+  },
+  {
+    id: "executive-indigo",
+    name: "Indigo",
+    primaryColor: "#3730A3",
+    accentColor: "#38BDF8",
+  },
+  {
+    id: "midnight-slate",
+    name: "Midnight",
+    primaryColor: "#1E293B",
+    accentColor: "#F97316",
+  },
+];
 
 export interface QuickSummaryProjectItem {
   id: string;
@@ -40,6 +124,7 @@ export interface QuickSummaryProjectItem {
   rsvpGoing: number;
   minMembersRequired: number | null;
   tasksProgressLabel: string | null;
+  highlighted?: boolean;
 }
 
 export interface QuickSummaryTaskSubtask {
@@ -58,6 +143,7 @@ export interface QuickSummaryTaskItem {
   projectTitle: string | null;
   assignees: string[];
   checklist: QuickSummaryTaskSubtask[];
+  highlighted?: boolean;
 }
 
 export interface QuickSummaryData {
