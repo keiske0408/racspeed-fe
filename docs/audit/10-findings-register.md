@@ -5,7 +5,7 @@ Status is **Open** unless marked otherwise. Feature proposals are **Proposed**. 
 | ID | Title | Area | Severity | Effort | Confidence | Location | Plan task | Status |
 |---|---|---|---|---|---|---|---|---|
 | OPS-001 | Production build blocked by Next.js security guard | DevOps/security | High | M | High | `package.json`; `npm run build` | P0-T01 | Resolved |
-| SEC-001 | Privileged resource, initiative, and checklist actions lack permission/ownership checks | Authorization | High | M | High | `src/features/resources/actions.ts`; `src/features/partnerships/actions.ts`; `src/features/tasks/actions.ts` | P0-T02, P0-T03 | Open (P0-T02 resolved; P0-T03 outstanding) |
+| SEC-001 | Privileged resource, initiative, and checklist actions lack permission/ownership checks | Authorization | High | M | High | `src/features/resources/actions.ts`; `src/features/partnerships/actions.ts`; `src/features/tasks/actions.ts` | P0-T02, P0-T03 | Resolved |
 | SEC-008 | Local role defaults can restore permissions removed in the database | Authorization | High | M | High | `src/lib/auth/session.ts:136-153`; `src/lib/data/role-permissions-types.ts:503-513`; `src/features/permissions/actions.ts:20-91` | P0-T10 | Open |
 | SEC-002 | Sister-club mutations are not scoped to the authorized club | Authorization/tenant isolation | High | S | High | `src/features/partnerships/actions.ts:158-202,233-246` | P0-T04 | Open |
 | SEC-003 | Gemini broadcast endpoint is public and unbounded | API abuse/cost | High | M | High | `src/app/api/broadcasts/generate/route.ts:8-31,70-75` | P0-T05 | Open |

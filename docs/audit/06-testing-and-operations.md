@@ -47,7 +47,14 @@ The patched `next` and `eslint-config-next` version 16.4.6 completed the product
 - **Recommendation:** Add tests for each P0 authorization and persistence task before refactoring; use a local disposable Supabase instance for RLS/integration cases.
 - **Plan task:** P1-T01 and P1-T02.
 
-P0-T02 adds `tests/unit/resource-partnership-actions.test.ts`, covering allowed and denied create/update/delete calls for resources and partnership initiatives. Checklist authorization, cross-club isolation, and persistence-failure tests remain follow-ups.
+P0-T02 adds `tests/unit/resource-partnership-actions.test.ts`, covering allowed and denied create/update/delete calls for resources and partnership initiatives. P0-T03 adds five checklist tests for assignees, managers, unassigned users, and unknown tasks/items. Cross-club isolation and persistence-failure tests remain follow-ups.
+
+### P0-T03 verification (2026-11-28, commit `ae419ee`)
+
+- `npm test -- tests/unit/task-checklist-actions.test.ts`: pass, 5 tests; 4 failed before the fix.
+- `npm run typecheck` and `npm run build`: pass; build uses only a process-local nonproduction `CRON_SECRET`.
+- Scoped lint: 11 existing `no-explicit-any` errors, matching the parent branch; no new diagnostics.
+- Local test dependency restoration follows OPS-005; no manifest or lockfile changes.
 
 ### Medium — OPS-004: Central error monitoring and recovery evidence is missing
 

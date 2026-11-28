@@ -2,7 +2,7 @@
 
 **Verdict: Not ready for production.** The app has a broad, useful operations feature set and good foundations, but server actions allow unauthorized data changes and file-backed fallbacks can report non-durable writes as successful.
 
-**Implementation update (2026-11-28):** P0-T01 resolved the original Next.js production-build block. P0-T02 added role-permission checks to resource and partnership-initiative mutations; checklist authorization remains open under SEC-001/P0-T03. Lint remains at its original failing baseline; clean Windows installs also have a test dependency issue (OPS-005). The scorecard, risks, and command results below describe the original audit snapshot unless noted.
+**Implementation update (2026-11-28):** P0-T01 resolved the original Next.js production-build block. P0-T02 and P0-T03 resolved SEC-001 through resource/initiative permission checks and task checklist assignment/management checks. Lint remains at its original failing baseline; clean Windows installs also have a test dependency issue (OPS-005). The scorecard, risks, and command results below describe the original audit snapshot unless noted.
 
 ## Scorecard
 
@@ -24,7 +24,7 @@
 ## Top risks
 
 1. **OPS-001 — Production build was blocked (resolved):** At audit time, `npm run build` stopped with Next.js `SecurityFatalError` on 16.4.2. P0-T01 upgraded to 16.4.6 and the build passed.
-2. **SEC-001 / SEC-008 — Authorization gaps and stale grants:** P0-T02 added checks for resource and partnership-initiative mutations; task checklist authorization remains open, and local default permissions can still undermine revocation.
+2. **SEC-001 / SEC-008 — Authorization gaps and stale grants:** SEC-001 is resolved by P0-T02/P0-T03; local default permissions can still undermine revocation (SEC-008).
 3. **SEC-002 — Cross-club record changes:** sister-club updates/deletes authorize against a submitted/default club but do not scope the target row to that club.
 4. **SEC-003 — Public Gemini quota use:** `/api/broadcasts/generate` accepts requests without authentication, rate limiting, a bounded input schema, or a request timeout, and uses the server Gemini key.
 5. **SEC-007 — Predictable cron credential:** the tracked example cron secret passes production minimum-length validation and is accepted by both cron routes if copied unchanged.

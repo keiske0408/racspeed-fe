@@ -11,12 +11,12 @@
 
 ### High — SEC-001: Several privileged server actions lack role and record authorization
 
-- **Status:** Partially resolved by P0-T02 (2026-11-28, commit `269931a`); task checklist authorization remains open under P0-T03.
+- **Status:** Resolved by P0-T02 (`269931a`) and P0-T03 (`ae419ee`) on 2026-11-28.
 - **Confidence:** High
 - **Lenses:** Engineer, Architect
 - **Location:** `src/features/resources/actions.ts:43-147`; `src/features/partnerships/actions.ts:263-398`; `src/features/tasks/actions.ts:318-428`.
 - **Evidence:** Resource create/update/delete actions do not call `requireUser` or `assertPermission`. Partnership initiative create/update/delete actions call `requireUser` but not `assertPermission`. Task checklist toggle/add actions call `requireUser` but do not verify task assignment or a management permission. These paths also mutate data using the service-role client or local store.
-- **Implementation update:** Resource mutations now require `RESOURCE_MANAGE` for the configured/default club, and partnership initiative mutations require `PARTNERSHIP_MANAGE` for the default club. Focused tests cover authorized and unauthorized calls. Task checklist ownership/management checks remain unimplemented.
+- **Implementation update:** Resource mutations require `RESOURCE_MANAGE`, and partnership initiative mutations require `PARTNERSHIP_MANAGE`. Checklist mutations load the task, require task assignment or `TASK_MANAGE` for its club, and reject unknown tasks/items before mutation. Focused tests cover authorized and unauthorized calls. The separate permission-revocation and persistence findings remain open.
 - **Impact:** A member who can invoke these server actions can change shared resources, initiatives, or task checklists without a per-role/ownership check; partnership/task actions only require `requireUser`. Service-role writes bypass normal RLS protections.
 - **Recommendation:** Require server-side `assertPermission` for each operation and scope every update/delete to the authorized club and target record. For task checklist changes, explicitly define whether an assignee may edit their own checklist, then enforce that server-side. Add cross-role and cross-club regression tests.
 - **Plan task:** P0-T02 and P0-T03.

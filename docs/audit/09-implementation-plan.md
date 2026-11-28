@@ -30,12 +30,14 @@ Tasks are sized for a small PR (target ≤1 engineer-day). Estimates assume one 
 
 ### P0-T03 — Restrict task checklist mutations to assignees or managers
 
+- **Status:** ✅ Done (2026-11-28, commit ae419ee)
 - **Resolves:** SEC-001
 - **Why now:** Authenticated users can toggle/add checklist items without task ownership or permission checks.
 - **Files likely touched:** `src/features/tasks/actions.ts`, task action tests.
 - **Steps:** Load the target task; enforce assigned-member or `TASK_MANAGE` scope; ensure the selected checklist belongs to that task; keep authorization and mutation in one trusted flow.
 - **Acceptance criteria:** Unassigned members are rejected; authorized assignees/managers can update only permitted tasks.
 - **Tests to add:** Cross-user and unknown task/item cases.
+- **Verification:** Five regression tests pass after failing before the fix; typecheck and production build pass. Scoped lint has the same 11 pre-existing errors as the parent branch.
 - **Effort:** S · **Risk:** Low · **Depends on:** — · **Rollback:** revert the PR.
 
 ### P0-T04 — Bind sister-club mutations to authorized club ownership
