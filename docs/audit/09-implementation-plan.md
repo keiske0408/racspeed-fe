@@ -18,12 +18,14 @@ Tasks are sized for a small PR (target ≤1 engineer-day). Estimates assume one 
 
 ### P0-T02 — Authorize resource and partnership initiative mutations
 
+- **Status:** ✅ Done (2026-11-28, commit 269931a)
 - **Resolves:** SEC-001
 - **Why now:** Existing server actions are callable outside the visible controls and perform privileged writes.
 - **Files likely touched:** `src/features/resources/actions.ts`, `src/features/partnerships/actions.ts`, focused tests.
 - **Steps:** Define required permission per action; call server-side auth/permission helpers; validate identifiers and fields; return explicit errors.
 - **Acceptance criteria:** General members cannot create/update/delete resources or initiatives; authorized officers can perform allowed operations.
 - **Tests to add:** Unauthorized and authorized cases for each mutation.
+- **Verification:** Four focused authorization tests pass; typecheck and production build pass. Scoped lint still reports pre-existing `any` errors in resource actions; see the verification notes in `06-testing-and-operations.md`.
 - **Effort:** M · **Risk:** Medium · **Depends on:** — · **Rollback:** revert the PR; no schema change.
 
 ### P0-T03 — Restrict task checklist mutations to assignees or managers

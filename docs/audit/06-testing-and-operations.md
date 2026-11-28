@@ -21,6 +21,14 @@
 
 The patched `next` and `eslint-config-next` version 16.4.6 completed the production build without the security fatal. Typecheck and the unit suite passed, and the production server returned a healthy local health response. Lint still failed with the unchanged audit baseline of 123 errors and 159 warnings. The unit test run required the local-only workaround described in OPS-005.
 
+### P0-T02 verification (2026-11-28, commit `269931a`)
+
+- `npm test -- tests/unit/resource-partnership-actions.test.ts`: pass, 4 tests.
+- `npm run typecheck`: pass.
+- `npm run build`: pass with a temporary local `CRON_SECRET`; no production credentials were used.
+- Targeted ESLint on the changed files reports three existing `no-explicit-any` errors in `src/features/resources/actions.ts` and four existing unused-variable warnings in `src/features/partnerships/actions.ts`. No new lint diagnostics were introduced by P0-T02.
+- Validation used the exact local Rolldown binding workaround recorded in OPS-005; no dependency manifest or lockfile change was made.
+
 ### Medium — OPS-002: No CI workflow or enforced quality gate was found
 
 - **Confidence:** High
@@ -38,6 +46,8 @@ The patched `next` and `eslint-config-next` version 16.4.6 completed the product
 - **Impact:** The highest-impact audit findings are not currently guarded by regression tests.
 - **Recommendation:** Add tests for each P0 authorization and persistence task before refactoring; use a local disposable Supabase instance for RLS/integration cases.
 - **Plan task:** P1-T01 and P1-T02.
+
+P0-T02 adds `tests/unit/resource-partnership-actions.test.ts`, covering allowed and denied create/update/delete calls for resources and partnership initiatives. Checklist authorization, cross-club isolation, and persistence-failure tests remain follow-ups.
 
 ### Medium — OPS-004: Central error monitoring and recovery evidence is missing
 
