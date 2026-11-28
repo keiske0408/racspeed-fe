@@ -1,14 +1,26 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  createPartnershipInitiativeAction,
-  deletePartnershipInitiativeAction,
-  updatePartnershipInitiativeAction,
-} from "@/features/partnerships/actions";
-import {
-  createResourceAction,
-  deleteResourceAction,
-  updateResourceAction,
-} from "@/features/resources/actions";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+type PartnershipActions = typeof import("@/features/partnerships/actions");
+type ResourceActions = typeof import("@/features/resources/actions");
+let createPartnershipInitiativeAction: PartnershipActions["createPartnershipInitiativeAction"];
+let deletePartnershipInitiativeAction: PartnershipActions["deletePartnershipInitiativeAction"];
+let updatePartnershipInitiativeAction: PartnershipActions["updatePartnershipInitiativeAction"];
+let createResourceAction: ResourceActions["createResourceAction"];
+let deleteResourceAction: ResourceActions["deleteResourceAction"];
+let updateResourceAction: ResourceActions["updateResourceAction"];
+
+// Vitest runs with isolate: false, so reload the actions against this file's mocks.
+beforeAll(async () => {
+  vi.resetModules();
+  ({
+    createPartnershipInitiativeAction,
+    deletePartnershipInitiativeAction,
+    updatePartnershipInitiativeAction,
+  } = await import("@/features/partnerships/actions"));
+  ({ createResourceAction, deleteResourceAction, updateResourceAction } = await import(
+    "@/features/resources/actions"
+  ));
+});
 
 const mocks = vi.hoisted(() => ({
   assertPermission: vi.fn(),
