@@ -110,6 +110,11 @@ P0-T04 verification (2026-11-28, `6aaafda`): seven ownership tests pass;
 Full lint retains 123 errors and 157 warnings (two existing unused variables
 were removed in the changed mutation paths). No database or production service
 was contacted; the OPS-005 local binding workaround remains necessary.
+Follow-up: because Vitest uses `isolate: false`, the P0-T02 and P0-T04 files
+could reuse each other's mocked partnership actions depending on file order
+(2 failures in a later full run). Both files now reset modules and import the
+actions dynamically; the full suite passes in default order and with shuffle
+seeds 1-3.
 
 | Suite | Coverage visible in repository | Audit run |
 |---|---|---|

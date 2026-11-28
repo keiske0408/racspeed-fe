@@ -1,5 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { deleteSisterClubAction, updateSisterClubAction } from "@/features/partnerships/actions";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+type PartnershipActions = typeof import("@/features/partnerships/actions");
+let deleteSisterClubAction: PartnershipActions["deleteSisterClubAction"];
+let updateSisterClubAction: PartnershipActions["updateSisterClubAction"];
+
+// Vitest runs with isolate: false, so reload the actions against this file's mocks.
+beforeAll(async () => {
+  vi.resetModules();
+  ({ deleteSisterClubAction, updateSisterClubAction } = await import("@/features/partnerships/actions"));
+});
 
 const mocks = vi.hoisted(() => ({
   owner: "",
