@@ -27,6 +27,7 @@ import {
   Plus,
   QrCode,
   RefreshCw,
+  Repeat,
   Send,
   ShieldCheck,
   Trash2,
@@ -40,6 +41,12 @@ import {
   X,
 } from "lucide-react";
 import type { ActivityDetailDTO } from "@/features/activities/types";
+import {
+  expandActivityOccurrences,
+  formatRecurrenceSummary,
+  getNextActivityOccurrence,
+  isRecurringSchedule,
+} from "@/features/activities/recurrence";
 import type { GroupTaskDTO } from "@/lib/data/tasks-types";
 import {
   addCommentAction,
@@ -86,6 +93,7 @@ import {
 } from "@/features/activities/rules";
 import { formatManila } from "@/lib/utils/dates";
 import { EditActivityModal, type EditModalSection } from "./edit-activity-modal";
+import { ArchiveReasonModal } from "../_components/archive-reason-modal";
 import { ProjectTasksBoard } from "./project-tasks-board";
 import { notifyToast } from "@/components/shared/toast-viewport";
 import { uploadActivityPhotos } from "@/features/activities/media-upload";
@@ -166,6 +174,7 @@ export function ActivityDetailClient({
   const [editModalSection, setEditModalSection] =
     useState<EditModalSection>("BASICS");
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
   function openEditModal(section: EditModalSection = "BASICS") {
@@ -277,11 +286,18 @@ export function ActivityDetailClient({
       </Link>
       {activity.isArchived && (
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-xl border border-slate-300 bg-slate-100/90 px-4 py-3 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200">
-          <div className="flex items-center gap-2">
-            <Archive className="h-4 w-4 text-slate-500 shrink-0" />
-            <span>
-              <strong>Archived record:</strong> This {isProject ? "project" : "activity"} has been moved to the archive. RSVPs and live check-ins are closed while historical data, attendance, and reports remain preserved.
-            </span>
+          <div className="flex items-start gap-2.5">
+            <Archive className="mt-0.5 h-4 w-4 text-slate-500 shrink-0" />
+            <div className="space-y-1">
+              <p>
+                <strong>Archived record:</strong> This {isProject ? "project" : "activity"} has been moved to the archive. RSVPs and live check-ins are closed while historical data, attendance, and reports remain preserved.
+              </p>
+              {activity.archivedReason && (
+                <p className="rounded-lg border border-slate-200 bg-white/80 px-2.5 py-1 text-[11px] font-medium text-slate-700 dark:border-slate-600 dark:bg-slate-900/60 dark:text-slate-200">
+                  <strong>Reason:</strong> {activity.archivedReason}
+                </p>
+              )}
+            </div>
           </div>
           {canEdit && (
             <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
@@ -291,7 +307,12 @@ export function ActivityDetailClient({
                 onClick={() =>
                   run(async () => {
                     const res = await archiveActivityAction(activity.id, false);
-                    if (res.success) setActivity({ isArchived: false, archivedAt: null });
+                    if (res.success)
+                      setActivity({
+                        isArchived: false,
+                        archivedAt: null,
+                        archivedReason: null,
+                      });
                     return res;
                   }, "Restored to active workspace.")
                 }
@@ -452,25 +473,8 @@ export function ActivityDetailClient({
                     <button
                       type="button"
                       disabled={pending}
-                      onClick={() => {
-                        run(
-                          async () => {
-                            const res = await archiveActivityAction(
-                              activity.id,
-                              true,
-                            );
-                            if (res.success) {
-                              setActivity({
-                                isArchived: true,
-                                archivedAt: new Date().toISOString(),
-                              });
-                            }
-                            return res;
-                          },
-                          "Moved to archive.",
-                        );
-                      }}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition disabled:opacity-60"
+                      onClick={() => setIsArchiveModalOpen(true)}
+                      className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition disabled:opacity-60"
                     >
                       <Archive className="h-3.5 w-3.5 text-slate-500" />
                       Archive {isProject ? "Project" : "Activity"}
@@ -801,6 +805,33 @@ export function ActivityDetailClient({
           onSaved={() => router.refresh()}
         />
       )}
+
+      <ArchiveReasonModal
+        key={isArchiveModalOpen ? "detail-archive-open" : "detail-archive-closed"}
+        isOpen={isArchiveModalOpen}
+        onClose={() => setIsArchiveModalOpen(false)}
+        pending={pending}
+        title={`Archive this ${isProject ? "project" : "activity"}?`}
+        description={`"${activity.title}" will move to the archive. RSVPs and live check-ins will close while historical data stays preserved.`}
+        confirmLabel="Archive"
+        onConfirm={(reason) => {
+          setIsArchiveModalOpen(false);
+          const cleanReason = reason.trim();
+          run(async () => {
+            const res = cleanReason
+              ? await archiveActivityAction(activity.id, true, cleanReason)
+              : await archiveActivityAction(activity.id, true);
+            if (res.success) {
+              setActivity({
+                isArchived: true,
+                archivedAt: new Date().toISOString(),
+                archivedReason: cleanReason || null,
+              });
+            }
+            return res;
+          }, "Moved to archive.");
+        }}
+      />
 
       {isDeleteModalOpen && (
         <div
@@ -1263,6 +1294,69 @@ function OverviewPanel({
               </div>
             </section>
           )}
+
+          {isRecurringSchedule(activity.recurrence) && (() => {
+            const occurrences = expandActivityOccurrences(activity);
+            const nextOcc = getNextActivityOccurrence(activity);
+            const summary = formatRecurrenceSummary(
+              activity.recurrence,
+              activity.startAt,
+              activity.endAt,
+            );
+            return (
+              <section className="rounded-xl border border-blue-200/80 bg-white p-5 dark:border-blue-500/25 dark:bg-[#161B26]">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <h2 className="flex items-center gap-1.5 text-sm font-bold text-[#111625] dark:text-white">
+                      <Repeat className="h-4 w-4 text-[#0D3594] dark:text-blue-400" />
+                      Recurring Schedule
+                    </h2>
+                    {summary && (
+                      <p className="mt-0.5 text-xs font-medium text-[#0D3594] dark:text-blue-300">
+                        {summary}
+                      </p>
+                    )}
+                  </div>
+                  <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-[11px] font-bold text-[#0D3594] dark:bg-blue-500/15 dark:text-blue-300">
+                    {occurrences.length} sessions
+                  </span>
+                </div>
+                <div className="mt-3 space-y-1.5">
+                  {occurrences.slice(0, 12).map((occ) => {
+                    const isNext = nextOcc?.dateKey === occ.dateKey;
+                    const isPast = Date.parse(occ.endAt) < Date.now();
+                    return (
+                      <div
+                        key={occ.dateKey}
+                        className={`flex items-center justify-between rounded-lg border px-2.5 py-1.5 text-xs ${
+                          isNext
+                            ? "border-[#0D3594]/40 bg-blue-50/70 font-semibold text-[#0D3594] dark:border-blue-500/40 dark:bg-blue-950/30 dark:text-blue-200"
+                            : isPast
+                              ? "border-slate-100 bg-slate-50/50 text-slate-400 dark:border-slate-800 dark:bg-slate-900/30"
+                              : "border-[#EDEDF2] bg-slate-50/60 text-slate-700 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-200"
+                        }`}
+                      >
+                        <span>
+                          #{occ.index} ·{" "}
+                          {formatManila(occ.startAt, "EEE, MMM d, yyyy")}
+                        </span>
+                        <span className="text-[11px]">
+                          {activity.allDay
+                            ? "All day"
+                            : `${formatManila(occ.startAt, "h:mm a")} – ${formatManila(occ.endAt, "h:mm a")}`}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {occurrences.length > 12 && (
+                    <p className="pt-1 text-center text-[11px] font-semibold text-slate-500">
+                      +{occurrences.length - 12} more scheduled sessions
+                    </p>
+                  )}
+                </div>
+              </section>
+            );
+          })()}
 
           <section className="rounded-xl border border-[#EDEDF2] bg-white p-5 dark:border-slate-800 dark:bg-[#161B26]">
             <h2 className="text-sm font-bold text-[#111625] dark:text-white">

@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { Images, Plus } from "lucide-react";
+import { FileSpreadsheet, Images, Plus, Presentation } from "lucide-react";
 
 export function ProjectCenterHeader({
   rotaryYear,
@@ -10,12 +10,16 @@ export function ProjectCenterHeader({
   currentRotaryYear,
   onRotaryYearChange,
   canCreate,
+  onOpenExportCalendar,
+  onOpenPresentation,
 }: {
   rotaryYear: string;
   availableRotaryYears: string[];
   currentRotaryYear: string;
   onRotaryYearChange: (ry: string) => void;
   canCreate: boolean;
+  onOpenExportCalendar?: () => void;
+  onOpenPresentation?: () => void;
 }) {
   const yearOptions = Array.from(
     new Set([currentRotaryYear, ...availableRotaryYears].filter(Boolean)),
@@ -55,6 +59,28 @@ export function ProjectCenterHeader({
           ))}
           <option value="ALL">All Rotary Years</option>
         </select>
+
+        {onOpenExportCalendar && (
+          <button
+            type="button"
+            onClick={onOpenExportCalendar}
+            className="inline-flex min-h-[44px] cursor-pointer items-center gap-1.5 rounded-xl border border-[#DDE1EA] bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-[#161B26] dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+            <span>Export Calendar</span>
+          </button>
+        )}
+
+        {onOpenPresentation && (
+          <button
+            type="button"
+            onClick={onOpenPresentation}
+            className="inline-flex min-h-[44px] cursor-pointer items-center gap-1.5 rounded-xl border border-[#DDE1EA] bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-[#161B26] dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            <Presentation className="h-3.5 w-3.5 shrink-0 text-[#0D3594] dark:text-blue-400" aria-hidden="true" />
+            <span>Presentation</span>
+          </button>
+        )}
 
         <Link
           href="/project-center/moments"

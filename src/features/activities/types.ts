@@ -38,6 +38,26 @@ export type ActivityStatus = (typeof ACTIVITY_STATUSES)[number];
 export const ACTIVITY_PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
 export type ActivityPriority = (typeof ACTIVITY_PRIORITIES)[number];
 
+export const RECURRENCE_FREQUENCIES = [
+  "NONE",
+  "WEEKLY",
+  "BIWEEKLY",
+  "MONTHLY",
+  "CUSTOM_DATES",
+] as const;
+
+export type RecurrenceFrequency = (typeof RECURRENCE_FREQUENCIES)[number];
+
+export interface ActivityRecurrence {
+  frequency: RecurrenceFrequency;
+  /** Inclusive end date (YYYY-MM-DD in Asia/Manila) for WEEKLY / BIWEEKLY / MONTHLY series */
+  until?: string | null;
+  /** Explicit session dates (YYYY-MM-DD in Asia/Manila) for CUSTOM_DATES */
+  dates?: string[];
+  /** Per-session end time (HH:mm in Asia/Manila) */
+  sessionEndTime?: string | null;
+}
+
 export const ACTIVITY_PRIORITY_META: Record<
   ActivityPriority,
   {
@@ -261,8 +281,10 @@ export interface ActivitySummaryDTO {
   mediaCount?: number;
   coverUrl: string | null;
   rotaryYear?: string;
+  recurrence?: ActivityRecurrence | null;
   isArchived?: boolean;
   archivedAt?: string | null;
+  archivedReason?: string | null;
 }
 
 export interface ActivityProjectDetailsDTO {

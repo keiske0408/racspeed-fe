@@ -343,6 +343,7 @@ describe("QR attendance applicability and toggle", () => {
     ).toEqual({
       isArchived: true,
       archivedAt: "2026-11-05T10:00:00Z",
+      archivedReason: null,
     });
 
     expect(
@@ -355,6 +356,7 @@ describe("QR attendance applicability and toggle", () => {
     ).toEqual({
       isArchived: true,
       archivedAt: "2026-11-01T09:00:00Z",
+      archivedReason: null,
     });
 
     expect(
@@ -367,6 +369,7 @@ describe("QR attendance applicability and toggle", () => {
     ).toEqual({
       isArchived: false,
       archivedAt: null,
+      archivedReason: null,
     });
 
     expect(

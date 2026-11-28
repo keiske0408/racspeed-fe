@@ -10,6 +10,9 @@ import { StageTabs } from "./_components/stage-tabs";
 import { ProjectToolbar } from "./_components/project-toolbar";
 import { ProjectList } from "./_components/project-list";
 import { StatusPill } from "./_components/status-pill";
+import { ArchiveReasonModal } from "./_components/archive-reason-modal";
+import { ExportCalendarModal } from "./_components/export-calendar-modal";
+import { PresentationBuilderModal } from "./_components/presentation-builder-modal";
 import {
   DRAFT_STARTING_SOON_DAYS,
   getAssignmentInfo,
@@ -146,6 +149,11 @@ export function ProjectCenterClient({
   const [archiveCandidate, setArchiveCandidate] =
     useState<ActivitySummaryDTO | null>(null);
   const [bulkArchiveOpen, setBulkArchiveOpen] = useState(false);
+  const [exportCalendarOpen, setExportCalendarOpen] = useState(false);
+  const [exportInitialMonth, setExportInitialMonth] = useState<
+    { year: number; month: number } | undefined
+  >(undefined);
+  const [presentationOpen, setPresentationOpen] = useState(false);
 
   // Restore last view per user when URL does not specify ?view=
   const hasRestoredViewRef = useRef(false);
@@ -355,7 +363,9 @@ export function ProjectCenterClient({
     activity: ActivitySummaryDTO,
     nextArchived: boolean,
     allowUndoToast = true,
+    reason?: string,
   ) {
+    const cleanReason = nextArchived ? reason?.trim() || null : null;
     const nowIso = new Date().toISOString();
     setActivities((prev) =>
       prev.map((item) =>
@@ -364,13 +374,16 @@ export function ProjectCenterClient({
               ...item,
               isArchived: nextArchived,
               archivedAt: nextArchived ? nowIso : null,
+              archivedReason: cleanReason,
             }
           : item,
       ),
     );
 
     startTransition(async () => {
-      const result = await archiveActivityAction(activity.id, nextArchived);
+      const result = cleanReason
+        ? await archiveActivityAction(activity.id, nextArchived, cleanReason)
+        : await archiveActivityAction(activity.id, nextArchived);
       if (!result.success) {
         setActivities((prev) =>
           prev.map((item) =>
@@ -379,6 +392,7 @@ export function ProjectCenterClient({
                   ...item,
                   isArchived: Boolean(activity.isArchived),
                   archivedAt: activity.archivedAt ?? null,
+                  archivedReason: activity.archivedReason ?? null,
                 }
               : item,
           ),
@@ -407,8 +421,9 @@ export function ProjectCenterClient({
     });
   }
 
-  function executeBulkArchive() {
+  function executeBulkArchive(reason?: string) {
     if (archivableFinishedIds.length === 0) return;
+    const cleanReason = reason?.trim() || null;
     const targetIds = [...archivableFinishedIds];
     const targetSet = new Set(targetIds);
     const nowIso = new Date().toISOString();
@@ -417,13 +432,20 @@ export function ProjectCenterClient({
     setActivities((prev) =>
       prev.map((item) =>
         targetSet.has(item.id)
-          ? { ...item, isArchived: true, archivedAt: nowIso }
+          ? {
+              ...item,
+              isArchived: true,
+              archivedAt: nowIso,
+              archivedReason: cleanReason,
+            }
           : item,
       ),
     );
 
     startTransition(async () => {
-      const result = await bulkArchiveActivitiesAction(targetIds);
+      const result = cleanReason
+        ? await bulkArchiveActivitiesAction(targetIds, cleanReason)
+        : await bulkArchiveActivitiesAction(targetIds);
       if (!result.success) {
         setActivities(initialActivities);
         notifyToast({
@@ -451,6 +473,11 @@ export function ProjectCenterClient({
         currentRotaryYear={fallbackRotaryYear}
         onRotaryYearChange={setRotaryYear}
         canCreate={canCreate}
+        onOpenExportCalendar={() => {
+          setExportInitialMonth(undefined);
+          setExportCalendarOpen(true);
+        }}
+        onOpenPresentation={() => setPresentationOpen(true)}
       />
 
       <StageTabs
@@ -513,6 +540,10 @@ export function ProjectCenterClient({
         <ActivityCalendar
           activities={filteredPool.filter((a) => !a.isArchived)}
           tasks={initialTasks}
+          onExportMonth={(year, month) => {
+            setExportInitialMonth({ year, month });
+            setExportCalendarOpen(true);
+          }}
         />
       ) : view === "BOARD" ? (
         <div className="grid gap-4 xl:grid-cols-4">
@@ -599,102 +630,80 @@ export function ProjectCenterClient({
       )}
 
       {/* Single Archive Confirmation Dialog */}
-      {archiveCandidate && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="archive-confirm-title"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/65 p-4"
-          onClick={() => setArchiveCandidate(null)}
-        >
-          <div
-            className="w-full max-w-md rounded-2xl border border-[#EDEDF2] bg-white p-5 shadow-xl dark:border-slate-700 dark:bg-[#161B26]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2
-              id="archive-confirm-title"
-              className="text-base font-bold text-[#111625] dark:text-white"
-            >
-              Archive this{" "}
-              {isProjectKind(archiveCandidate.kind) ? "project" : "activity"}?
-            </h2>
-            <p className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+      <ArchiveReasonModal
+        key={archiveCandidate?.id ?? "single-closed"}
+        isOpen={Boolean(archiveCandidate)}
+        onClose={() => setArchiveCandidate(null)}
+        pending={pending}
+        title={
+          archiveCandidate
+            ? `Archive this ${isProjectKind(archiveCandidate.kind) ? "project" : "activity"}?`
+            : "Archive activity?"
+        }
+        description={
+          archiveCandidate ? (
+            <>
               &ldquo;{archiveCandidate.title}&rdquo; will move out of your active
               Project Center workspace. All records and reports stay preserved
               and can be restored anytime.
-            </p>
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setArchiveCandidate(null)}
-                className="min-h-[44px] cursor-pointer rounded-xl border border-[#DDE1EA] px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() => {
-                  const target = archiveCandidate;
-                  setArchiveCandidate(null);
-                  executeArchive(target, true, true);
-                }}
-                className="min-h-[44px] cursor-pointer rounded-xl bg-[#0D3594] px-4 py-2 text-xs font-semibold text-white hover:bg-[#092569] disabled:opacity-50"
-              >
-                Archive
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            </>
+          ) : null
+        }
+        confirmLabel="Archive"
+        onConfirm={(reason) => {
+          if (!archiveCandidate) return;
+          const target = archiveCandidate;
+          setArchiveCandidate(null);
+          executeArchive(target, true, true, reason);
+        }}
+      />
 
       {/* Bulk Archive Confirmation Dialog */}
-      {bulkArchiveOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="bulk-archive-confirm-title"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/65 p-4"
-          onClick={() => setBulkArchiveOpen(false)}
-        >
-          <div
-            className="w-full max-w-md rounded-2xl border border-[#EDEDF2] bg-white p-5 shadow-xl dark:border-slate-700 dark:bg-[#161B26]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2
-              id="bulk-archive-confirm-title"
-              className="text-base font-bold text-[#111625] dark:text-white"
-            >
-              Archive {archivableFinishedIds.length} finished{" "}
-              {archivableFinishedIds.length === 1 ? "item" : "items"}?
-            </h2>
-            <p className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
-              This will archive{" "}
-              <strong>{archivableFinishedIds.length}</strong> finished{" "}
-              {archivableFinishedIds.length === 1 ? "activity" : "activities"}{" "}
-              (Accomplished, Completed, or Cancelled) in the selected Rotary Year.
-              Records remain read-only and restorable.
-            </p>
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setBulkArchiveOpen(false)}
-                className="min-h-[44px] cursor-pointer rounded-xl border border-[#DDE1EA] px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={pending}
-                onClick={executeBulkArchive}
-                className="min-h-[44px] cursor-pointer rounded-xl bg-[#0D3594] px-4 py-2 text-xs font-semibold text-white hover:bg-[#092569] disabled:opacity-50"
-              >
-                Archive {archivableFinishedIds.length} finished
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ArchiveReasonModal
+        key={bulkArchiveOpen ? "bulk-open" : "bulk-closed"}
+        isOpen={bulkArchiveOpen}
+        onClose={() => setBulkArchiveOpen(false)}
+        pending={pending}
+        title={`Archive ${archivableFinishedIds.length} finished ${
+          archivableFinishedIds.length === 1 ? "item" : "items"
+        }?`}
+        description={
+          <>
+            This will archive{" "}
+            <strong>{archivableFinishedIds.length}</strong> finished{" "}
+            {archivableFinishedIds.length === 1 ? "activity" : "activities"}{" "}
+            (Accomplished, Completed, or Cancelled) in the selected Rotary Year.
+            Records remain read-only and restorable.
+          </>
+        }
+        confirmLabel={`Archive ${archivableFinishedIds.length} finished`}
+        presets={[
+          "Completed & reported",
+          "End of term cleanup",
+          "Postponed / rescheduled",
+        ]}
+        onConfirm={(reason) => executeBulkArchive(reason)}
+      />
+
+      <ExportCalendarModal
+        isOpen={exportCalendarOpen}
+        onClose={() => setExportCalendarOpen(false)}
+        activities={activities}
+        tasks={initialTasks}
+        rotaryYear={rotaryYear}
+        kindFilter={kind}
+        canManageClub={canManageClub}
+        initialYear={exportInitialMonth?.year}
+        initialMonth={exportInitialMonth?.month}
+      />
+
+      <PresentationBuilderModal
+        isOpen={presentationOpen}
+        onClose={() => setPresentationOpen(false)}
+        activities={activities}
+        rotaryYear={rotaryYear}
+        canManageClub={canManageClub}
+      />
     </main>
   );
 }

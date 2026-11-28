@@ -10,6 +10,7 @@ import {
   isPastDue,
   needsAttention,
 } from "@/features/activities/project-center-rules";
+import { resolveArchiveState } from "@/features/activities/rules";
 
 // Reference point: 2026-11-26 10:00 Asia/Manila
 const NOW = new Date("2026-11-26T10:00:00+08:00");
@@ -298,6 +299,45 @@ describe("Project Center lifecycle, attention & Manila date rules", () => {
         NOW,
       ),
     ).toBe("ARCHIVED");
+  });
+
+  it("extracts archive reason from latest ARCHIVED activity_log note and clears it when restored", () => {
+    const archived = resolveArchiveState({
+      is_archived: true,
+      archived_at: "2026-11-25T10:00:00Z",
+      activity_log: [
+        {
+          action: "ARCHIVED",
+          details: { note: "Postponed to January due to typhoon" },
+          created_at: "2026-11-25T10:00:00Z",
+        },
+      ],
+    });
+    expect(archived).toEqual({
+      isArchived: true,
+      archivedAt: "2026-11-25T10:00:00Z",
+      archivedReason: "Postponed to January due to typhoon",
+    });
+
+    const restored = resolveArchiveState({
+      is_archived: false,
+      activity_log: [
+        {
+          action: "ARCHIVED",
+          details: { note: "Postponed" },
+          created_at: "2026-11-25T10:00:00Z",
+        },
+        {
+          action: "UNARCHIVED",
+          created_at: "2026-11-26T10:00:00Z",
+        },
+      ],
+    });
+    expect(restored).toEqual({
+      isArchived: false,
+      archivedAt: null,
+      archivedReason: null,
+    });
   });
 });
 

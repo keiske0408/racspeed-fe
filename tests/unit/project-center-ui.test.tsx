@@ -383,5 +383,47 @@ describe("ProjectCenterClient redesign", () => {
       ]);
     });
   });
+
+  it("captures archive reason/comment in dialog and displays it on archived rows", async () => {
+    render(
+      <ProjectCenterClient
+        initialActivities={sampleActivities}
+        initialTasks={[]}
+        canCreate={true}
+        canManageClub={true}
+        currentUserId="user-1"
+        currentUserName="President Ian"
+        defaultRotaryYear="2026-27"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: /Missed/i }));
+    fireEvent.click(
+      screen.getByLabelText("More actions for Recruitment Campaign Launch"),
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "Archive" }));
+
+    const confirmDialog = screen.getByRole("dialog", {
+      name: /Archive this activity\?/i,
+    });
+    fireEvent.change(
+      within(confirmDialog).getByLabelText(/Reason \/ comment for archiving/i),
+      { target: { value: "Merged with Q1 recruitment drive" } },
+    );
+    fireEvent.click(within(confirmDialog).getByRole("button", { name: "Archive" }));
+
+    await waitFor(() => {
+      expect(mocks.archiveActivityAction).toHaveBeenCalledWith(
+        "past-due-1",
+        true,
+        "Merged with Q1 recruitment drive",
+      );
+    });
+
+    fireEvent.click(screen.getByRole("tab", { name: /Archived/i }));
+    expect(
+      screen.getByText("Merged with Q1 recruitment drive"),
+    ).toBeInTheDocument();
+  });
 });
 

@@ -17,6 +17,7 @@ import {
   notifyTaskStatusMarked,
 } from "@/lib/services/notifications/task-notifications";
 import { getGroupTasksList } from "@/features/tasks/queries";
+import { computeSeriesBoundsLocal, normalizeRecurrence } from "./recurrence";
 import type { TeamRole } from "./types";
 import {
   createTask,
@@ -226,7 +227,12 @@ async function loadActivityAccess(activityId: string) {
 }
 
 function toActivityRow(data: CreateActivityData) {
-  const startIso = manilaLocalToISO(data.startAt);
+  const bounds = computeSeriesBoundsLocal({
+    startAtLocal: data.startAt,
+    endAtLocal: data.endAt,
+    recurrence: data.recurrence,
+  });
+  const startIso = manilaLocalToISO(bounds.startAtLocal);
   return {
     kind: data.kind,
     meeting_type: "meetingType" in data ? data.meetingType : null,
@@ -235,7 +241,7 @@ function toActivityRow(data: CreateActivityData) {
     description: data.description || null,
     location: data.location || null,
     start_at: startIso,
-    end_at: manilaLocalToISO(data.endAt),
+    end_at: manilaLocalToISO(bounds.endAtLocal),
     all_day: data.allDay,
     committee: data.committee || null,
     min_members_required: resolveMinMembers(data),
@@ -250,6 +256,24 @@ function toActivityRow(data: CreateActivityData) {
     volunteer_hours_default: data.volunteerHoursDefault,
     rotary_year: rotaryYearFor(new Date(startIso)),
   };
+}
+
+async function runWithMissingColumnFallback<T>(
+  optionalFields: Record<string, unknown>,
+  exec: (
+    extra: Record<string, unknown>,
+  ) => PromiseLike<{ data: T; error: { message?: string } | null }>,
+) {
+  const extra: Record<string, unknown> = { ...optionalFields };
+  let res = await exec(extra);
+  while (res.error && Object.keys(extra).length > 0) {
+    const msg = res.error.message?.toLowerCase() ?? "";
+    const missingKey = Object.keys(extra).find((k) => msg.includes(k));
+    if (!missingKey) break;
+    delete extra[missingKey];
+    res = await exec(extra);
+  }
+  return res;
 }
 
 async function syncProjectRelations(
@@ -391,36 +415,27 @@ export async function createActivityAction(
     data.ownerId
       ? data.ownerId
       : user.id;
-  let { data: created, error } = await admin
-    .from("activities")
-    .insert({
-      ...toActivityRow(data),
-      status: data.status,
+  const baseRow = toActivityRow(data);
+  const { data: created, error } = await runWithMissingColumnFallback(
+    {
       priority: data.priority,
-      club_id: data.clubId,
-      owner_id: ownerId,
-      created_by: user.id,
-      is_published: data.status !== "DRAFT",
-    })
-    .select("id")
-    .single();
-
-  if (error && error.message?.toLowerCase().includes("priority")) {
-    const fallback = await admin
-      .from("activities")
-      .insert({
-        ...toActivityRow(data),
-        status: data.status,
-        club_id: data.clubId,
-        owner_id: ownerId,
-        created_by: user.id,
-        is_published: data.status !== "DRAFT",
-      })
-      .select("id")
-      .single();
-    created = fallback.data;
-    error = fallback.error;
-  }
+      recurrence: normalizeRecurrence(data.recurrence),
+    },
+    (extra) =>
+      admin
+        .from("activities")
+        .insert({
+          ...baseRow,
+          ...extra,
+          status: data.status,
+          club_id: data.clubId,
+          owner_id: ownerId,
+          created_by: user.id,
+          is_published: data.status !== "DRAFT",
+        })
+        .select("id")
+        .single(),
+  );
 
   if (error || !created) {
     return {
@@ -664,20 +679,20 @@ export async function updateActivityAction(
     });
   }
 
-  let { error } = await admin
-    .from("activities")
-    .update({
-      ...updatePayload,
+  const { error } = await runWithMissingColumnFallback(
+    {
       priority: parsed.data.priority,
-    })
-    .eq("id", activityId);
-  if (error && error.message?.toLowerCase().includes("priority")) {
-    const fallback = await admin
-      .from("activities")
-      .update(updatePayload)
-      .eq("id", activityId);
-    error = fallback.error;
-  }
+      recurrence: normalizeRecurrence(parsed.data.recurrence),
+    },
+    (extra) =>
+      admin
+        .from("activities")
+        .update({
+          ...updatePayload,
+          ...extra,
+        })
+        .eq("id", activityId),
+  );
   if (error)
     return {
       success: false,
@@ -967,13 +982,15 @@ export async function archiveActivityAction(
       .eq("id", activityId);
   }
 
+  const cleanNote = note?.trim().slice(0, 300);
+
   await logActivity(
     activityId,
     access.user.id,
     archived ? "ARCHIVED" : "UNARCHIVED",
     {
       previous_status: access.activity.status,
-      ...(note?.trim() ? { note: note.trim() } : {}),
+      ...(cleanNote ? { note: cleanNote } : {}),
     },
   );
 
@@ -1096,6 +1113,7 @@ export async function hardDeleteActivityAction(
 
 export async function bulkArchiveActivitiesAction(
   activityIds: string[],
+  note?: string,
 ): Promise<ActionResult<{ count: number }>> {
   const user = await requireUser();
   const validIds = Array.from(
@@ -1154,12 +1172,18 @@ export async function bulkArchiveActivitiesAction(
       .in("id", allowedIds);
   }
 
+  const cleanNote = note?.trim().slice(0, 300);
+
   await admin.from("activity_log").insert(
     allowedRows.map((r) => ({
       activity_id: r.id,
       actor_id: user.id,
       action: "ARCHIVED",
-      details: { previous_status: r.status, bulk: true },
+      details: {
+        previous_status: r.status,
+        bulk: true,
+        ...(cleanNote ? { note: cleanNote } : {}),
+      },
     })),
   );
 

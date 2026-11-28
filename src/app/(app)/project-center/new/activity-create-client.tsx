@@ -25,6 +25,7 @@ import {
   MapPin,
   Plus,
   QrCode,
+  Repeat,
   Search,
   Sparkles,
   Target,
@@ -33,6 +34,12 @@ import {
   X,
 } from "lucide-react";
 import { createActivityAction } from "@/features/activities/actions";
+import {
+  computeSeriesBoundsLocal,
+  formatRecurrenceSummary,
+  isRecurringSchedule,
+} from "@/features/activities/recurrence";
+import { manilaLocalToISO } from "@/lib/utils/dates";
 import {
   ACTIVITY_KINDS,
   ACTIVITY_KIND_META,
@@ -45,6 +52,7 @@ import {
   MEETING_TYPE_LABELS,
   type ActivityKind,
   type ActivityPriority,
+  type ActivityRecurrence,
   type ActivityStatus,
   type Committee,
   type MeetingType,
@@ -57,6 +65,7 @@ import {
 import type { ActivityFormState } from "@/features/activities/ai-draft-schema";
 import { AiDraftPanel } from "./ai-draft-panel";
 import { Avatar, KindBadge, PriorityBadge } from "../_components/badges";
+import { RecurrenceEditor } from "../_components/recurrence-editor";
 import { notifyToast } from "@/components/shared/toast-viewport";
 
 const SDGS = [
@@ -230,6 +239,7 @@ export function ActivityCreateClient({
   const [startAt, setStartAt] = useState(defaultDates.startAt);
   const [endAt, setEndAt] = useState(defaultDates.endAt);
   const [allDay, setAllDay] = useState(false);
+  const [recurrence, setRecurrence] = useState<ActivityRecurrence | null>(null);
   const [objective, setObjective] = useState("");
   const [beneficiaryType, setBeneficiaryType] = useState("");
   const [beneficiaryTarget, setBeneficiaryTarget] = useState(0);
@@ -291,6 +301,13 @@ export function ActivityCreateClient({
     () => computeDurationLabel(startAt, endAt, allDay),
     [allDay, endAt, startAt],
   );
+
+  const recurrenceSummary = useMemo(() => {
+    if (!isRecurringSchedule(recurrence)) return null;
+    const sIso = manilaLocalToISO(startAt);
+    const eIso = manilaLocalToISO(endAt || startAt);
+    return sIso ? formatRecurrenceSummary(recurrence, sIso, eIso || sIso) : null;
+  }, [endAt, recurrence, startAt]);
 
   const availableMembers = useMemo(
     () =>
@@ -375,6 +392,7 @@ export function ActivityCreateClient({
       startAt,
       endAt,
       allDay,
+      recurrence,
       committee,
       status,
       priority,
@@ -402,6 +420,7 @@ export function ActivityCreateClient({
     setStartAt(next.startAt);
     setEndAt(next.endAt);
     setAllDay(next.allDay);
+    setRecurrence(next.recurrence ?? null);
     setCommittee(next.committee);
     setStatus(next.status);
     setPriority(next.priority ?? "MEDIUM");
@@ -541,6 +560,12 @@ export function ActivityCreateClient({
         : {}),
     }));
 
+    const seriesBounds = computeSeriesBoundsLocal({
+      startAtLocal: payloadState.startAt,
+      endAtLocal: payloadState.endAt,
+      recurrence: payloadState.recurrence,
+    });
+
     const payload = {
       clubId,
       kind: targetKind,
@@ -548,9 +573,10 @@ export function ActivityCreateClient({
       shortDescription: payloadState.shortDescription,
       description: payloadState.description,
       location: payloadState.location,
-      startAt: payloadState.startAt,
-      endAt: payloadState.endAt,
+      startAt: seriesBounds.startAtLocal,
+      endAt: seriesBounds.endAtLocal,
       allDay: payloadState.allDay,
+      recurrence: seriesBounds.recurrence,
       committee: payloadState.committee || undefined,
       status: payloadState.status,
       priority: payloadState.priority ?? "MEDIUM",
@@ -1339,8 +1365,20 @@ export function ActivityCreateClient({
               ) : (
                 <AlertCircle className="h-4 w-4 shrink-0" />
               )}
-              <span>Duration: {durationInfo.label}</span>
+              <span>
+                {recurrenceSummary
+                  ? `Schedule: ${recurrenceSummary}`
+                  : `Duration: ${durationInfo.label}`}
+              </span>
             </div>
+
+            <RecurrenceEditor
+              recurrence={recurrence}
+              onChange={setRecurrence}
+              startAt={startAt}
+              endAt={endAt}
+              allDay={allDay}
+            />
 
             <div className="rounded-xl border border-[#EDEDF2] bg-slate-50/60 p-3.5 dark:border-slate-800 dark:bg-slate-900/40">
               <input
@@ -2346,6 +2384,14 @@ export function ActivityCreateClient({
                   <CalendarDays className="h-3.5 w-3.5 shrink-0 text-[#0D3594] dark:text-blue-400" />
                   <span className="truncate">{formatPreviewDate(startAt)}</span>
                 </div>
+                {recurrenceSummary && (
+                  <div className="flex items-center gap-1.5 text-[#0D3594] dark:text-blue-300">
+                    <Repeat className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate font-semibold">
+                      {recurrenceSummary}
+                    </span>
+                  </div>
+                )}
                 {location.trim() && (
                   <div className="flex items-center gap-1.5">
                     <MapPin className="h-3.5 w-3.5 shrink-0 text-slate-400" />

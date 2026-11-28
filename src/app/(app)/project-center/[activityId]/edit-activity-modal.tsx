@@ -23,12 +23,17 @@ import {
 } from "lucide-react";
 import { updateActivityAction } from "@/features/activities/actions";
 import {
+  computeSeriesBoundsLocal,
+  normalizeRecurrence,
+} from "@/features/activities/recurrence";
+import {
   ACTIVITY_PRIORITIES,
   ACTIVITY_PRIORITY_META,
   COMMITTEES,
   isProjectKind,
   type ActivityDetailDTO,
   type ActivityPriority,
+  type ActivityRecurrence,
   type Committee,
   type TeamRole,
 } from "@/features/activities/types";
@@ -36,6 +41,7 @@ import type { MemberDTO } from "@/features/members/queries";
 import { isoToManilaLocal } from "@/lib/utils/dates";
 import { notifyToast } from "@/components/shared/toast-viewport";
 import { Avatar } from "../_components/badges";
+import { RecurrenceEditor } from "../_components/recurrence-editor";
 import type { PartnerClubOption } from "./activity-detail-client";
 
 export type EditModalSection =
@@ -225,6 +231,9 @@ export function EditActivityModal({
   );
   const [endAt, setEndAt] = useState(() => isoToManilaLocal(activity.endAt));
   const [allDay, setAllDay] = useState(Boolean(activity.allDay));
+  const [recurrence, setRecurrence] = useState<ActivityRecurrence | null>(() =>
+    normalizeRecurrence(activity.recurrence),
+  );
 
   // Section 4: Project Goals & Partnerships
   const [objective, setObjective] = useState(
@@ -345,6 +354,7 @@ export function EditActivityModal({
         startAt: isoToManilaLocal(activity.startAt),
         endAt: isoToManilaLocal(activity.endAt),
         allDay: Boolean(activity.allDay),
+        recurrence: normalizeRecurrence(activity.recurrence),
         objective: activity.projectDetails?.objective || "",
         beneficiaryType: activity.projectDetails?.beneficiaryType || "",
         beneficiaryTarget: String(
@@ -380,6 +390,7 @@ export function EditActivityModal({
     startAt,
     endAt,
     allDay,
+    recurrence: normalizeRecurrence(recurrence),
     objective,
     beneficiaryType,
     beneficiaryTarget,
@@ -592,6 +603,12 @@ export function EditActivityModal({
         role: cm.role as TeamRole,
       }));
 
+    const seriesBounds = computeSeriesBoundsLocal({
+      startAtLocal: startAt,
+      endAtLocal: endAt,
+      recurrence,
+    });
+
     const basePayload = {
       clubId: activity.clubId,
       ownerId: ownerId || undefined,
@@ -599,9 +616,10 @@ export function EditActivityModal({
       shortDescription: shortDescription.trim(),
       description: description.trim(),
       location: location.trim(),
-      startAt,
-      endAt,
+      startAt: seriesBounds.startAtLocal,
+      endAt: seriesBounds.endAtLocal,
       allDay,
+      recurrence: seriesBounds.recurrence,
       priority,
       committee: committee ? (committee as Committee) : undefined,
       status: activity.status,
@@ -1284,6 +1302,14 @@ export function EditActivityModal({
                     description="Display this as a full-day entry on the club calendar."
                   />
                 </div>
+
+                <RecurrenceEditor
+                  recurrence={recurrence}
+                  onChange={setRecurrence}
+                  startAt={startAt}
+                  endAt={endAt}
+                  allDay={allDay}
+                />
               </div>
             )}
 

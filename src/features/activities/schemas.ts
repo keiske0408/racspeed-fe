@@ -8,6 +8,7 @@ import {
   MEETING_TYPES,
   PARTNER_ROLES,
   PROJECT_KINDS,
+  RECURRENCE_FREQUENCIES,
   RSVP_RESPONSES,
   TEAM_ROLES,
 } from "./types";
@@ -39,6 +40,24 @@ const NON_PROJECT_KINDS = ACTIVITY_KINDS.filter(
   (typeof ACTIVITY_KINDS)[number],
   "MEETING" | (typeof PROJECT_KINDS)[number]
 >[];
+
+export const activityRecurrenceSchema = z.object({
+  frequency: z.enum(RECURRENCE_FREQUENCIES),
+  until: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD for end date")
+    .nullable()
+    .optional(),
+  dates: z
+    .array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD dates"))
+    .max(52)
+    .optional(),
+  sessionEndTime: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:mm time")
+    .nullable()
+    .optional(),
+});
 
 export const TASK_PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
 export const TASK_STATUSES = [
@@ -99,6 +118,7 @@ const baseShape = {
   volunteerHoursDefault: z.coerce.number().min(0).max(24).default(0),
   committeeMembers: z.array(committeeMemberInputSchema).max(50).default([]),
   initialTasks: z.array(initialTaskInputSchema).max(30).default([]),
+  recurrence: activityRecurrenceSchema.nullable().optional(),
 };
 
 export const meetingSchema = z.object({

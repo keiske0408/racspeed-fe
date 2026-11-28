@@ -2,8 +2,13 @@
 
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
-import { CheckSquare, ChevronLeft, ChevronRight } from "lucide-react";
+import { CheckSquare, ChevronLeft, ChevronRight, FileSpreadsheet, Repeat } from "lucide-react";
 import { formatManila, manilaDateKey } from "@/lib/utils/dates";
+import {
+  expandActivityOccurrences,
+  isRecurringSchedule,
+  type ActivityOccurrence,
+} from "@/features/activities/recurrence";
 import {
   ACTIVITY_KIND_META,
   type ActivitySummaryDTO,
@@ -15,32 +20,26 @@ import { formatActivityWhen } from "./activity-card";
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DAY_MS = 86_400_000;
 type Entry =
-  | { type: "activity"; activity: ActivitySummaryDTO }
+  | {
+      type: "activity";
+      activity: ActivitySummaryDTO;
+      occurrence: ActivityOccurrence;
+      isRecurring: boolean;
+    }
   | { type: "task"; task: GroupTaskDTO };
 
 function dateKey(ms: number) {
   return new Date(ms).toISOString().slice(0, 10);
 }
 
-function datesFor(activity: ActivitySummaryDTO) {
-  const start = manilaDateKey(activity.startAt);
-  const end = manilaDateKey(activity.endAt);
-  let cursor = Date.parse(`${start}T00:00:00Z`);
-  const last = Date.parse(`${end}T00:00:00Z`);
-  const result: string[] = [];
-  while (cursor <= last && result.length < 14) {
-    result.push(dateKey(cursor));
-    cursor += DAY_MS;
-  }
-  return result;
-}
-
 export function ActivityCalendar({
   activities,
   tasks,
+  onExportMonth,
 }: {
   activities: ActivitySummaryDTO[];
   tasks: GroupTaskDTO[];
+  onExportMonth?: (year: number, month: number) => void;
 }) {
   const todayKey = manilaDateKey(new Date());
   const [cursor, setCursor] = useState({
@@ -54,11 +53,17 @@ export function ActivityCalendar({
     const map = new Map<string, Entry[]>();
     const add = (key: string, entry: Entry) =>
       map.set(key, [...(map.get(key) || []), entry]);
-    activities.forEach((activity) =>
-      datesFor(activity).forEach((key) =>
-        add(key, { type: "activity", activity }),
-      ),
-    );
+    activities.forEach((activity) => {
+      const recurring = isRecurringSchedule(activity.recurrence);
+      expandActivityOccurrences(activity).forEach((occurrence) =>
+        add(occurrence.dateKey, {
+          type: "activity",
+          activity,
+          occurrence,
+          isRecurring: recurring,
+        }),
+      );
+    });
     if (showTasks) {
       tasks
         .filter((task) => task.status !== "COMPLETED" && task.dueDate)
@@ -169,6 +174,16 @@ export function ActivityCalendar({
               </button>
             ))}
           </div>
+          {onExportMonth && (
+            <button
+              type="button"
+              onClick={() => onExportMonth(cursor.year, cursor.month)}
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-[#EDEDF2] bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+              <span>Export Excel</span>
+            </button>
+          )}
         </div>
       </header>
 
@@ -199,14 +214,24 @@ export function ActivityCalendar({
                   {dayEntries.slice(0, 3).map((entry, index) =>
                     entry.type === "activity" ? (
                       <Link
-                        key={`${entry.activity.id}-${index}`}
+                        key={`${entry.activity.id}-${entry.occurrence.dateKey}-${index}`}
                         href={`/project-center/${entry.activity.id}`}
-                        title={entry.activity.title}
+                        title={
+                          entry.isRecurring
+                            ? `${entry.activity.title} (Session ${entry.occurrence.index}/${entry.occurrence.total})`
+                            : entry.activity.title
+                        }
                         className="flex items-center gap-1 truncate rounded px-1 py-0.5 hover:bg-slate-100 dark:hover:bg-slate-800"
                       >
                         <span
                           className={`h-1.5 w-1.5 shrink-0 rounded-full ${ACTIVITY_KIND_META[entry.activity.kind].dotClass}`}
                         />
+                        {entry.isRecurring && (
+                          <Repeat
+                            className="h-2.5 w-2.5 shrink-0 text-[#0D3594] dark:text-blue-400"
+                            aria-label="Recurring series"
+                          />
+                        )}
                         <span className="truncate text-[11px] font-medium text-[#111625] dark:text-slate-100">
                           {entry.activity.title}
                         </span>
@@ -262,7 +287,7 @@ export function ActivityCalendar({
                 {dayEntries.map((entry, index) =>
                   entry.type === "activity" ? (
                     <Link
-                      key={`${entry.activity.id}-${index}`}
+                      key={`${entry.activity.id}-${entry.occurrence.dateKey}-${index}`}
                       href={`/project-center/${entry.activity.id}`}
                       className="flex flex-wrap items-center gap-2 rounded-lg p-2 hover:bg-slate-50 dark:hover:bg-slate-800/60"
                     >
@@ -273,8 +298,18 @@ export function ActivityCalendar({
                       <span className="text-sm font-semibold text-[#111625] dark:text-white">
                         {entry.activity.title}
                       </span>
+                      {entry.isRecurring && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-[#0D3594] dark:bg-blue-500/15 dark:text-blue-300">
+                          <Repeat className="h-3 w-3" />
+                          Session {entry.occurrence.index}/{entry.occurrence.total}
+                        </span>
+                      )}
                       <span className="text-xs text-slate-500">
-                        {formatActivityWhen(entry.activity)}
+                        {formatActivityWhen({
+                          ...entry.activity,
+                          startAt: entry.occurrence.startAt,
+                          endAt: entry.occurrence.endAt,
+                        })}
                       </span>
                       <span className="ml-auto">
                         <ActivityStatusBadge status={entry.activity.status} />

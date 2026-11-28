@@ -710,8 +710,14 @@ export function isQrCheckInApplicable(input: {
 export function resolveArchiveState(input: {
   is_archived?: boolean | null;
   archived_at?: string | null;
-  activity_log?: { action: string; created_at: string }[] | null;
-}): { isArchived: boolean; archivedAt: string | null } {
+  activity_log?:
+    | {
+        action: string;
+        details?: Record<string, unknown> | null;
+        created_at: string;
+      }[]
+    | null;
+}): { isArchived: boolean; archivedAt: string | null; archivedReason: string | null } {
   const archiveEvents = (input.activity_log || [])
     .filter((entry) => entry.action === "ARCHIVED" || entry.action === "UNARCHIVED")
     .sort(
@@ -722,22 +728,29 @@ export function resolveArchiveState(input: {
   if (archiveEvents.length > 0) {
     const latest = archiveEvents[0];
     if (latest.action === "ARCHIVED") {
+      const rawNote = latest.details?.note;
+      const archivedReason =
+        typeof rawNote === "string" && rawNote.trim().length > 0
+          ? rawNote.trim()
+          : null;
       return {
         isArchived: true,
         archivedAt: input.archived_at || latest.created_at || null,
+        archivedReason,
       };
     }
-    return { isArchived: false, archivedAt: null };
+    return { isArchived: false, archivedAt: null, archivedReason: null };
   }
 
   if (input.is_archived !== undefined && input.is_archived !== null) {
     return {
       isArchived: Boolean(input.is_archived),
       archivedAt: input.is_archived ? input.archived_at || null : null,
+      archivedReason: null,
     };
   }
 
-  return { isArchived: false, archivedAt: null };
+  return { isArchived: false, archivedAt: null, archivedReason: null };
 }
 
 /**

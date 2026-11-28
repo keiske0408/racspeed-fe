@@ -10,11 +10,13 @@ import {
   PROJECT_KINDS,
   type ActivityKind,
   type ActivityPriority,
+  type ActivityRecurrence,
   type ActivityStatus,
   type Committee,
   type MeetingType,
   type PartnerRole,
 } from "./types";
+import { normalizeRecurrence } from "./recurrence";
 import {
   AREA_CODES,
   TASK_PRIORITIES,
@@ -44,6 +46,7 @@ const EXCLUDED_PROJECT_PROMPT_FIELDS = new Set([
   "qrCheckInEnabled",
   "checkInWindowMinutes",
   "volunteerHoursDefault",
+  "recurrence",
 ]);
 
 const EXCLUDED_TASK_PROMPT_FIELDS = new Set(["assigneeId"]);
@@ -665,6 +668,7 @@ export interface ActivityFormState {
   startAt: string;
   endAt: string;
   allDay: boolean;
+  recurrence?: ActivityRecurrence | null;
   committee: Committee | "";
   status: ActivityStatus;
   priority: ActivityPriority;
@@ -744,9 +748,9 @@ export function mapAiDraftToFormDraft(
   }
 
   // Resolve dates cleanly ensuring endAt >= startAt
-  const mentionedDates = (p.dates_mentioned ?? [])
-    .map((d) => d.date)
-    .sort();
+  const mentionedDates = Array.from(
+    new Set((p.dates_mentioned ?? []).map((d) => d.date).filter(Boolean)),
+  ).sort();
   const fallbackStart = `${addDaysIso(todayIso, 7)}T09:00`;
   const startAt =
     p.startAt ||
@@ -759,6 +763,27 @@ export function mapAiDraftToFormDraft(
   if (endAt < startAt) {
     endAt = `${startAt.slice(0, 10)}T23:59`;
   }
+
+  // Auto-detect multi-date invitations (e.g. "Nov 28 and/or Dec 20") as CUSTOM_DATES sessions
+  const customDates = Array.from(
+    new Set([
+      ...mentionedDates,
+      ...(mentionedDates.length > 1
+        ? [startAt.slice(0, 10), endAt.slice(0, 10)]
+        : []),
+    ]),
+  )
+    .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+    .sort();
+  const sessionEndTime = endAt.slice(11, 16) || "17:00";
+  const recurrence: ActivityRecurrence | null =
+    customDates.length > 1
+      ? normalizeRecurrence({
+          frequency: "CUSTOM_DATES",
+          dates: customDates,
+          sessionEndTime,
+        })
+      : null;
 
   // Match organizer / partner names to registered sister/partner clubs
   const selectedPartnerIds: string[] = [];
@@ -860,6 +885,7 @@ export function mapAiDraftToFormDraft(
       startAt,
       endAt,
       allDay: Boolean(p.allDay),
+      recurrence,
       committee: p.committee || "",
       status: p.status || "DRAFT",
       priority: p.priority || "MEDIUM",
@@ -1080,6 +1106,7 @@ export function mergeAiDraftWithExistingForm(
     ),
     endAt: pickStr(current.endAt, incoming.endAt, options?.defaultEndAt),
     allDay: current.allDay || incoming.allDay,
+    recurrence: current.recurrence ?? incoming.recurrence ?? null,
     committee: current.committee || incoming.committee,
     status: current.title.trim() ? current.status : incoming.status,
     priority:

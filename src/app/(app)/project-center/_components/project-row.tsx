@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { User } from "lucide-react";
+import { MessageSquareText, Repeat, User } from "lucide-react";
 import {
   formatCompactWhenManila,
   formatRelativeWhenManila,
@@ -11,6 +11,11 @@ import {
   getRowVisualStatus,
   needsAttention,
 } from "@/features/activities/project-center-rules";
+import {
+  formatRecurrenceSummary,
+  getNextActivityOccurrence,
+  isRecurringSchedule,
+} from "@/features/activities/recurrence";
 import {
   ACTIVITY_KIND_META,
   ACTIVITY_PRIORITY_META,
@@ -86,6 +91,16 @@ export function ProjectRow({
           <span>
             {kindLabel} · {activity.rsvp.going} going
           </span>
+          {isRecurringSchedule(activity.recurrence) && (
+            <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-[#0D3594] dark:bg-blue-500/15 dark:text-blue-300">
+              <Repeat className="h-2.5 w-2.5" />
+              {formatRecurrenceSummary(
+                activity.recurrence,
+                activity.startAt,
+                activity.endAt,
+              )}
+            </span>
+          )}
           {Boolean(activity.minMembersRequired) && (
             <span
               title={`Minimum ${activity.minMembersRequired} members required for quorum`}
@@ -114,22 +129,56 @@ export function ProjectRow({
             </span>
           )}
         </div>
+        {activity.isArchived && activity.archivedReason && (
+          <p className="mt-1.5 flex items-start gap-1.5 rounded-lg border border-slate-200/80 bg-slate-50 px-2.5 py-1 text-[11px] text-slate-600 dark:border-slate-700/70 dark:bg-slate-800/60 dark:text-slate-300">
+            <MessageSquareText
+              className="mt-0.5 h-3 w-3 shrink-0 text-slate-400"
+              aria-hidden="true"
+            />
+            <span>
+              <strong className="font-semibold text-slate-700 dark:text-slate-200">
+                Archive note:
+              </strong>{" "}
+              {activity.archivedReason}
+            </span>
+          </p>
+        )}
       </div>
 
       {/* Column 2: When (Manila date range + relative line underneath) */}
       <div className="min-w-0">
-        <p className="text-xs font-medium text-[#111625] dark:text-slate-200">
-          {formatCompactWhenManila(activity)}
-        </p>
-        <p
-          className={`mt-0.5 text-xs ${
-            attention
-              ? "font-medium text-amber-700 dark:text-amber-400"
-              : "text-slate-600 dark:text-slate-400"
-          }`}
-        >
-          {formatRelativeWhenManila(activity, referenceNow)}
-        </p>
+        {(() => {
+          const recurring = isRecurringSchedule(activity.recurrence);
+          const nextOcc = recurring
+            ? getNextActivityOccurrence(activity, referenceNow)
+            : null;
+          const nextWindowActivity = nextOcc
+            ? {
+                ...activity,
+                startAt: nextOcc.startAt,
+                endAt: nextOcc.endAt,
+              }
+            : activity;
+          return (
+            <>
+              <p className="text-xs font-medium text-[#111625] dark:text-slate-200">
+                {nextOcc ? `Next: ` : ""}
+                {formatCompactWhenManila(nextWindowActivity)}
+              </p>
+              <p
+                className={`mt-0.5 text-xs ${
+                  attention
+                    ? "font-medium text-amber-700 dark:text-amber-400"
+                    : "text-slate-600 dark:text-slate-400"
+                }`}
+              >
+                {recurring && nextOcc
+                  ? `Session ${nextOcc.index}/${nextOcc.total} · ${formatRelativeWhenManila(nextWindowActivity, referenceNow)}`
+                  : formatRelativeWhenManila(activity, referenceNow)}
+              </p>
+            </>
+          );
+        })()}
       </div>
 
       {/* Column 3: Status pill + segmented Step X of Y */}

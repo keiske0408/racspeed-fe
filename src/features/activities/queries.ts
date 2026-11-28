@@ -8,6 +8,7 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getGroupTasksList } from "@/features/tasks/queries";
 import { UUID_PATTERN } from "./schemas";
+import { normalizeRecurrence } from "./recurrence";
 import type {
   ActivityCommentDTO,
   ActivityDetailDTO,
@@ -15,6 +16,7 @@ import type {
   ActivityMediaDTO,
   ActivityPriority,
   ActivityProjectDetailsDTO,
+  ActivityRecurrence,
   ActivityStatus,
   ActivitySummaryDTO,
   Committee,
@@ -54,6 +56,7 @@ interface ActivitySummaryRow {
   all_day: boolean;
   status: string;
   priority?: string | null;
+  recurrence?: ActivityRecurrence | null;
   committee: string | null;
   owner_id: string | null;
   owner?: { full_name: string | null } | null;
@@ -287,8 +290,10 @@ function mapSummary(
       ? coverUrls.get(row.cover_storage_path) || null
       : null,
     rotaryYear: row.rotary_year || "",
+    recurrence: normalizeRecurrence(row.recurrence),
     isArchived: archiveState.isArchived,
     archivedAt: archiveState.archivedAt,
+    archivedReason: archiveState.archivedReason,
   };
 }
 
@@ -319,9 +324,21 @@ export async function listActivities(
       return q;
     };
 
-    let { data, error } = await buildQuery(`${SUMMARY_COLUMNS}, priority`);
-    if (error && error.message?.toLowerCase().includes("priority")) {
-      const fallback = await buildQuery(SUMMARY_COLUMNS);
+    const optionalCols = ["priority", "recurrence"];
+    let { data, error } = await buildQuery(
+      `${SUMMARY_COLUMNS}, ${optionalCols.join(", ")}`,
+    );
+    let remaining = [...optionalCols];
+    while (error && remaining.length > 0) {
+      const msg = error.message?.toLowerCase() ?? "";
+      const next = remaining.filter((col) => !msg.includes(col));
+      if (next.length === remaining.length) break;
+      remaining = next;
+      const selectStr =
+        remaining.length > 0
+          ? `${SUMMARY_COLUMNS}, ${remaining.join(", ")}`
+          : SUMMARY_COLUMNS;
+      const fallback = await buildQuery(selectStr);
       data = fallback.data;
       error = fallback.error;
     }
@@ -421,15 +438,25 @@ export async function getActivityDetail(
   if (!UUID_PATTERN.test(activityId)) return null;
   const admin = createAdminClient();
 
+  const baseDetailCols = `${SUMMARY_COLUMNS}, description, is_published`;
+  let optionalDetailCols = ["priority", "recurrence"];
   let { data: row, error } = await admin
     .from("activities")
-    .select(`${SUMMARY_COLUMNS}, priority, description, is_published`)
+    .select(`${baseDetailCols}, ${optionalDetailCols.join(", ")}`)
     .eq("id", activityId)
     .maybeSingle();
-  if (error && error.message?.toLowerCase().includes("priority")) {
+  while (error && optionalDetailCols.length > 0) {
+    const msg = error.message?.toLowerCase() ?? "";
+    const next = optionalDetailCols.filter((col) => !msg.includes(col));
+    if (next.length === optionalDetailCols.length) break;
+    optionalDetailCols = next;
+    const selectStr =
+      optionalDetailCols.length > 0
+        ? `${baseDetailCols}, ${optionalDetailCols.join(", ")}`
+        : baseDetailCols;
     const fallback = await admin
       .from("activities")
-      .select(`${SUMMARY_COLUMNS}, description, is_published`)
+      .select(selectStr)
       .eq("id", activityId)
       .maybeSingle();
     row = fallback.data as typeof row;
