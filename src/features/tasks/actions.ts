@@ -3,7 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireUser, getUserAccessContext } from "@/lib/auth/session";
+import {
+  requireUser,
+  getUserAccessContext,
+  assertPermission,
+} from "@/lib/auth/session";
 import { getGroupTasksList } from "./queries";
 import { awardEngagementPoints } from "@/lib/services/rewards";
 import {
@@ -29,6 +33,7 @@ async function assertTaskAdmin() {
   }
   return { user, context };
 }
+
 import {
   createTask,
   updateTaskStatus,
@@ -41,6 +46,21 @@ import {
   TaskCommittee,
   TaskChecklistItem,
 } from "@/lib/data/tasks-storage";
+
+async function getChecklistTaskForMutation(taskId: string, userId: string) {
+  const task = (await getGroupTasksList()).find(
+    (candidate) => candidate.id === taskId,
+  );
+  if (!task) {
+    return null;
+  }
+
+  if (!task.assignedMemberIds.includes(userId)) {
+    await assertPermission(task.clubId, "TASK_MANAGE");
+  }
+
+  return task;
+}
 
 const createTaskSchema = z.object({
   clubId: z.string().default("00000000-0000-0000-0000-000000000001"),
@@ -323,9 +343,14 @@ export async function toggleChecklistItemAction(
   const user = await requireUser();
 
   try {
-    const taskBefore = (await getGroupTasksList()).find(
-      (task) => task.id === taskId,
-    );
+    const taskBefore = await getChecklistTaskForMutation(taskId, user.id);
+    if (!taskBefore) {
+      return { success: false, error: "Task not found." };
+    }
+    if (!taskBefore.checklist.some((item) => item.id === itemId)) {
+      return { success: false, error: "Task or checklist item not found." };
+    }
+
     const updated = toggleChecklistItem(taskId, itemId, forcedState);
     if (!updated) {
       return { success: false, error: "Task or checklist item not found." };
@@ -347,7 +372,7 @@ export async function toggleChecklistItemAction(
 
     const toggledItem = updated.checklist.find((item) => item.id === itemId);
     const autoCompleted =
-      updated.status === "COMPLETED" && taskBefore?.status !== "COMPLETED";
+      updated.status === "COMPLETED" && taskBefore.status !== "COMPLETED";
 
     if (autoCompleted) {
       await awardEngagementPoints({
@@ -393,13 +418,18 @@ export async function addChecklistItemAction(
   title: string,
   assignedMemberName?: string,
 ) {
-  await requireUser();
+  const user = await requireUser();
 
   if (!title || !title.trim()) {
     return { success: false, error: "Checklist item title is required." };
   }
 
   try {
+    const task = await getChecklistTaskForMutation(taskId, user.id);
+    if (!task) {
+      return { success: false, error: "Task not found." };
+    }
+
     const updated = addChecklistItem(taskId, title, assignedMemberName);
     if (!updated) {
       return { success: false, error: "Task not found." };
