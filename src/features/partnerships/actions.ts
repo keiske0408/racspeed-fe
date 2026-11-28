@@ -262,6 +262,7 @@ export async function deleteSisterClubAction(clubId: string) {
 
 export async function createPartnershipInitiativeAction(formData: FormData) {
   const user = await requireUser();
+  await assertPermission(DEFAULT_CLUB_ID, "PARTNERSHIP_MANAGE");
   const rawSisterClubId = formData.get("sisterClubId") as string;
   const sisterClubId = normalizeSisterClubId(rawSisterClubId);
   const title = (formData.get("title") as string)?.trim();
@@ -316,6 +317,7 @@ export async function createPartnershipInitiativeAction(formData: FormData) {
 
 export async function updatePartnershipInitiativeAction(formData: FormData) {
   await requireUser();
+  await assertPermission(DEFAULT_CLUB_ID, "PARTNERSHIP_MANAGE");
 
   const initiativeId = formData.get("initiativeId") as string;
   const title = (formData.get("title") as string)?.trim();
@@ -372,6 +374,7 @@ export async function updatePartnershipInitiativeAction(formData: FormData) {
 
 export async function deletePartnershipInitiativeAction(initiativeId: string) {
   await requireUser();
+  await assertPermission(DEFAULT_CLUB_ID, "PARTNERSHIP_MANAGE");
 
   if (!initiativeId) {
     return { success: false, error: "Initiative ID is required." };

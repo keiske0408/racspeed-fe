@@ -8,7 +8,12 @@ import {
   updateResource,
   deleteResource,
 } from "@/lib/data/resources-storage";
+import { assertPermission } from "@/lib/auth/session";
 import { ResourceCategory } from "./types";
+
+const DEFAULT_CLUB_ID =
+  process.env.NEXT_PUBLIC_DEFAULT_CLUB_ID ||
+  "00000000-0000-0000-0000-000000000001";
 
 const resourceSchema = z.object({
   title: z.string().min(2, "Resource title is required"),
@@ -29,7 +34,7 @@ const resourceSchema = z.object({
     "OTHER",
   ]),
   isPinned: z.boolean().default(false),
-  clubId: z.string().default("00000000-0000-0000-0000-000000000001"),
+  clubId: z.string().default(DEFAULT_CLUB_ID),
 });
 
 function normalizeUrl(url: string): string {
@@ -49,8 +54,10 @@ export async function createResourceAction(formData: FormData) {
       url: rawUrl,
       category: formData.get("category") as ResourceCategory,
       isPinned: formData.get("isPinned") === "true" || formData.get("isPinned") === "on",
-      clubId: (formData.get("clubId") as string) || "00000000-0000-0000-0000-000000000001",
+      clubId: (formData.get("clubId") as string) || DEFAULT_CLUB_ID,
     });
+
+    await assertPermission(parsed.clubId, "RESOURCE_MANAGE");
 
     const created = createResource({
       title: parsed.title,
@@ -87,6 +94,8 @@ export async function createResourceAction(formData: FormData) {
 
 export async function updateResourceAction(id: string, formData: FormData) {
   try {
+    await assertPermission(DEFAULT_CLUB_ID, "RESOURCE_MANAGE");
+
     const rawUrl = (formData.get("url") as string) || "";
     const parsed = resourceSchema.parse({
       title: formData.get("title"),
@@ -132,6 +141,8 @@ export async function updateResourceAction(id: string, formData: FormData) {
 
 export async function deleteResourceAction(id: string) {
   try {
+    await assertPermission(DEFAULT_CLUB_ID, "RESOURCE_MANAGE");
+
     const deleted = deleteResource(id);
     if (!deleted) {
       return { success: false, error: "Resource not found or already deleted" };
