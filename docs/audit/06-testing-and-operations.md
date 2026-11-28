@@ -85,6 +85,25 @@ P0-T02 adds `tests/unit/resource-partnership-actions.test.ts`, covering allowed 
 
 ## Test map and original audit baseline
 
+P0-T05 verification (2026-11-28, `65fc280`): 17 new route/client tests
+pass; `npm test` passes all 26 files/178 tests, including reused attendance
+limiter and earlier task regressions. Typecheck/build pass. A local production
+server returned healthy and rejected anonymous generation with HTTP 401.
+Full lint retains 120 errors/157 warnings; the changed route removed existing
+diagnostics without adding new ones. Tests use mocked providers and local
+dummy cron configuration; no real provider/database calls were made.
+
+### Medium — OPS-007: Request limits are instance-local
+
+- **Confidence:** High.
+- **Evidence:** The shared request limiter keeps counters in process memory.
+  Restarting or routing across instances creates independent quotas.
+- **Impact:** Multi-instance deployments do not enforce a global per-user/IP
+  cost ceiling; IP-header integrity also depends on the trusted proxy.
+- **Recommendation:** Adopt an approved shared limiter or deployment-level
+  quota before scaling and verify trusted proxy headers. Per-instance
+  limits were explicitly approved for P0-T05; no new service was added.
+
 P0-T04 verification (2026-11-28, `6aaafda`): seven ownership tests pass;
 `npm test` passes all 24 files/161 tests, including P0-T02/P0-T03 regressions.
 `npm run typecheck` and production build pass with local dummy cron configuration.

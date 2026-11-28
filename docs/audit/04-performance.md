@@ -19,12 +19,19 @@
 
 ### Medium — PERF-002: Gemini generation has no explicit request timeout or workload cap
 
+- **Status:** Resolved by P0-T05 (2026-11-28, commit `65fc280`).
 - **Confidence:** High
 - **Location:** `src/app/api/broadcasts/generate/route.ts:8-31,70-75`.
 - **Evidence:** The handler parses arbitrary JSON and awaits the provider request without an explicit timeout; the endpoint also has no rate cap.
 - **Impact:** A large or slow provider request can consume server capacity and delay other work.
 - **Recommendation:** Address with the authentication, body-size, rate-limit, and abort-timeout controls in SEC-003; measure route duration and quota after rollout.
 - **Plan task:** P0-T05.
+
+Verified limits: 10,000 prompt characters, 32 KiB request bytes, 5 requests
+per user and 30 per IP per minute per instance, a 15-second provider timeout,
+and a 4,096-token provider output cap. Tests exercise the prompt boundary,
+oversized bodies without Content-Length, both rate thresholds, window reset,
+timeout responses, and invalid provider output.
 
 ### Needs measurement — PERF-003: No production Web Vitals or query measurements were available
 

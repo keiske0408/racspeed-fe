@@ -4,6 +4,11 @@
 
 **Implementation update (2026-11-28):** P0-T01 resolved the original Next.js production-build block. P0-T02 and P0-T03 resolved SEC-001 through resource/initiative permission checks and task checklist assignment/management checks. Lint remains at its original failing baseline; clean Windows installs also have a test dependency issue (OPS-005). The scorecard, risks, and command results below describe the original audit snapshot unless noted.
 
+P0-T04 resolved sister-club target ownership (SEC-002), and P0-T05 protected
+broadcast generation (SEC-003/PERF-002). The final batch suite passes 178 tests;
+full lint still fails with 120 errors and 157 warnings. New follow-ups are
+resource/legacy-initiative target ownership (SEC-009) and global quotas (OPS-007).
+
 ## Scorecard
 
 | Dimension | Score / 10 | Rationale |
@@ -26,7 +31,7 @@
 1. **OPS-001 — Production build was blocked (resolved):** At audit time, `npm run build` stopped with Next.js `SecurityFatalError` on 16.4.2. P0-T01 upgraded to 16.4.6 and the build passed.
 2. **SEC-001 / SEC-008 — Authorization gaps and stale grants:** SEC-001 is resolved by P0-T02/P0-T03; local default permissions can still undermine revocation (SEC-008).
 3. **SEC-002 — Cross-club record changes (resolved):** P0-T04 binds sister-club updates/deletes to verified target ownership. Separate resource/legacy-initiative target isolation remains open as SEC-009.
-4. **SEC-003 — Public Gemini quota use:** `/api/broadcasts/generate` accepts requests without authentication, rate limiting, a bounded input schema, or a request timeout, and uses the server Gemini key.
+4. **SEC-003 — Public Gemini quota use (resolved):** P0-T05 requires active authenticated permission, bounds input, rate-limits per instance, and times out provider calls. Global quota enforcement remains a follow-up (OPS-007).
 5. **SEC-007 — Predictable cron credential:** the tracked example cron secret passes production minimum-length validation and is accepted by both cron routes if copied unchanged.
 
 **DATA-001** is an additional high-priority reliability risk: task/partnership/resource flows can display seeded records or report success without a durable write.
@@ -35,7 +40,7 @@
 
 1. Add server-side permission/ownership checks and make database permission revocation authoritative (SEC-001, SEC-002, SEC-008).
 2. Remove the tracked example cron credential from production use (SEC-007).
-3. Require an authenticated, authorized caller and bounded request/rate/time limits for Gemini generation (SEC-003).
+3. Require an authenticated, authorized caller and bounded request/rate/time limits for Gemini generation (SEC-003, completed in P0-T05).
 4. Patch Next.js to a release accepted by the production build guard (OPS-001, completed in P0-T01).
 5. Remove fake seeded fallback data from production paths and return explicit errors when persistence fails (DATA-001).
 

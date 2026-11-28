@@ -57,6 +57,7 @@ verifiable owner and are not mutable through these actions.
 
 ### High — SEC-003: Gemini broadcast generation is public and unbounded
 
+- **Status:** Resolved by P0-T05 (2026-11-28, commit `65fc280`).
 - **Confidence:** High
 - **Lenses:** Engineer, Architect
 - **Location:** `src/app/api/broadcasts/generate/route.ts:8-31,70-75`.
@@ -64,6 +65,13 @@ verifiable owner and are not mutable through these actions.
 - **Impact:** Unauthenticated callers can consume the app's paid Gemini quota and submit large prompts; provider availability can also hold the route open.
 - **Recommendation:** Require the intended authenticated permission, cap body and prompt size with a schema, apply per-user/IP limits, set a timeout, and avoid accepting a server credential from request data.
 - **Plan task:** P0-T05.
+
+The route now requires an active account and `NOTIFICATION_SEND`, validates
+input, enforces a 10,000-character prompt/32 KiB streamed-body cap, limits
+requests per user/IP, and aborts provider requests after 15 seconds. It accepts
+server credentials only, validates provider drafts, and returns explicit
+provider errors. The UI shows those errors and removes legacy browser keys.
+The owner approved per-instance limits; global quota enforcement is OPS-007.
 
 ### High — SEC-007: Tracked example cron credential is accepted by production validation
 

@@ -54,12 +54,14 @@ Tasks are sized for a small PR (target ≤1 engineer-day). Estimates assume one 
 
 ### P0-T05 — Protect Gemini generation from unauthorized and unbounded use
 
+- **Status:** ✅ Done (2026-11-28, commit 65fc280)
 - **Resolves:** SEC-003, PERF-002
 - **Why now:** An open route can spend the configured Gemini quota.
 - **Files likely touched:** `src/app/api/broadcasts/generate/route.ts`, rate-limit helper, focused route tests.
 - **Steps:** Require intended user permission; validate body and cap prompt length; rate-limit; set abort timeout; remove caller-provided server credential path; map failures to safe responses.
 - **Acceptance criteria:** Anonymous/unauthorized, oversized, over-limit, and timeout requests fail safely; valid users still get a draft.
 - **Tests to add:** Route authorization, schema, rate-limit, timeout, and provider error cases.
+- **Verification:** 17 new route/client tests pass; full suite passes 178 tests. Typecheck/build and production health/anonymous-denial smoke checks pass. Full lint retains 120 existing errors and 157 warnings. Owner-approved limits are per instance; see OPS-007.
 - **Effort:** M · **Risk:** Medium · **Depends on:** — · **Rollback:** revert route changes; provider key remains server-side.
 
 ### P0-T06 — Make task writes authoritative and disable task seed fallback
