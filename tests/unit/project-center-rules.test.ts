@@ -301,6 +301,37 @@ describe("Project Center lifecycle, attention & Manila date rules", () => {
     ).toBe("ARCHIVED");
   });
 
+  it("returns View record CTA and suppresses attention warning when archived", () => {
+    expect(
+      getContextualRowAction(
+        {
+          id: "arch-1",
+          kind: "JOINT_PROJECT",
+          status: "DRAFT",
+          endAt: "2026-11-26T12:00:00+08:00",
+          isArchived: true,
+        },
+        NOW,
+      ),
+    ).toEqual({
+      label: "View record",
+      href: "/project-center/arch-1",
+      tone: "default",
+    });
+
+    expect(
+      needsAttention(
+        {
+          status: "DRAFT",
+          startAt: "2026-11-26T09:00:00+08:00",
+          endAt: "2026-12-01T12:00:00+08:00",
+          isArchived: true,
+        },
+        NOW,
+      ),
+    ).toBe(false);
+  });
+
   it("extracts archive reason from latest ARCHIVED activity_log note and clears it when restored", () => {
     const archived = resolveArchiveState({
       is_archived: true,

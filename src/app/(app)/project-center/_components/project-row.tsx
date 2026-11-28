@@ -3,6 +3,8 @@
 import React from "react";
 import Link from "next/link";
 import { MessageSquareText, Repeat, User } from "lucide-react";
+import { formatManila } from "@/lib/utils/dates";
+import { formatActivityStatusLabel } from "@/features/activities/export-types";
 import {
   formatCompactWhenManila,
   formatRelativeWhenManila,
@@ -67,7 +69,11 @@ export function ProjectRow({
 
   return (
     <div
-      className="grid gap-3 border-b border-[#EDEDF2] px-4 py-3.5 last:border-b-0 transition hover:bg-slate-50/70 dark:border-slate-800 dark:hover:bg-slate-800/35 md:grid-cols-[minmax(240px,2.2fr)_minmax(160px,1fr)_minmax(165px,1fr)_auto] md:items-center md:gap-4"
+      className={`grid gap-3 border-b border-[#EDEDF2] px-4 py-3.5 first:rounded-t-xl last:rounded-b-xl last:border-b-0 transition md:grid-cols-[minmax(240px,2.2fr)_minmax(160px,1fr)_minmax(165px,1fr)_auto] md:items-center md:gap-4 ${
+        activity.isArchived
+          ? "bg-slate-50/75 hover:bg-slate-100/75 dark:border-slate-800 dark:bg-slate-900/45 dark:hover:bg-slate-800/50"
+          : "hover:bg-slate-50/70 dark:border-slate-800 dark:hover:bg-slate-800/35"
+      }`}
       data-testid={`project-row-${activity.id}`}
     >
       {/* Column 1: Name + plain muted metadata & person mark */}
@@ -76,7 +82,11 @@ export function ProjectRow({
           <Link
             href={action.href}
             title={activity.title}
-            className="min-w-0 truncate text-sm font-semibold text-[#111625] hover:text-[#0D3594] hover:underline dark:text-white dark:hover:text-blue-300"
+            className={`min-w-0 truncate text-sm font-semibold hover:underline ${
+              activity.isArchived
+                ? "text-slate-700 hover:text-[#0D3594] dark:text-slate-200 dark:hover:text-blue-300"
+                : "text-[#111625] hover:text-[#0D3594] dark:text-white dark:hover:text-blue-300"
+            }`}
           >
             {activity.title}
           </Link>
@@ -130,7 +140,7 @@ export function ProjectRow({
           )}
         </div>
         {activity.isArchived && activity.archivedReason && (
-          <p className="mt-1.5 flex items-start gap-1.5 rounded-lg border border-slate-200/80 bg-slate-50 px-2.5 py-1 text-[11px] text-slate-600 dark:border-slate-700/70 dark:bg-slate-800/60 dark:text-slate-300">
+          <p className="mt-1.5 inline-flex max-w-full items-start gap-1.5 rounded-lg border border-slate-200/80 bg-white/80 px-2.5 py-1 text-[11px] text-slate-600 dark:border-slate-700/70 dark:bg-slate-800/70 dark:text-slate-300">
             <MessageSquareText
               className="mt-0.5 h-3 w-3 shrink-0 text-slate-400"
               aria-hidden="true"
@@ -145,49 +155,68 @@ export function ProjectRow({
         )}
       </div>
 
-      {/* Column 2: When (Manila date range + relative line underneath) */}
+      {/* Column 2: When (Manila date range + relative or archive line underneath) */}
       <div className="min-w-0">
-        {(() => {
-          const recurring = isRecurringSchedule(activity.recurrence);
-          const nextOcc = recurring
-            ? getNextActivityOccurrence(activity, referenceNow)
-            : null;
-          const nextWindowActivity = nextOcc
-            ? {
-                ...activity,
-                startAt: nextOcc.startAt,
-                endAt: nextOcc.endAt,
-              }
-            : activity;
-          return (
-            <>
-              <p className="text-xs font-medium text-[#111625] dark:text-slate-200">
-                {nextOcc ? `Next: ` : ""}
-                {formatCompactWhenManila(nextWindowActivity)}
-              </p>
-              <p
-                className={`mt-0.5 text-xs ${
-                  attention
-                    ? "font-medium text-amber-700 dark:text-amber-400"
-                    : "text-slate-600 dark:text-slate-400"
-                }`}
-              >
-                {recurring && nextOcc
-                  ? `Session ${nextOcc.index}/${nextOcc.total} · ${formatRelativeWhenManila(nextWindowActivity, referenceNow)}`
-                  : formatRelativeWhenManila(activity, referenceNow)}
-              </p>
-            </>
-          );
-        })()}
+        {activity.isArchived ? (
+          <>
+            <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
+              {formatCompactWhenManila(activity)}
+            </p>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+              {activity.archivedAt
+                ? `Archived ${formatManila(activity.archivedAt, "MMM d, yyyy")}`
+                : "Archived record"}
+            </p>
+          </>
+        ) : (
+          (() => {
+            const recurring = isRecurringSchedule(activity.recurrence);
+            const nextOcc = recurring
+              ? getNextActivityOccurrence(activity, referenceNow)
+              : null;
+            const nextWindowActivity = nextOcc
+              ? {
+                  ...activity,
+                  startAt: nextOcc.startAt,
+                  endAt: nextOcc.endAt,
+                }
+              : activity;
+            return (
+              <>
+                <p className="text-xs font-medium text-[#111625] dark:text-slate-200">
+                  {nextOcc ? `Next: ` : ""}
+                  {formatCompactWhenManila(nextWindowActivity)}
+                </p>
+                <p
+                  className={`mt-0.5 text-xs ${
+                    attention
+                      ? "font-medium text-amber-700 dark:text-amber-400"
+                      : "text-slate-600 dark:text-slate-400"
+                  }`}
+                >
+                  {recurring && nextOcc
+                    ? `Session ${nextOcc.index}/${nextOcc.total} · ${formatRelativeWhenManila(nextWindowActivity, referenceNow)}`
+                    : formatRelativeWhenManila(activity, referenceNow)}
+                </p>
+              </>
+            );
+          })()
+        )}
       </div>
 
-      {/* Column 3: Status pill + segmented Step X of Y */}
+      {/* Column 3: Status pill + segmented Step X of Y (or prior stage if archived) */}
       <div className="flex flex-col gap-1.5">
         <StatusPill
           status={visualStatus}
           isArchived={Boolean(activity.isArchived)}
         />
-        <StepProgress kind={activity.kind} status={activity.status} />
+        {activity.isArchived ? (
+          <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+            Previously {formatActivityStatusLabel(activity.status)}
+          </span>
+        ) : (
+          <StepProgress kind={activity.kind} status={activity.status} />
+        )}
       </div>
 
       {/* Column 4: Contextual button + overflow menu */}
@@ -203,7 +232,9 @@ export function ProjectRow({
           activityTitle={activity.title}
           isArchived={Boolean(activity.isArchived)}
           canManage={canManage}
-          showOpenItem={action.label !== "Open"}
+          showOpenItem={
+            action.label !== "Open" && action.label !== "View record"
+          }
           pending={pending}
           onRequestArchive={() => onRequestArchive(activity)}
           onRestore={() => onRestore(activity)}

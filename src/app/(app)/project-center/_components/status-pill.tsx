@@ -78,7 +78,7 @@ export function StatusPill({
 }) {
   if (isArchived) {
     return (
-      <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-slate-300 bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+      <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-dashed border-slate-400 bg-slate-100/90 px-2.5 py-0.5 text-xs font-semibold text-slate-600 dark:border-slate-500 dark:bg-slate-800/90 dark:text-slate-300">
         <Archive className="h-3 w-3 shrink-0" aria-hidden="true" />
         <span>Archived</span>
       </span>

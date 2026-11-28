@@ -107,10 +107,11 @@ export function isDraftStartingSoon(
  * Needs attention = past due, or draft starting soon.
  */
 export function needsAttention(
-  activity: Pick<ActivitySummaryDTO, "status" | "startAt" | "endAt">,
+  activity: Pick<ActivitySummaryDTO, "status" | "startAt" | "endAt" | "isArchived">,
   now: Date = new Date(),
   draftStartingSoonDays: number = DRAFT_STARTING_SOON_DAYS,
 ): boolean {
+  if (activity.isArchived) return false;
   return (
     isPastDue(activity, now) ||
     isDraftStartingSoon(activity, now, draftStartingSoonDays)
@@ -300,9 +301,19 @@ export function formatRelativeWhenManila(
 }
 
 export function getContextualRowAction(
-  activity: Pick<ActivitySummaryDTO, "id" | "kind" | "status" | "endAt">,
+  activity: Pick<
+    ActivitySummaryDTO,
+    "id" | "kind" | "status" | "endAt" | "isArchived"
+  >,
   now: Date = new Date(),
 ): ContextualRowAction {
+  if (activity.isArchived) {
+    return {
+      label: "View record",
+      href: `/project-center/${activity.id}`,
+      tone: "default",
+    };
+  }
   if (isPastDue(activity, now)) {
     return {
       label: "Update status",

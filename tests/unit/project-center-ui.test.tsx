@@ -421,9 +421,15 @@ describe("ProjectCenterClient redesign", () => {
     });
 
     fireEvent.click(screen.getByRole("tab", { name: /Archived/i }));
+    const archivedRow = screen.getByTestId("project-row-past-due-1");
     expect(
-      screen.getByText("Merged with Q1 recruitment drive"),
+      within(archivedRow).getByText("Merged with Q1 recruitment drive"),
     ).toBeInTheDocument();
+    expect(within(archivedRow).getByRole("link", { name: "View record" })).toBeInTheDocument();
+    expect(within(archivedRow).queryByText("Finish draft")).toBeNull();
+    expect(within(archivedRow).queryByText("Update status")).toBeNull();
+    expect(within(archivedRow).queryByText(/Step \d of \d/i)).toBeNull();
+    expect(within(archivedRow).getByText(/Previously Planned/i)).toBeInTheDocument();
   });
 });
 

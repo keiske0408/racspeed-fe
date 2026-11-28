@@ -288,7 +288,7 @@ export function ProjectList({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-[#EDEDF2] bg-white dark:border-slate-800 dark:bg-[#161B26]">
+    <div className="rounded-xl border border-[#EDEDF2] bg-white dark:border-slate-800 dark:bg-[#161B26]">
       {items.map((activity) => (
         <ProjectRow
           key={activity.id}

@@ -19,14 +19,14 @@ export function ProjectGroup({
   return (
     <section
       aria-label={title}
-      className={`overflow-hidden rounded-xl border bg-white dark:bg-[#161B26] ${
+      className={`rounded-xl border bg-white dark:bg-[#161B26] ${
         isAttention
           ? "border-amber-300/70 dark:border-amber-500/35"
           : "border-[#EDEDF2] dark:border-slate-800"
       }`}
     >
       <div
-        className={`flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3 ${
+        className={`flex flex-wrap items-center justify-between gap-2 rounded-t-xl border-b px-4 py-3 ${
           isAttention
             ? "border-amber-200/80 bg-amber-50/60 dark:border-amber-500/25 dark:bg-amber-950/25"
             : "border-[#EDEDF2] bg-slate-50/75 dark:border-slate-800 dark:bg-slate-900/50"
