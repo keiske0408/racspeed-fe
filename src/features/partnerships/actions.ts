@@ -4,7 +4,7 @@ import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireUser, assertPermission } from "@/lib/auth/session";
+import { requireUser, assertPermission, getUserAccessContext } from "@/lib/auth/session";
 import {
   addCustomSisterClub,
   updateCustomSisterClub,
@@ -23,6 +23,29 @@ import {
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DEFAULT_CLUB_ID = "00000000-0000-0000-0000-000000000001";
+const PARTNER_ACCESS_ERROR = "Partner club not found or access denied.";
+
+async function getAuthorizedSisterClubOwner(clubId: string) {
+  if (!UUID_PATTERN.test(clubId)) {
+    return null;
+  }
+  const { data, error } = await createAdminClient()
+    .from("sister_clubs")
+    .select("home_club_id")
+    .eq("id", clubId)
+    .maybeSingle();
+  if (error) {
+    throw new Error("Could not verify partner club ownership.");
+  }
+  if (!data?.home_club_id) {
+    return null;
+  }
+  const context = await getUserAccessContext(data.home_club_id);
+  if (!context.isPlatformAdmin && !context.permissions.has("SETTINGS_MANAGE")) {
+    return null;
+  }
+  return data.home_club_id;
+}
 
 const createSisterClubSchema = z.object({
   partnerClubName: z.string().min(3, "Club name must be at least 3 characters"),
@@ -156,10 +179,7 @@ export async function createSisterClubAction(formData: FormData) {
 }
 
 export async function updateSisterClubAction(formData: FormData) {
-  const user = await requireUser();
-  const rawClubId = (formData.get("homeClubId") as string)?.trim() || "";
-  const homeClubId = UUID_PATTERN.test(rawClubId) ? rawClubId : DEFAULT_CLUB_ID;
-  await assertPermission(homeClubId, "SETTINGS_MANAGE");
+  await requireUser();
 
   const clubId = formData.get("clubId") as string;
   const partnerClubName = (formData.get("partnerClubName") as string)?.trim();
@@ -179,11 +199,13 @@ export async function updateSisterClubAction(formData: FormData) {
     return { success: false, error: "Club ID and partner club name are required." };
   }
 
-  // 1. Update in Supabase if exists and is valid UUID
-  if (UUID_PATTERN.test(clubId)) {
-    try {
+  try {
+      const homeClubId = await getAuthorizedSisterClubOwner(clubId);
+      if (!homeClubId) {
+        return { success: false, error: PARTNER_ACCESS_ERROR };
+      }
       const adminClient = createAdminClient();
-      await adminClient
+      const { data, error } = await adminClient
         .from("sister_clubs")
         .update({
           partner_club_name: partnerClubName,
@@ -199,10 +221,19 @@ export async function updateSisterClubAction(formData: FormData) {
           notes: notes || null,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", clubId);
-    } catch (err) {
-      console.warn("Direct Supabase sister_clubs update fallback:", err);
-    }
+        .eq("id", clubId)
+        .eq("home_club_id", homeClubId)
+        .select("id")
+        .maybeSingle();
+      if (error) {
+        throw new Error("Could not update partner club.");
+      }
+      if (!data) {
+        return { success: false, error: PARTNER_ACCESS_ERROR };
+      }
+  } catch (err) {
+    console.error("Partner club update failed:", err);
+    return { success: false, error: "Could not update partner club." };
   }
 
   // 2. Update in persistent store
@@ -231,21 +262,34 @@ export async function updateSisterClubAction(formData: FormData) {
 }
 
 export async function deleteSisterClubAction(clubId: string) {
-  const user = await requireUser();
-  await assertPermission(DEFAULT_CLUB_ID, "SETTINGS_MANAGE");
+  await requireUser();
 
   if (!clubId) {
     return { success: false, error: "Club ID is required." };
   }
 
-  // 1. Delete from Supabase if valid UUID
-  if (UUID_PATTERN.test(clubId)) {
-    try {
+  try {
+      const homeClubId = await getAuthorizedSisterClubOwner(clubId);
+      if (!homeClubId) {
+        return { success: false, error: PARTNER_ACCESS_ERROR };
+      }
       const adminClient = createAdminClient();
-      await adminClient.from("sister_clubs").delete().eq("id", clubId);
-    } catch (err) {
-      console.warn("Direct Supabase sister_clubs delete fallback:", err);
-    }
+      const { data, error } = await adminClient
+        .from("sister_clubs")
+        .delete()
+        .eq("id", clubId)
+        .eq("home_club_id", homeClubId)
+        .select("id")
+        .maybeSingle();
+      if (error) {
+        throw new Error("Could not delete partner club.");
+      }
+      if (!data) {
+        return { success: false, error: PARTNER_ACCESS_ERROR };
+      }
+  } catch (err) {
+    console.error("Partner club deletion failed:", err);
+    return { success: false, error: "Could not delete partner club." };
   }
 
   // 2. Delete from persistent store

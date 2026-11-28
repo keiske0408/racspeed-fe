@@ -29,6 +29,11 @@ npx supabase status
 
 Copy the generated API URL and keys into `.env.local`.
 
+Sister-club updates and deletions require a database record with a verified
+`home_club_id` and `SETTINGS_MANAGE` permission for that club. Local-only seeded
+records cannot be changed through these actions: an unavailable database or
+unverifiable owner fails explicitly rather than bypassing ownership checks.
+
 ### Run Development Server
 
 ```bash
