@@ -33,12 +33,27 @@
 
 ### High — SEC-002: Sister-club mutation authorization is not bound to the target record
 
+- **Status:** Resolved by P0-T04 (2026-11-28, commit `6aaafda`).
 - **Confidence:** High
 - **Location:** `src/features/partnerships/actions.ts:158-202,233-246`.
 - **Evidence:** `updateSisterClubAction` checks `SETTINGS_MANAGE` against the submitted `homeClubId`, then updates a record using only `.eq("id", clubId)`. `deleteSisterClubAction` checks the default club permission and deletes using only the supplied record ID.
 - **Impact:** An officer authorized for one club can target a known sister-club ID owned by a different club; in multi-club deployments this permits unauthorized cross-club changes/deletion.
 - **Recommendation:** Load the target row first and verify its `home_club_id` matches the club for which the caller was authorized; include both identifiers in the mutation predicate and return a non-disclosing not-found response on mismatch.
 - **Plan task:** P0-T04.
+
+Updates/deletes now fetch the database owner and check its `SETTINGS_MANAGE`
+permission. Mutations filter by both record ID and owner and must return a
+matched row before touching the local store. Missing/unauthorized records use
+the same response; database errors fail explicitly. Local-only records have no
+verifiable owner and are not mutable through these actions.
+
+### High — SEC-009: Resource and legacy initiative checks do not bind target ownership
+
+- **Confidence:** High.
+- **Evidence:** Resource update/delete and legacy initiative mutations check a configured/default club permission but mutate by record ID without verifying the target resource or parent sister-club owner. Resource creation also writes to a default-club local store despite a submitted club ID.
+- **Impact:** Role checks added in P0-T02 deny general members, but an authorized officer's target IDs are not yet confined to their club in these separate mutation paths.
+- **Recommendation:** Bind resource and initiative target ownership to the authorized club and scope all mutation predicates. Preserve explicit failure when ownership cannot be verified.
+- **Plan task:** Follow-up needed; not fixed in P0-T04.
 
 ### High — SEC-003: Gemini broadcast generation is public and unbounded
 

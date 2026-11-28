@@ -42,12 +42,14 @@ Tasks are sized for a small PR (target ≤1 engineer-day). Estimates assume one 
 
 ### P0-T04 — Bind sister-club mutations to authorized club ownership
 
+- **Status:** ✅ Done (2026-11-28, commit 6aaafda)
 - **Resolves:** SEC-002
 - **Why now:** The current check and target record ID are not bound together.
 - **Files likely touched:** `src/features/partnerships/actions.ts`, partnership tests.
 - **Steps:** Fetch target `home_club_id`; authorize the caller for that exact club; include club scope in update/delete predicates; avoid leaking target existence.
 - **Acceptance criteria:** A club officer cannot update/delete another club's record by substituting IDs.
 - **Tests to add:** Club A/club B isolation cases for update and delete.
+- **Verification:** Seven focused tests pass (six failed before the fix); full suite passes 161 tests. Typecheck/build pass; full lint retains 123 existing errors and 157 warnings.
 - **Effort:** S · **Risk:** Low · **Depends on:** — · **Rollback:** revert the PR.
 
 ### P0-T05 — Protect Gemini generation from unauthorized and unbounded use

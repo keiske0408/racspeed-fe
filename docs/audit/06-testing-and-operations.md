@@ -85,6 +85,13 @@ P0-T02 adds `tests/unit/resource-partnership-actions.test.ts`, covering allowed 
 
 ## Test map and original audit baseline
 
+P0-T04 verification (2026-11-28, `6aaafda`): seven ownership tests pass;
+`npm test` passes all 24 files/161 tests, including P0-T02/P0-T03 regressions.
+`npm run typecheck` and production build pass with local dummy cron configuration.
+Full lint retains 123 errors and 157 warnings (two existing unused variables
+were removed in the changed mutation paths). No database or production service
+was contacted; the OPS-005 local binding workaround remains necessary.
+
 | Suite | Coverage visible in repository | Audit run |
 |---|---|---|
 | Unit | 21 Vitest files across activities, money, permissions, treasury, notifications, workflows, and UI | Pass: 145 tests |

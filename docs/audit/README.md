@@ -25,7 +25,7 @@
 
 1. **OPS-001 — Production build was blocked (resolved):** At audit time, `npm run build` stopped with Next.js `SecurityFatalError` on 16.4.2. P0-T01 upgraded to 16.4.6 and the build passed.
 2. **SEC-001 / SEC-008 — Authorization gaps and stale grants:** SEC-001 is resolved by P0-T02/P0-T03; local default permissions can still undermine revocation (SEC-008).
-3. **SEC-002 — Cross-club record changes:** sister-club updates/deletes authorize against a submitted/default club but do not scope the target row to that club.
+3. **SEC-002 — Cross-club record changes (resolved):** P0-T04 binds sister-club updates/deletes to verified target ownership. Separate resource/legacy-initiative target isolation remains open as SEC-009.
 4. **SEC-003 — Public Gemini quota use:** `/api/broadcasts/generate` accepts requests without authentication, rate limiting, a bounded input schema, or a request timeout, and uses the server Gemini key.
 5. **SEC-007 — Predictable cron credential:** the tracked example cron secret passes production minimum-length validation and is accepted by both cron routes if copied unchanged.
 
