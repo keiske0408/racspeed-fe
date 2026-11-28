@@ -22,9 +22,16 @@ import {
 import type { GroupTaskDTO } from "@/lib/data/tasks-types";
 import { ExportCalendarModal } from "@/app/(app)/project-center/_components/export-calendar-modal";
 import { PresentationBuilderModal } from "@/app/(app)/project-center/_components/presentation-builder-modal";
+import { QuickSummaryModal } from "@/app/(app)/project-center/_components/quick-summary-modal";
+import type { ProjectCenterHeader as ProjectCenterHeaderType } from "@/app/(app)/project-center/_components/project-center-header";
+import {
+  buildQuickSummaryData,
+  formatQuickSummaryPlainText,
+} from "@/lib/services/exports/quick-summary-data";
 
 let buildDeterministicDeck: typeof BuildDeterministicDeckType;
 let enrichDeckWithGemini: typeof EnrichDeckWithGeminiType;
+let ProjectCenterHeader: typeof ProjectCenterHeaderType;
 
 function makeActivity(
   overrides: Partial<ActivitySummaryDTO> = {},
@@ -143,20 +150,39 @@ describe("Project Center Excel Calendar & Presentation Exports", () => {
   beforeAll(async () => {
     vi.resetModules();
     vi.doMock("server-only", () => ({}));
-    const mod = await import(
-      "@/lib/services/exports/presentation-builder"
-    );
+    vi.doMock("next/link", () => ({
+      default: ({
+        href,
+        children,
+        ...props
+      }: {
+        href: string;
+        children: React.ReactNode;
+        [key: string]: unknown;
+      }) => (
+        <a href={href} {...props}>
+          {children}
+        </a>
+      ),
+    }));
+    const [mod, headerMod] = await Promise.all([
+      import("@/lib/services/exports/presentation-builder"),
+      import("@/app/(app)/project-center/_components/project-center-header"),
+    ]);
     buildDeterministicDeck = mod.buildDeterministicDeck;
     enrichDeckWithGemini = mod.enrichDeckWithGemini;
+    ProjectCenterHeader = headerMod.ProjectCenterHeader;
   });
 
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   afterAll(() => {
     vi.doUnmock("server-only");
+    vi.doUnmock("next/link");
     vi.resetModules();
   });
 
@@ -431,6 +457,131 @@ describe("Project Center Excel Calendar & Presentation Exports", () => {
     expect(
       screen.getByRole("button", { name: /Present Fullscreen/i }),
     ).toBeInTheDocument();
+  });
+
+  it("builds Quick Summary data across Combined, Projects Only, and Tasks Only modes", () => {
+    const refNow = new Date("2026-11-24T04:00:00Z");
+
+    const combined = buildQuickSummaryData({
+      activities: sampleActivities,
+      tasks: sampleTasks,
+      mode: "COMBINED",
+      timeframe: "TWO_MONTHS",
+      rotaryYear: "2026-27",
+      clubName: "Rotaract Club of San Pedro East",
+      districtCode: "3820",
+      includeSubtasks: true,
+      customNote: "RSVP by Friday",
+      referenceNow: refNow,
+    });
+
+    expect(combined.projects).toHaveLength(2);
+    expect(combined.tasks).toHaveLength(1);
+    expect(combined.tasks[0].checklist).toHaveLength(2);
+    expect(combined.stats.sessionsCount).toBe(3);
+
+    const text = formatQuickSummaryPlainText(combined);
+    expect(text).toContain("Project ELEMENOPI");
+    expect(text).toContain("Confirm logistics & registration");
+    expect(text).toContain("Note: RSVP by Friday");
+
+    const projectsOnly = buildQuickSummaryData({
+      activities: sampleActivities,
+      tasks: sampleTasks,
+      mode: "PROJECTS_ONLY",
+      timeframe: "TWO_MONTHS",
+      rotaryYear: "2026-27",
+      clubName: "Rotaract Club of San Pedro East",
+      districtCode: "3820",
+      referenceNow: refNow,
+    });
+    expect(projectsOnly.projects).toHaveLength(2);
+    expect(projectsOnly.tasks).toHaveLength(0);
+
+    const tasksOnly = buildQuickSummaryData({
+      activities: sampleActivities,
+      tasks: sampleTasks,
+      mode: "TASKS_ONLY",
+      timeframe: "TWO_MONTHS",
+      rotaryYear: "2026-27",
+      clubName: "Rotaract Club of San Pedro East",
+      districtCode: "3820",
+      includeSubtasks: false,
+      referenceNow: refNow,
+    });
+    expect(tasksOnly.projects).toHaveLength(0);
+    expect(tasksOnly.tasks).toHaveLength(1);
+    expect(tasksOnly.tasks[0].checklist).toHaveLength(0);
+  });
+
+  it("renders QuickSummaryModal with mode toggles and unified ProjectCenterHeader Export menu", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-24T04:00:00Z"));
+
+    render(
+      <QuickSummaryModal
+        isOpen={true}
+        onClose={vi.fn()}
+        activities={sampleActivities}
+        tasks={sampleTasks}
+        rotaryYear="2026-27"
+        clubName="Rotaract Club of San Pedro East"
+        districtCode="3820"
+        canManageClub={true}
+      />,
+    );
+
+    expect(
+      screen.getByText("Export Quick Summary Image"),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "This & Next Month" }));
+    expect(
+      screen.getByRole("button", { name: /Download Separate PNGs \(2\)/i }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Tasks Only" }));
+    expect(
+      screen.queryByRole("button", { name: /Download Separate PNGs \(2\)/i }),
+    ).toBeNull();
+    expect(
+      screen.getByText("Member Tasks & Subtasks Summary"),
+    ).toBeInTheDocument();
+
+    cleanup();
+
+    const onQuick = vi.fn();
+    const onExcel = vi.fn();
+    const onPres = vi.fn();
+    render(
+      <ProjectCenterHeader
+        rotaryYear="2026-27"
+        availableRotaryYears={["2026-27"]}
+        currentRotaryYear="2026-27"
+        onRotaryYearChange={vi.fn()}
+        canCreate={true}
+        onOpenQuickSummary={onQuick}
+        onOpenExportCalendar={onExcel}
+        onOpenPresentation={onPres}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^Export$/i }));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Export Quick Summary/i }),
+    );
+    expect(onQuick).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Export$/i }));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Export Excel Calendar/i }),
+    );
+    expect(onExcel).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Export$/i }));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Create Presentation/i }),
+    );
+    expect(onPres).toHaveBeenCalledTimes(1);
   });
 });
 

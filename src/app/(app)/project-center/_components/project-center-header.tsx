@@ -1,8 +1,16 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { FileSpreadsheet, Images, Plus, Presentation } from "lucide-react";
+import {
+  ChevronDown,
+  Download,
+  FileSpreadsheet,
+  Image as ImageIcon,
+  Images,
+  Plus,
+  Presentation,
+} from "lucide-react";
 
 export function ProjectCenterHeader({
   rotaryYear,
@@ -12,6 +20,7 @@ export function ProjectCenterHeader({
   canCreate,
   onOpenExportCalendar,
   onOpenPresentation,
+  onOpenQuickSummary,
 }: {
   rotaryYear: string;
   availableRotaryYears: string[];
@@ -20,7 +29,33 @@ export function ProjectCenterHeader({
   canCreate: boolean;
   onOpenExportCalendar?: () => void;
   onOpenPresentation?: () => void;
+  onOpenQuickSummary?: () => void;
 }) {
+  const [exportOpen, setExportOpen] = useState(false);
+  const exportRef = useRef<HTMLDivElement | null>(null);
+
+  const hasExportActions = Boolean(
+    onOpenQuickSummary || onOpenExportCalendar || onOpenPresentation,
+  );
+
+  useEffect(() => {
+    if (!exportOpen) return;
+    function handleOutside(e: MouseEvent) {
+      if (exportRef.current && !exportRef.current.contains(e.target as Node)) {
+        setExportOpen(false);
+      }
+    }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setExportOpen(false);
+    }
+    document.addEventListener("mousedown", handleOutside);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleOutside);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [exportOpen]);
+
   const yearOptions = Array.from(
     new Set([currentRotaryYear, ...availableRotaryYears].filter(Boolean)),
   )
@@ -60,26 +95,94 @@ export function ProjectCenterHeader({
           <option value="ALL">All Rotary Years</option>
         </select>
 
-        {onOpenExportCalendar && (
-          <button
-            type="button"
-            onClick={onOpenExportCalendar}
-            className="inline-flex min-h-[44px] cursor-pointer items-center gap-1.5 rounded-xl border border-[#DDE1EA] bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-[#161B26] dark:text-slate-200 dark:hover:bg-slate-800"
-          >
-            <FileSpreadsheet className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
-            <span>Export Calendar</span>
-          </button>
-        )}
+        {hasExportActions && (
+          <div ref={exportRef} className="relative">
+            <button
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={exportOpen}
+              onClick={() => setExportOpen((prev) => !prev)}
+              className="inline-flex min-h-[44px] cursor-pointer items-center gap-1.5 rounded-xl border border-[#DDE1EA] bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-[#161B26] dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              <Download className="h-3.5 w-3.5 shrink-0 text-[#0D3594] dark:text-blue-400" aria-hidden="true" />
+              <span>Export</span>
+              <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden="true" />
+            </button>
 
-        {onOpenPresentation && (
-          <button
-            type="button"
-            onClick={onOpenPresentation}
-            className="inline-flex min-h-[44px] cursor-pointer items-center gap-1.5 rounded-xl border border-[#DDE1EA] bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-[#161B26] dark:text-slate-200 dark:hover:bg-slate-800"
-          >
-            <Presentation className="h-3.5 w-3.5 shrink-0 text-[#0D3594] dark:text-blue-400" aria-hidden="true" />
-            <span>Presentation</span>
-          </button>
+            {exportOpen && (
+              <div
+                role="menu"
+                aria-label="Export options"
+                className="absolute right-0 z-40 mt-1.5 w-72 rounded-xl border border-[#EDEDF2] bg-white p-1.5 shadow-xl dark:border-slate-700 dark:bg-[#161B26]"
+              >
+                {onOpenQuickSummary && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setExportOpen(false);
+                      onOpenQuickSummary();
+                    }}
+                    className="flex w-full cursor-pointer items-start gap-2.5 rounded-lg px-3 py-2.5 text-left transition hover:bg-slate-50 dark:hover:bg-slate-800"
+                  >
+                    <ImageIcon className="mt-0.5 h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
+                    <div>
+                      <p className="text-xs font-bold text-[#111625] dark:text-white">
+                        Export Quick Summary (.png)
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        Shareable GC image for projects, tasks, or both
+                      </p>
+                    </div>
+                  </button>
+                )}
+
+                {onOpenExportCalendar && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setExportOpen(false);
+                      onOpenExportCalendar();
+                    }}
+                    className="flex w-full cursor-pointer items-start gap-2.5 rounded-lg px-3 py-2.5 text-left transition hover:bg-slate-50 dark:hover:bg-slate-800"
+                  >
+                    <FileSpreadsheet className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                    <div>
+                      <p className="text-xs font-bold text-[#111625] dark:text-white">
+                        Export Excel Calendar (.xlsx)
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        Styled monthly calendar grid &amp; task workbook
+                      </p>
+                    </div>
+                  </button>
+                )}
+
+                {onOpenPresentation && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setExportOpen(false);
+                      onOpenPresentation();
+                    }}
+                    className="flex w-full cursor-pointer items-start gap-2.5 rounded-lg px-3 py-2.5 text-left transition hover:bg-slate-50 dark:hover:bg-slate-800"
+                  >
+                    <Presentation className="mt-0.5 h-4 w-4 shrink-0 text-violet-600 dark:text-violet-400" />
+                    <div>
+                      <p className="text-xs font-bold text-[#111625] dark:text-white">
+                        Create Presentation (.pdf / .pptx)
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        AI-assisted deck from calendar &amp; member tasks
+                      </p>
+                    </div>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         )}
 
         <Link
@@ -103,4 +206,3 @@ export function ProjectCenterHeader({
     </header>
   );
 }
-

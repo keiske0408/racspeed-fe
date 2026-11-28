@@ -42,6 +42,8 @@ export default async function ProjectCenterPage() {
       currentUserName={context.user.fullName}
       defaultRotaryYear={rotaryYearFor()}
       draftReadinessDays={clubSettings.notificationSla.draftReadinessDays}
+      clubName={clubSettings.clubName}
+      districtCode={clubSettings.districtCode}
     />
   );
 }

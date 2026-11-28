@@ -13,6 +13,7 @@ import { StatusPill } from "./_components/status-pill";
 import { ArchiveReasonModal } from "./_components/archive-reason-modal";
 import { ExportCalendarModal } from "./_components/export-calendar-modal";
 import { PresentationBuilderModal } from "./_components/presentation-builder-modal";
+import { QuickSummaryModal } from "./_components/quick-summary-modal";
 import {
   DRAFT_STARTING_SOON_DAYS,
   getAssignmentInfo,
@@ -90,6 +91,8 @@ export function ProjectCenterClient({
   currentUserName,
   defaultRotaryYear,
   draftReadinessDays = DRAFT_STARTING_SOON_DAYS,
+  clubName = "Rotaract Club of San Pedro East",
+  districtCode = "3820",
 }: {
   initialActivities: ActivitySummaryDTO[];
   initialTasks: GroupTaskDTO[];
@@ -99,6 +102,8 @@ export function ProjectCenterClient({
   currentUserName: string;
   defaultRotaryYear?: string;
   draftReadinessDays?: number;
+  clubName?: string;
+  districtCode?: string;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -154,6 +159,7 @@ export function ProjectCenterClient({
     { year: number; month: number } | undefined
   >(undefined);
   const [presentationOpen, setPresentationOpen] = useState(false);
+  const [quickSummaryOpen, setQuickSummaryOpen] = useState(false);
 
   // Restore last view per user when URL does not specify ?view=
   const hasRestoredViewRef = useRef(false);
@@ -478,6 +484,7 @@ export function ProjectCenterClient({
           setExportCalendarOpen(true);
         }}
         onOpenPresentation={() => setPresentationOpen(true)}
+        onOpenQuickSummary={() => setQuickSummaryOpen(true)}
       />
 
       <StageTabs
@@ -702,6 +709,17 @@ export function ProjectCenterClient({
         onClose={() => setPresentationOpen(false)}
         activities={activities}
         rotaryYear={rotaryYear}
+        canManageClub={canManageClub}
+      />
+
+      <QuickSummaryModal
+        isOpen={quickSummaryOpen}
+        onClose={() => setQuickSummaryOpen(false)}
+        activities={activities}
+        tasks={initialTasks}
+        rotaryYear={rotaryYear}
+        clubName={clubName}
+        districtCode={districtCode}
         canManageClub={canManageClub}
       />
     </main>
