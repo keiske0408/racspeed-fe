@@ -4,7 +4,10 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
+  Calendar,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Copy,
   Download,
   Image as ImageIcon,
@@ -22,10 +25,12 @@ import {
 } from "lucide-react";
 import type { ActivitySummaryDTO } from "@/features/activities/types";
 import type { GroupTaskDTO } from "@/lib/data/tasks-types";
-import { manilaDateKey } from "@/lib/utils/dates";
+import { buildMonthsFromStart } from "@/lib/services/exports/calendar-excel-helpers";
+import { formatManila, manilaDateKey } from "@/lib/utils/dates";
 import {
   DEFAULT_QUICK_SUMMARY_DESIGN,
   QUICK_SUMMARY_COLOR_PRESETS,
+  buildQuickSummaryCalendarMonths,
   buildQuickSummaryData,
   formatQuickSummaryPlainText,
   recalculateQuickSummaryStats,
@@ -42,6 +47,7 @@ import {
   type QuickSummaryTaskItem,
   type QuickSummaryTheme,
   type QuickSummaryTimeframe,
+  type QuickSummaryViewStyle,
 } from "@/lib/services/exports/quick-summary-data";
 import {
   exportQuickSummaryPngBlob,
@@ -94,6 +100,18 @@ export function QuickSummaryModal({
   canManageClub,
 }: QuickSummaryModalProps) {
   const [leftTab, setLeftTab] = useState<"CONFIG" | "DESIGN" | "EDIT">("CONFIG");
+  const [viewStyle, setViewStyle] = useState<QuickSummaryViewStyle>("LIST");
+  const [calendarStart, setCalendarStart] = useState<{
+    year: number;
+    month: number;
+  }>(() => {
+    const today = manilaDateKey(new Date());
+    return {
+      year: Number(today.slice(0, 4)) || 2026,
+      month: Math.max(0, Math.min(11, (Number(today.slice(5, 7)) || 1) - 1)),
+    };
+  });
+  const [calendarSpan, setCalendarSpan] = useState<1 | 2>(1);
   const [mode, setMode] = useState<QuickSummaryMode>("COMBINED");
   const [timeframe, setTimeframe] =
     useState<QuickSummaryTimeframe>("NEXT_14_DAYS");
@@ -113,6 +131,12 @@ export function QuickSummaryModal({
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  const targetCalendarMonths = useMemo(
+    () =>
+      buildMonthsFromStart(calendarStart.year, calendarStart.month, calendarSpan),
+    [calendarSpan, calendarStart.month, calendarStart.year],
+  );
+
   const baseCombined = useMemo(
     () =>
       buildQuickSummaryData({
@@ -126,6 +150,9 @@ export function QuickSummaryModal({
         includeSubtasks,
         includeDrafts: Boolean(includeDrafts && canManageClub),
         customNote,
+        calendarMonthsRange:
+          viewStyle === "LIST" ? undefined : targetCalendarMonths,
+        viewStyle,
       }),
     [
       activities,
@@ -136,8 +163,10 @@ export function QuickSummaryModal({
       includeDrafts,
       includeSubtasks,
       rotaryYear,
+      targetCalendarMonths,
       tasks,
       timeframe,
+      viewStyle,
     ],
   );
 
@@ -193,40 +222,83 @@ export function QuickSummaryModal({
   );
 
   const defaultHeadline =
-    mode === "PROJECTS_ONLY"
-      ? "Upcoming Projects & Activities"
-      : mode === "TASKS_ONLY"
-        ? "Member Tasks & Subtasks Summary"
-        : "Projects & Action Tasks Summary";
+    viewStyle === "CALENDAR"
+      ? mode === "PROJECTS_ONLY"
+        ? "Projects Calendar Summary"
+        : mode === "TASKS_ONLY"
+          ? "Tasks Calendar Summary"
+          : "Monthly Calendar Summary"
+      : viewStyle === "CALENDAR_AND_LIST"
+        ? mode === "PROJECTS_ONLY"
+          ? "Projects Calendar & Schedule"
+          : mode === "TASKS_ONLY"
+            ? "Tasks Calendar & Checklist"
+            : "Monthly Calendar & Action Summary"
+        : mode === "PROJECTS_ONLY"
+          ? "Upcoming Projects & Activities"
+          : mode === "TASKS_ONLY"
+            ? "Member Tasks & Subtasks Summary"
+            : "Projects & Action Tasks Summary";
 
-  const summaryData = useMemo(
-    () =>
-      recalculateQuickSummaryStats(
-        {
-          ...baseCombined,
-          mode,
-          headline:
-            headlineOverride !== null ? headlineOverride : defaultHeadline,
-          timeframeLabel:
-            timeframeLabelOverride !== null
-              ? timeframeLabelOverride
-              : baseCombined.timeframeLabel,
-          customNote: customNote.trim(),
-        },
-        editableProjects,
-        editableTasks,
-      ),
-    [
-      baseCombined,
-      customNote,
-      defaultHeadline,
+  const summaryData = useMemo(() => {
+    const recalculated = recalculateQuickSummaryStats(
+      {
+        ...baseCombined,
+        mode,
+        viewStyle,
+        headline:
+          headlineOverride !== null ? headlineOverride : defaultHeadline,
+        timeframeLabel:
+          timeframeLabelOverride !== null
+            ? timeframeLabelOverride
+            : baseCombined.timeframeLabel,
+        customNote: customNote.trim(),
+      },
       editableProjects,
       editableTasks,
-      headlineOverride,
-      mode,
-      timeframeLabelOverride,
-    ],
-  );
+    );
+
+    if (viewStyle === "LIST") {
+      return {
+        ...recalculated,
+        viewStyle: "LIST" as const,
+        calendarMonths: undefined,
+      };
+    }
+
+    return {
+      ...recalculated,
+      viewStyle,
+      calendarMonths: buildQuickSummaryCalendarMonths({
+        projects: recalculated.projects,
+        tasks: recalculated.tasks,
+        mode,
+        months: targetCalendarMonths,
+        todayKey: manilaDateKey(new Date()),
+      }),
+    };
+  }, [
+    baseCombined,
+    customNote,
+    defaultHeadline,
+    editableProjects,
+    editableTasks,
+    headlineOverride,
+    mode,
+    targetCalendarMonths,
+    timeframeLabelOverride,
+    viewStyle,
+  ]);
+
+  function shiftCalendarMonth(delta: number) {
+    setCalendarStart((prev) => {
+      const totalMonths = prev.year * 12 + prev.month + delta;
+      return {
+        year: Math.floor(totalMonths / 12),
+        month: ((totalMonths % 12) + 12) % 12,
+      };
+    });
+  }
 
   function handleResetToDb() {
     setEditableProjects(baseCombined.projects);
@@ -283,6 +355,7 @@ export function QuickSummaryModal({
 
   function addCustomProject() {
     setIsEdited(true);
+    const today = manilaDateKey(new Date());
     setEditableProjects((prev) => [
       {
         id: `custom-proj-${Date.now()}`,
@@ -298,6 +371,8 @@ export function QuickSummaryModal({
         minMembersRequired: null,
         tasksProgressLabel: null,
         highlighted: false,
+        dateKeys: [today],
+        timeLabel: "TBA",
       },
       ...prev,
     ]);
@@ -322,13 +397,15 @@ export function QuickSummaryModal({
 
   function addCustomTask() {
     setIsEdited(true);
+    const today = manilaDateKey(new Date());
     setEditableTasks((prev) => [
       {
         id: `custom-task-${Date.now()}`,
         title: "New Action Item",
         priority: "High",
         statusLabel: "TODO",
-        dueDateLabel: "TBA",
+        dueDateLabel: formatManila(`${today}T12:00:00+08:00`, "MMM d, yyyy"),
+        dueDateKey: today,
         isOverdue: false,
         projectTitle: null,
         assignees: ["Club Team"],
@@ -431,7 +508,13 @@ export function QuickSummaryModal({
           : mode === "TASKS_ONLY"
             ? "tasks"
             : "combined";
-      const filename = `racspeed-summary-${modeSlug}-${todaySlug}.png`;
+      const monthSlug = `${calendarStart.year}-${String(calendarStart.month + 1).padStart(2, "0")}`;
+      const filename =
+        viewStyle === "CALENDAR"
+          ? `racspeed-calendar-summary-${modeSlug}-${monthSlug}.png`
+          : viewStyle === "CALENDAR_AND_LIST"
+            ? `racspeed-calendar-full-${modeSlug}-${monthSlug}.png`
+            : `racspeed-summary-${modeSlug}-${todaySlug}.png`;
       downloadBlob(blob, filename);
       notifyToast({
         title: "Quick Summary Image Ready",
@@ -455,30 +538,56 @@ export function QuickSummaryModal({
   async function handleDownloadSeparatePngs() {
     setBusyAction("SEPARATE");
     try {
+      const todayKey = manilaDateKey(new Date());
       const projectsData = recalculateQuickSummaryStats(
         {
           ...summaryData,
           mode: "PROJECTS_ONLY",
+          viewStyle,
           headline:
             headlineOverride !== null
               ? headlineOverride
-              : "Upcoming Projects & Activities",
+              : viewStyle === "LIST"
+                ? "Upcoming Projects & Activities"
+                : "Projects Calendar Summary",
         },
         editableProjects,
         [],
       );
+      if (viewStyle !== "LIST") {
+        projectsData.calendarMonths = buildQuickSummaryCalendarMonths({
+          projects: projectsData.projects,
+          tasks: [],
+          mode: "PROJECTS_ONLY",
+          months: targetCalendarMonths,
+          todayKey,
+        });
+      }
+
       const tasksData = recalculateQuickSummaryStats(
         {
           ...summaryData,
           mode: "TASKS_ONLY",
+          viewStyle,
           headline:
             headlineOverride !== null
               ? headlineOverride
-              : "Member Tasks & Subtasks Summary",
+              : viewStyle === "LIST"
+                ? "Member Tasks & Subtasks Summary"
+                : "Tasks Calendar Summary",
         },
         [],
         editableTasks,
       );
+      if (viewStyle !== "LIST") {
+        tasksData.calendarMonths = buildQuickSummaryCalendarMonths({
+          projects: [],
+          tasks: tasksData.tasks,
+          mode: "TASKS_ONLY",
+          months: targetCalendarMonths,
+          todayKey,
+        });
+      }
 
       const [projBlob, taskBlob] = await Promise.all([
         exportQuickSummaryPngBlob(projectsData, {
@@ -702,6 +811,37 @@ export function QuickSummaryModal({
                 <>
                   <div className="space-y-1.5">
                     <span className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                      View format
+                    </span>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {(
+                        [
+                          ["LIST", "Summary Cards"],
+                          ["CALENDAR", "Calendar View"],
+                          ["CALENDAR_AND_LIST", "Calendar + Cards"],
+                        ] as [QuickSummaryViewStyle, string][]
+                      ).map(([val, label]) => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setViewStyle(val)}
+                          className={`inline-flex cursor-pointer items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[11px] font-semibold transition ${
+                            viewStyle === val
+                              ? "border-[#0D3594] bg-[#0D3594] text-white"
+                              : "border-[#DDE1EA] bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                          }`}
+                        >
+                          {val !== "LIST" && (
+                            <Calendar className="h-3 w-3 shrink-0" />
+                          )}
+                          <span>{label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <span className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
                       Summary content
                     </span>
                     <div className="grid grid-cols-3 gap-1.5">
@@ -728,34 +868,84 @@ export function QuickSummaryModal({
                     </div>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <span className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
-                      Timeframe
-                    </span>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {(
-                        [
-                          ["NEXT_14_DAYS", "Next 14 Days"],
-                          ["THIS_MONTH", "This Month"],
-                          ["TWO_MONTHS", "This & Next Month"],
-                          ["ALL_UPCOMING", "All Upcoming"],
-                        ] as [QuickSummaryTimeframe, string][]
-                      ).map(([value, label]) => (
-                        <button
-                          key={value}
-                          type="button"
-                          onClick={() => setTimeframe(value)}
-                          className={`cursor-pointer rounded-xl border px-2.5 py-2 text-xs font-semibold transition ${
-                            timeframe === value
-                              ? "border-[#0D3594] bg-[#0D3594] text-white"
-                              : "border-[#DDE1EA] bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                          }`}
-                        >
-                          {label}
-                        </button>
-                      ))}
+                  {viewStyle === "LIST" ? (
+                    <div className="space-y-1.5">
+                      <span className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                        Timeframe
+                      </span>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {(
+                          [
+                            ["NEXT_14_DAYS", "Next 14 Days"],
+                            ["THIS_MONTH", "This Month"],
+                            ["TWO_MONTHS", "This & Next Month"],
+                            ["ALL_UPCOMING", "All Upcoming"],
+                          ] as [QuickSummaryTimeframe, string][]
+                        ).map(([value, label]) => (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => setTimeframe(value)}
+                            className={`cursor-pointer rounded-xl border px-2.5 py-2 text-xs font-semibold transition ${
+                              timeframe === value
+                                ? "border-[#0D3594] bg-[#0D3594] text-white"
+                                : "border-[#DDE1EA] bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="space-y-2 rounded-xl border border-[#EDEDF2] bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900/40">
+                      <span className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                        Calendar period
+                      </span>
+                      <div className="flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          aria-label="Previous calendar month"
+                          onClick={() => shiftCalendarMonth(-1)}
+                          className="cursor-pointer rounded-lg border border-[#DDE1EA] bg-white p-1.5 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                        </button>
+                        <span className="text-xs font-bold text-[#111625] dark:text-white">
+                          {baseCombined.timeframeLabel}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label="Next calendar month"
+                          onClick={() => shiftCalendarMonth(1)}
+                          className="cursor-pointer rounded-lg border border-[#DDE1EA] bg-white p-1.5 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {(
+                          [
+                            [1, "1 Month"],
+                            [2, "2 Months"],
+                          ] as [1 | 2, string][]
+                        ).map(([spanVal, label]) => (
+                          <button
+                            key={spanVal}
+                            type="button"
+                            onClick={() => setCalendarSpan(spanVal)}
+                            className={`cursor-pointer rounded-lg border px-2 py-1.5 text-xs font-semibold transition ${
+                              calendarSpan === spanVal
+                                ? "border-[#0D3594] bg-[#0D3594] text-white"
+                                : "border-[#DDE1EA] bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
@@ -1382,6 +1572,22 @@ export function QuickSummaryModal({
                               className={smallInputClass}
                             />
                           </div>
+                          <label className="flex items-center gap-2 text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                            <span className="shrink-0">Calendar date:</span>
+                            <input
+                              type="date"
+                              aria-label={`Project ${pIdx + 1} calendar date`}
+                              value={proj.dateKeys?.[0] ?? ""}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                const rest = (proj.dateKeys ?? []).slice(1);
+                                updateProjectItem(pIdx, {
+                                  dateKeys: val ? [val, ...rest] : rest,
+                                });
+                              }}
+                              className={smallInputClass}
+                            />
+                          </label>
                         </div>
                       ))}
                     </div>
@@ -1492,16 +1698,22 @@ export function QuickSummaryModal({
                               <option value="Low">Low</option>
                             </select>
                             <input
-                              type="text"
+                              type="date"
                               aria-label={`Task ${tIdx + 1} due date`}
-                              value={task.dueDateLabel}
-                              placeholder="Due date"
-                              onChange={(e) =>
+                              value={task.dueDateKey ?? ""}
+                              onChange={(e) => {
+                                const val = e.target.value;
                                 updateTaskItem(tIdx, {
-                                  dueDateLabel: e.target.value,
+                                  dueDateKey: val || null,
+                                  dueDateLabel: val
+                                    ? formatManila(
+                                        `${val}T12:00:00+08:00`,
+                                        "MMM d, yyyy",
+                                      )
+                                    : "No deadline",
                                   isOverdue: false,
-                                })
-                              }
+                                });
+                              }}
                               className={smallInputClass}
                             />
                             <input
@@ -1692,7 +1904,83 @@ export function QuickSummaryModal({
                     </div>
                   )}
 
-                  {orderedSections.map((sec) => {
+                  {viewStyle !== "LIST" && (
+                    <div
+                      data-testid="quick-summary-calendar-grid"
+                      className="space-y-3"
+                    >
+                      {(summaryData.calendarMonths ?? []).map((calMonth) => (
+                        <div
+                          key={`${calMonth.year}-${calMonth.month}`}
+                          data-testid="quick-summary-calendar-month"
+                          className="overflow-hidden rounded-xl border border-slate-200 bg-white text-[#111625]"
+                        >
+                          <div
+                            className="flex items-center justify-between px-3 py-2 text-[11px] font-bold uppercase text-white"
+                            style={{ backgroundColor: design.primaryColor }}
+                          >
+                            <span>{calMonth.label}</span>
+                            <span>{calMonth.totalPlotted} plotted</span>
+                          </div>
+                          <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-100 text-center text-[10px] font-bold text-slate-500">
+                            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(
+                              (wd) => (
+                                <div key={wd} className="py-1">
+                                  {wd}
+                                </div>
+                              ),
+                            )}
+                          </div>
+                          <div className="grid grid-cols-7">
+                            {calMonth.weeks.flat().map((cell, idx) => (
+                              <div
+                                key={cell.dateKey ?? `blank-${idx}`}
+                                className={`min-h-[54px] border-r border-b border-slate-100 p-1 text-[10px] ${
+                                  cell.dayNumber === null
+                                    ? "bg-slate-50/70"
+                                    : "bg-white"
+                                }`}
+                              >
+                                {cell.dayNumber !== null && (
+                                  <>
+                                    <div className="mb-0.5 font-bold text-slate-700">
+                                      {cell.dayNumber}
+                                    </div>
+                                    <div className="space-y-0.5">
+                                      {cell.entries.slice(0, 4).map((entry) => (
+                                        <div
+                                          key={entry.id}
+                                          className={`truncate rounded px-1 py-0.5 text-[9px] font-semibold ${
+                                            entry.highlighted
+                                              ? "bg-amber-100 text-amber-900"
+                                              : entry.kind === "PROJECT"
+                                                ? "bg-blue-50 text-blue-900"
+                                                : "bg-orange-50 text-orange-900"
+                                          }`}
+                                        >
+                                          {entry.highlighted ? "★ " : ""}
+                                          {entry.kind === "TASK" ? "☐ " : ""}
+                                          {entry.title}
+                                        </div>
+                                      ))}
+                                      {cell.entries.length > 4 && (
+                                        <div className="text-[9px] text-slate-400">
+                                          +{cell.entries.length - 4} more
+                                        </div>
+                                      )}
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {viewStyle !== "CALENDAR" &&
+                    orderedSections.map((sec) => {
                     if (sec === "PROJECTS" && summaryData.mode !== "TASKS_ONLY") {
                       return (
                         <div

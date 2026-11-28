@@ -25,6 +25,7 @@ import { PresentationBuilderModal } from "@/app/(app)/project-center/_components
 import { QuickSummaryModal } from "@/app/(app)/project-center/_components/quick-summary-modal";
 import type { ProjectCenterHeader as ProjectCenterHeaderType } from "@/app/(app)/project-center/_components/project-center-header";
 import {
+  buildQuickSummaryCalendarMonths,
   buildQuickSummaryData,
   formatQuickSummaryPlainText,
   recalculateQuickSummaryStats,
@@ -620,6 +621,42 @@ describe("Project Center Excel Calendar & Presentation Exports", () => {
     expect(recalced.stats.openTasksCount).toBe(0);
     expect(recalced.stats.subtasksTotal).toBe(0);
 
+    // Test Calendar View & Calendar + Cards options inside QuickSummaryModal
+    fireEvent.click(screen.getByRole("tab", { name: /Configure/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Calendar View$/i }));
+    const calGrid = screen.getByTestId("quick-summary-calendar-grid");
+    expect(calGrid).toHaveTextContent("November 2026");
+    expect(calGrid).toHaveTextContent("Project ELEMENOPI");
+    expect(calGrid).toHaveTextContent("Confirm logistics & registration");
+    expect(screen.queryByTestId("quick-summary-projects-section")).toBeNull();
+
+    // Switch to 2 Months span and verify both Nov & Dec 2026 render
+    fireEvent.click(screen.getByRole("button", { name: "2 Months" }));
+    const months = screen.getAllByTestId("quick-summary-calendar-month");
+    expect(months).toHaveLength(2);
+    expect(months[0]).toHaveTextContent("November 2026");
+    expect(months[1]).toHaveTextContent("December 2026");
+
+    // Switching to Tasks Only inside Calendar View keeps tasks and hides projects
+    fireEvent.click(screen.getByRole("button", { name: "Tasks Only" }));
+    expect(screen.getByTestId("quick-summary-calendar-grid")).toHaveTextContent(
+      "Confirm logistics & registration",
+    );
+    expect(
+      screen.getByTestId("quick-summary-calendar-grid"),
+    ).not.toHaveTextContent("Project ELEMENOPI");
+
+    // Switching to Calendar + Cards shows both calendar grid and task cards section
+    fireEvent.click(
+      screen.getByRole("button", { name: /^Calendar \+ Cards$/i }),
+    );
+    expect(
+      screen.getByTestId("quick-summary-calendar-grid"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("quick-summary-tasks-section"),
+    ).toBeInTheDocument();
+
     cleanup();
 
     const onQuick = vi.fn();
@@ -655,6 +692,76 @@ describe("Project Center Excel Calendar & Presentation Exports", () => {
       screen.getByRole("menuitem", { name: /Create Presentation/i }),
     );
     expect(onPres).toHaveBeenCalledTimes(1);
+  });
+
+  it("plots recurring project dates and tasks accurately in buildQuickSummaryCalendarMonths", () => {
+    const refNow = new Date("2026-11-24T04:00:00Z");
+    const monthsRange = [
+      { year: 2026, month: 10 },
+      { year: 2026, month: 11 },
+    ];
+
+    const summary = buildQuickSummaryData({
+      activities: sampleActivities,
+      tasks: sampleTasks,
+      mode: "COMBINED",
+      timeframe: "TWO_MONTHS",
+      rotaryYear: "2026-27",
+      clubName: "Rotaract Club of San Pedro East",
+      districtCode: "3820",
+      referenceNow: refNow,
+      calendarMonthsRange: monthsRange,
+      viewStyle: "CALENDAR",
+    });
+
+    expect(summary.viewStyle).toBe("CALENDAR");
+    expect(summary.calendarMonths).toHaveLength(2);
+
+    const novCells = summary.calendarMonths![0].weeks.flat();
+    const decCells = summary.calendarMonths![1].weeks.flat();
+
+    const nov28 = novCells.find((c) => c.dateKey === "2026-11-28");
+    const dec20 = decCells.find((c) => c.dateKey === "2026-12-20");
+    const nov26 = novCells.find((c) => c.dateKey === "2026-11-26");
+
+    expect(nov28?.entries.some((e) => e.title === "Project ELEMENOPI")).toBe(true);
+    expect(dec20?.entries.some((e) => e.title === "Project ELEMENOPI")).toBe(true);
+    expect(
+      nov26?.entries.some(
+        (e) => e.kind === "TASK" && e.title === "Confirm logistics & registration",
+      ),
+    ).toBe(true);
+
+    const projectsOnlyMonths = buildQuickSummaryCalendarMonths({
+      projects: summary.projects,
+      tasks: summary.tasks,
+      mode: "PROJECTS_ONLY",
+      months: monthsRange,
+      todayKey: "2026-11-24",
+    });
+    expect(
+      projectsOnlyMonths[0].weeks
+        .flat()
+        .find((c) => c.dateKey === "2026-11-26")?.entries ?? [],
+    ).toHaveLength(0);
+
+    const tasksOnlyMonths = buildQuickSummaryCalendarMonths({
+      projects: summary.projects,
+      tasks: summary.tasks,
+      mode: "TASKS_ONLY",
+      months: monthsRange,
+      todayKey: "2026-11-24",
+    });
+    expect(
+      tasksOnlyMonths[0].weeks
+        .flat()
+        .find((c) => c.dateKey === "2026-11-28")?.entries ?? [],
+    ).toHaveLength(0);
+    expect(
+      tasksOnlyMonths[0].weeks
+        .flat()
+        .find((c) => c.dateKey === "2026-11-26")?.entries ?? [],
+    ).toHaveLength(1);
   });
 });
 

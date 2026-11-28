@@ -32,6 +32,32 @@ export type QuickSummaryFontScale = "COMPACT" | "NORMAL" | "LARGE";
 export type QuickSummaryHeaderAlign = "LEFT" | "CENTER";
 export type QuickSummarySectionOrder = "PROJECTS_FIRST" | "TASKS_FIRST";
 export type QuickSummaryLogoSize = "SM" | "MD" | "LG";
+export type QuickSummaryViewStyle = "LIST" | "CALENDAR" | "CALENDAR_AND_LIST";
+
+export interface QuickSummaryCalendarEntry {
+  id: string;
+  kind: "PROJECT" | "TASK";
+  title: string;
+  timeOrMeta?: string;
+  badge?: string;
+  highlighted?: boolean;
+  priority?: string;
+}
+
+export interface QuickSummaryCalendarCell {
+  dateKey: string | null;
+  dayNumber: number | null;
+  isToday: boolean;
+  entries: QuickSummaryCalendarEntry[];
+}
+
+export interface QuickSummaryCalendarMonth {
+  year: number;
+  month: number;
+  label: string;
+  weeks: QuickSummaryCalendarCell[][];
+  totalPlotted: number;
+}
 
 export interface QuickSummaryDesignConfig {
   primaryColor: string;
@@ -125,6 +151,8 @@ export interface QuickSummaryProjectItem {
   minMembersRequired: number | null;
   tasksProgressLabel: string | null;
   highlighted?: boolean;
+  dateKeys?: string[];
+  timeLabel?: string;
 }
 
 export interface QuickSummaryTaskSubtask {
@@ -139,6 +167,7 @@ export interface QuickSummaryTaskItem {
   priority: string;
   statusLabel: string;
   dueDateLabel: string;
+  dueDateKey?: string | null;
   isOverdue: boolean;
   projectTitle: string | null;
   assignees: string[];
@@ -148,6 +177,8 @@ export interface QuickSummaryTaskItem {
 
 export interface QuickSummaryData {
   mode: QuickSummaryMode;
+  viewStyle?: QuickSummaryViewStyle;
+  calendarMonths?: QuickSummaryCalendarMonth[];
   timeframe: QuickSummaryTimeframe;
   timeframeLabel: string;
   headline: string;
@@ -228,6 +259,147 @@ function getTimeframeBounds(
   }
 }
 
+function getCalendarRangeBounds(
+  months: { year: number; month: number }[],
+): { minKey: string; maxKey: string; label: string } {
+  const first = months[0];
+  const last = months[months.length - 1];
+  const ymStart = `${first.year}-${String(first.month + 1).padStart(2, "0")}`;
+  const ymEnd = `${last.year}-${String(last.month + 1).padStart(2, "0")}`;
+
+  if (months.length === 1) {
+    const label = new Intl.DateTimeFormat("en-US", {
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    }).format(new Date(Date.UTC(first.year, first.month, 1)));
+    return { minKey: `${ymStart}-01`, maxKey: `${ymEnd}-31`, label };
+  }
+
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+  const label = `${fmt.format(new Date(Date.UTC(first.year, first.month, 1)))} – ${fmt.format(
+    new Date(Date.UTC(last.year, last.month, 1)),
+  )}`;
+  return { minKey: `${ymStart}-01`, maxKey: `${ymEnd}-31`, label };
+}
+
+export function buildQuickSummaryCalendarMonths({
+  projects,
+  tasks,
+  mode,
+  months,
+  todayKey,
+}: {
+  projects: QuickSummaryProjectItem[];
+  tasks: QuickSummaryTaskItem[];
+  mode: QuickSummaryMode;
+  months: { year: number; month: number }[];
+  todayKey: string;
+}): QuickSummaryCalendarMonth[] {
+  return months.map(({ year, month }) => {
+    const ymPrefix = `${year}-${String(month + 1).padStart(2, "0")}-`;
+    const entriesByDate = new Map<string, QuickSummaryCalendarEntry[]>();
+    let totalPlotted = 0;
+
+    if (mode !== "TASKS_ONLY") {
+      for (const proj of projects) {
+        const uniqueDates = Array.from(new Set(proj.dateKeys ?? []));
+        for (const dk of uniqueDates) {
+          if (!dk.startsWith(ymPrefix)) continue;
+          const bucket = entriesByDate.get(dk) ?? [];
+          bucket.push({
+            id: `${proj.id}-${dk}`,
+            kind: "PROJECT",
+            title: proj.title,
+            timeOrMeta: proj.timeLabel,
+            badge: proj.recurrenceLabel ? "Recurring" : proj.statusLabel,
+            highlighted: proj.highlighted,
+            priority: proj.priority,
+          });
+          entriesByDate.set(dk, bucket);
+          totalPlotted += 1;
+        }
+      }
+    }
+
+    if (mode !== "PROJECTS_ONLY") {
+      for (const task of tasks) {
+        const dk = task.dueDateKey?.slice(0, 10) || "";
+        if (!dk || !dk.startsWith(ymPrefix)) continue;
+        const bucket = entriesByDate.get(dk) ?? [];
+        bucket.push({
+          id: `${task.id}-${dk}`,
+          kind: "TASK",
+          title: task.title,
+          badge: task.isOverdue ? "OVERDUE" : task.priority,
+          highlighted: task.highlighted,
+          priority: task.priority,
+        });
+        entriesByDate.set(dk, bucket);
+        totalPlotted += 1;
+      }
+    }
+
+    const firstDow = new Date(Date.UTC(year, month, 1)).getUTCDay();
+    const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+    const weeks: QuickSummaryCalendarCell[][] = [];
+    let currentWeek: QuickSummaryCalendarCell[] = [];
+
+    for (let i = 0; i < firstDow; i += 1) {
+      currentWeek.push({
+        dateKey: null,
+        dayNumber: null,
+        isToday: false,
+        entries: [],
+      });
+    }
+
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      const dateKey = `${ymPrefix}${String(day).padStart(2, "0")}`;
+      currentWeek.push({
+        dateKey,
+        dayNumber: day,
+        isToday: dateKey === todayKey,
+        entries: entriesByDate.get(dateKey) ?? [],
+      });
+      if (currentWeek.length === 7) {
+        weeks.push(currentWeek);
+        currentWeek = [];
+      }
+    }
+
+    if (currentWeek.length > 0) {
+      while (currentWeek.length < 7) {
+        currentWeek.push({
+          dateKey: null,
+          dayNumber: null,
+          isToday: false,
+          entries: [],
+        });
+      }
+      weeks.push(currentWeek);
+    }
+
+    const label = new Intl.DateTimeFormat("en-US", {
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    }).format(new Date(Date.UTC(year, month, 1)));
+
+    return {
+      year,
+      month,
+      label,
+      weeks,
+      totalPlotted,
+    };
+  });
+}
+
 export function buildQuickSummaryData({
   activities,
   tasks,
@@ -240,6 +412,8 @@ export function buildQuickSummaryData({
   includeDrafts = false,
   customNote = "",
   referenceNow = new Date(),
+  calendarMonthsRange,
+  viewStyle,
 }: {
   activities: ActivitySummaryDTO[];
   tasks: GroupTaskDTO[];
@@ -252,9 +426,14 @@ export function buildQuickSummaryData({
   includeDrafts?: boolean;
   customNote?: string;
   referenceNow?: Date;
+  calendarMonthsRange?: { year: number; month: number }[];
+  viewStyle?: QuickSummaryViewStyle;
 }): QuickSummaryData {
   const todayKey = manilaDateKey(referenceNow);
-  const bounds = getTimeframeBounds(timeframe, todayKey);
+  const bounds =
+    calendarMonthsRange && calendarMonthsRange.length > 0
+      ? getCalendarRangeBounds(calendarMonthsRange)
+      : getTimeframeBounds(timeframe, todayKey);
   const ryFilteredActivities = activities.filter((a) => {
     if (a.isArchived) return false;
     if (!includeDrafts && a.status === "DRAFT") return false;
@@ -299,6 +478,14 @@ export function buildQuickSummaryData({
       ? formatRecurrenceSummary(act.recurrence, act.startAt, act.endAt)
       : null;
 
+    const occDateKeys = Array.from(
+      new Set(matchingOccs.map((o) => o.dateKey)),
+    ).sort();
+    const fallbackDateKey = manilaDateKey(displayStart);
+    const timeLabel = act.allDay
+      ? "All day"
+      : formatManila(displayStart, "h:mm a");
+
     matchedProjects.push({
       sortKey: nextOcc?.startAt ?? act.startAt,
       item: {
@@ -315,6 +502,8 @@ export function buildQuickSummaryData({
         minMembersRequired: act.minMembersRequired ?? null,
         tasksProgressLabel:
           act.tasksTotal > 0 ? `${act.tasksDone}/${act.tasksTotal} tasks` : null,
+        dateKeys: occDateKeys.length > 0 ? occDateKeys : [fallbackDateKey],
+        timeLabel,
       },
     });
   }
@@ -354,6 +543,7 @@ export function buildQuickSummaryData({
       priority: ACTIVITY_PRIORITY_META[t.priority]?.label ?? t.priority,
       statusLabel: t.status.replaceAll("_", " "),
       dueDateLabel,
+      dueDateKey: dueKey || null,
       isOverdue,
       projectTitle:
         t.projectTitle ||
@@ -381,8 +571,25 @@ export function buildQuickSummaryData({
         ? "Member Tasks & Subtasks Summary"
         : "Projects & Action Tasks Summary";
 
+  const finalProjects =
+    mode === "TASKS_ONLY" ? [] : matchedProjects.map((entry) => entry.item);
+  const finalTasks = mode === "PROJECTS_ONLY" ? [] : mappedTasks;
+  const resolvedViewStyle: QuickSummaryViewStyle = viewStyle ?? "LIST";
+  const calendarMonths =
+    calendarMonthsRange && calendarMonthsRange.length > 0
+      ? buildQuickSummaryCalendarMonths({
+          projects: finalProjects,
+          tasks: finalTasks,
+          mode,
+          months: calendarMonthsRange,
+          todayKey,
+        })
+      : undefined;
+
   return {
     mode,
+    viewStyle: resolvedViewStyle,
+    ...(calendarMonths ? { calendarMonths } : {}),
     timeframe,
     timeframeLabel: bounds.label,
     headline,
@@ -402,9 +609,8 @@ export function buildQuickSummaryData({
       subtasksDone,
       subtasksTotal,
     },
-    projects:
-      mode === "TASKS_ONLY" ? [] : matchedProjects.map((entry) => entry.item),
-    tasks: mode === "PROJECTS_ONLY" ? [] : mappedTasks,
+    projects: finalProjects,
+    tasks: finalTasks,
   };
 }
 

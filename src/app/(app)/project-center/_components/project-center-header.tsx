@@ -131,7 +131,7 @@ export function ProjectCenterHeader({
                         Export Quick Summary (.png)
                       </p>
                       <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                        Shareable GC image for projects, tasks, or both
+                        Shareable GC summary cards or calendar image for projects &amp; tasks
                       </p>
                     </div>
                   </button>

@@ -1,5 +1,7 @@
 import {
   DEFAULT_QUICK_SUMMARY_DESIGN,
+  type QuickSummaryCalendarEntry,
+  type QuickSummaryCalendarMonth,
   type QuickSummaryCardRadius,
   type QuickSummaryData,
   type QuickSummaryDesignConfig,
@@ -10,6 +12,7 @@ import {
   type QuickSummaryProjectItem,
   type QuickSummaryTaskItem,
   type QuickSummaryTheme,
+  type QuickSummaryViewStyle,
 } from "./quick-summary-data";
 
 interface ThemePalette {
@@ -459,9 +462,223 @@ function drawTaskCard(
   return h;
 }
 
+function truncateTextToWidth(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+): string {
+  if (maxWidth <= 8) return "";
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  let trimmed = text;
+  while (trimmed.length > 1 && ctx.measureText(`${trimmed}…`).width > maxWidth) {
+    trimmed = trimmed.slice(0, -1);
+  }
+  return `${trimmed}…`;
+}
+
+const CALENDAR_WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+
+function computeCalendarRowHeights(
+  month: QuickSummaryCalendarMonth,
+  fontFactor: number,
+): number[] {
+  const chipH = Math.round(32 * fontFactor);
+  return month.weeks.map((week) => {
+    const maxItems = Math.min(
+      4,
+      Math.max(0, ...week.map((cell) => cell.entries.length)),
+    );
+    const hasOverflow = week.some((cell) => cell.entries.length > 4);
+    return Math.max(106, 38 + maxItems * chipH + (hasOverflow ? 22 : 8));
+  });
+}
+
+function measureCalendarMonthHeight(
+  month: QuickSummaryCalendarMonth,
+  fontFactor: number,
+): number {
+  const rowHeights = computeCalendarRowHeights(month, fontFactor);
+  const gridBodyH = rowHeights.reduce((sum, h) => sum + h, 0);
+  return 48 + 34 + gridBodyH;
+}
+
+function drawCalendarMonth(
+  ctx: CanvasRenderingContext2D,
+  month: QuickSummaryCalendarMonth,
+  x: number,
+  y: number,
+  w: number,
+  palette: ThemePalette,
+  design: QuickSummaryDesignConfig,
+  radiusPx: number,
+  fontFactor: number,
+  isDark: boolean,
+): number {
+  const rowHeights = computeCalendarRowHeights(month, fontFactor);
+  const totalH = measureCalendarMonthHeight(month, fontFactor);
+  const chipH = Math.round(32 * fontFactor);
+  const colW = w / 7;
+
+  // Outer card frame
+  fillAndStrokeCard(
+    ctx,
+    x,
+    y,
+    w,
+    totalH,
+    radiusPx,
+    palette.cardBg,
+    palette.cardBorder,
+    1.5,
+  );
+
+  // Month title bar (top 48px)
+  ctx.save();
+  drawRoundRect(ctx, x, y, w, totalH, radiusPx);
+  ctx.clip();
+
+  ctx.fillStyle = design.primaryColor;
+  ctx.fillRect(x, y, w, 48);
+
+  ctx.font = `800 ${Math.round(21 * fontFactor)}px 'Segoe UI', system-ui, -apple-system, sans-serif`;
+  ctx.fillStyle = "#FFFFFF";
+  ctx.fillText(month.label.toUpperCase(), x + 20, y + 31);
+
+  const countLabel = `${month.totalPlotted} plotted`;
+  ctx.font = `700 ${Math.round(15 * fontFactor)}px 'Segoe UI', system-ui, -apple-system, sans-serif`;
+  const pillW = Math.ceil(ctx.measureText(countLabel).width) + 22;
+  fillAndStrokeCard(
+    ctx,
+    x + w - pillW - 16,
+    y + 10,
+    pillW,
+    28,
+    8,
+    "rgba(255,255,255,0.16)",
+  );
+  ctx.fillStyle = "#FFFFFF";
+  ctx.fillText(countLabel, x + w - pillW - 5, y + 29);
+
+  // Weekday header strip (34px)
+  const weekdayY = y + 48;
+  ctx.fillStyle = isDark ? "#1E293B" : "#F1F5F9";
+  ctx.fillRect(x, weekdayY, w, 34);
+  ctx.font = `800 ${Math.round(14 * fontFactor)}px 'Segoe UI', system-ui, -apple-system, sans-serif`;
+  ctx.fillStyle = palette.textMuted;
+  ctx.textAlign = "center";
+  CALENDAR_WEEKDAYS.forEach((dayName, colIdx) => {
+    ctx.fillText(dayName, x + colIdx * colW + colW / 2, weekdayY + 22);
+  });
+  ctx.textAlign = "left";
+
+  // Grid weeks & day cells
+  let curRowY = weekdayY + 34;
+  month.weeks.forEach((week, wIdx) => {
+    const rowH = rowHeights[wIdx] ?? 108;
+    week.forEach((cell, cIdx) => {
+      const cellX = x + cIdx * colW;
+      ctx.fillStyle =
+        cell.dayNumber === null
+          ? isDark
+            ? "#0F1522"
+            : "#F8FAFC"
+          : palette.cardBg;
+      ctx.fillRect(cellX, curRowY, colW, rowH);
+
+      ctx.strokeStyle = palette.cardBorder;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(cellX, curRowY, colW, rowH);
+
+      if (cell.dayNumber === null) return;
+
+      // Day number
+      if (cell.isToday) {
+        ctx.fillStyle = isDark ? design.accentColor : design.primaryColor;
+        ctx.beginPath();
+        ctx.arc(cellX + 21, curRowY + 18, 12, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.font = `800 ${Math.round(14 * fontFactor)}px 'Segoe UI', system-ui, -apple-system, sans-serif`;
+        ctx.fillStyle = isDark ? "#0F172A" : "#FFFFFF";
+        ctx.textAlign = "center";
+        ctx.fillText(String(cell.dayNumber), cellX + 21, curRowY + 23);
+        ctx.textAlign = "left";
+      } else {
+        ctx.font = `700 ${Math.round(15 * fontFactor)}px 'Segoe UI', system-ui, -apple-system, sans-serif`;
+        ctx.fillStyle = palette.textPrimary;
+        ctx.fillText(String(cell.dayNumber), cellX + 10, curRowY + 23);
+      }
+
+      // Event / Task chips (up to 4)
+      let entryY = curRowY + 34;
+      const chipW = colW - 12;
+      const shownEntries = cell.entries.slice(0, 4);
+      for (const entry of shownEntries) {
+        let chipBg = isDark ? "#172554" : "#EFF6FF";
+        let chipBar = design.primaryColor;
+        let chipFg = isDark ? "#DBEAFE" : "#1E3A8A";
+
+        if (entry.kind === "TASK") {
+          const pr = (entry.priority ?? "").toUpperCase();
+          if (pr === "URGENT") {
+            chipBg = isDark ? "#3B1018" : "#FEE2E2";
+            chipBar = "#DC2626";
+            chipFg = isDark ? "#FECACA" : "#991B1B";
+          } else if (pr === "HIGH") {
+            chipBg = isDark ? "#3A1F0D" : "#FFEDD5";
+            chipBar = "#EA580C";
+            chipFg = isDark ? "#FED7AA" : "#9A3412";
+          } else {
+            chipBg = isDark ? "#1E293B" : "#F1F5F9";
+            chipBar = isDark ? "#64748B" : "#475569";
+            chipFg = isDark ? "#E2E8F0" : "#334155";
+          }
+        }
+
+        if (entry.highlighted) {
+          chipBg = isDark ? "#2A1F0B" : "#FEF3C7";
+          chipBar = design.accentColor;
+          chipFg = isDark ? "#FDE68A" : "#92400E";
+        }
+
+        fillAndStrokeCard(ctx, cellX + 6, entryY, chipW, chipH - 4, 6, chipBg);
+        drawRoundRect(ctx, cellX + 6, entryY, 4, chipH - 4, 2);
+        ctx.fillStyle = chipBar;
+        ctx.fill();
+
+        const starPrefix = entry.highlighted ? "★ " : "";
+        const kindPrefix = entry.kind === "TASK" ? "☐ " : "";
+        const timeSuffix =
+          entry.kind === "PROJECT" && entry.timeOrMeta
+            ? ` · ${entry.timeOrMeta}`
+            : "";
+        const rawLabel = `${starPrefix}${kindPrefix}${entry.title}${timeSuffix}`;
+        ctx.font = `700 ${Math.round(13 * fontFactor)}px 'Segoe UI', system-ui, -apple-system, sans-serif`;
+        ctx.fillStyle = chipFg;
+        const fitted = truncateTextToWidth(ctx, rawLabel, chipW - 14);
+        ctx.fillText(fitted, cellX + 14, entryY + Math.round((chipH - 4) * 0.68));
+        entryY += chipH;
+      }
+
+      if (cell.entries.length > 4) {
+        ctx.font = `700 ${Math.round(12 * fontFactor)}px 'Segoe UI', system-ui, -apple-system, sans-serif`;
+        ctx.fillStyle = palette.textMuted;
+        ctx.fillText(
+          `+${cell.entries.length - 4} more`,
+          cellX + 10,
+          entryY + 13,
+        );
+      }
+    });
+    curRowY += rowH;
+  });
+
+  ctx.restore();
+  return totalH;
+}
+
 /**
  * Renders the summary card directly onto an HTMLCanvasElement honoring all editable
- * text, element visibility toggles, colors, typography scale, logo, and card ordering.
+ * text, calendar grid view, element visibility toggles, colors, typography scale, logo, and card ordering.
  */
 export function renderQuickSummaryCanvas(
   canvas: HTMLCanvasElement,
@@ -495,17 +712,38 @@ export function renderQuickSummaryCanvas(
   const bannerHeight =
     205 + (options.logoImage && headerIsCentered ? logoPx + 14 : 0);
 
-  const twoCol = options.layout === "WIDE" && data.mode === "COMBINED";
-  const width = twoCol ? 1400 : 1080;
+  const viewStyle: QuickSummaryViewStyle = data.viewStyle ?? "LIST";
+  const twoCol =
+    viewStyle === "LIST" && options.layout === "WIDE" && data.mode === "COMBINED";
+  const width =
+    viewStyle === "LIST"
+      ? twoCol
+        ? 1400
+        : 1080
+      : options.layout === "WIDE"
+        ? 1520
+        : 1160;
   const padX = 48;
   const contentW = width - padX * 2;
   const colW = twoCol ? (contentW - 28) / 2 : contentW;
+
+  const calendarMonths = data.calendarMonths ?? [];
+  const calendarBlockHeight =
+    viewStyle === "LIST"
+      ? 0
+      : 34 +
+        (calendarMonths.length === 0
+          ? 96
+          : calendarMonths.reduce(
+              (sum, m) => sum + measureCalendarMonthHeight(m, fontFactor) + 22,
+              0,
+            ));
 
   const shownProjects = data.projects.slice(0, 8);
   const shownTasks = data.tasks.slice(0, 10);
 
   const projectsBlockHeight =
-    data.mode === "TASKS_ONLY"
+    viewStyle === "CALENDAR" || data.mode === "TASKS_ONLY"
       ? 0
       : 54 +
         (shownProjects.length === 0
@@ -520,7 +758,7 @@ export function renderQuickSummaryCanvas(
         (data.projects.length > shownProjects.length ? 34 : 0);
 
   const tasksBlockHeight =
-    data.mode === "PROJECTS_ONLY"
+    viewStyle === "CALENDAR" || data.mode === "PROJECTS_ONLY"
       ? 0
       : 54 +
         (shownTasks.length === 0
@@ -541,18 +779,31 @@ export function renderQuickSummaryCanvas(
             )) +
         (data.tasks.length > shownTasks.length ? 34 : 0);
 
-  const bodyHeight = twoCol
-    ? Math.max(projectsBlockHeight, tasksBlockHeight)
-    : projectsBlockHeight +
-      (projectsBlockHeight > 0 && tasksBlockHeight > 0 ? 20 : 0) +
-      tasksBlockHeight;
+  const listBodyHeight =
+    viewStyle === "CALENDAR"
+      ? 0
+      : twoCol
+        ? Math.max(projectsBlockHeight, tasksBlockHeight)
+        : projectsBlockHeight +
+          (projectsBlockHeight > 0 && tasksBlockHeight > 0 ? 20 : 0) +
+          tasksBlockHeight;
+
+  const calendarListGap =
+    viewStyle === "CALENDAR_AND_LIST" && listBodyHeight > 0 ? 24 : 0;
 
   const kpiBlockHeight = design.showKpis ? 126 : 18;
   const noteHeight = data.customNote ? 92 : 0;
   const footerHeight = design.showFooter ? 82 : 28;
   const height = Math.max(
     460,
-    bannerHeight + 24 + kpiBlockHeight + bodyHeight + noteHeight + footerHeight,
+    bannerHeight +
+      24 +
+      kpiBlockHeight +
+      calendarBlockHeight +
+      calendarListGap +
+      listBodyHeight +
+      noteHeight +
+      footerHeight,
   );
 
   canvas.width = width;
@@ -824,31 +1075,100 @@ export function renderQuickSummaryCanvas(
     return curY - y;
   };
 
-  if (twoCol) {
-    if (design.sectionOrder === "TASKS_FIRST") {
-      drawTasksSection(padX, startContentY, colW);
-      drawProjectsSection(padX + colW + 28, startContentY, colW);
-    } else {
-      drawProjectsSection(padX, startContentY, colW);
-      drawTasksSection(padX + colW + 28, startContentY, colW);
-    }
-  } else {
-    let bottomY = startContentY;
-    const order: ("PROJECTS" | "TASKS")[] =
-      design.sectionOrder === "TASKS_FIRST"
-        ? ["TASKS", "PROJECTS"]
-        : ["PROJECTS", "TASKS"];
-    let renderedFirst = false;
+  let cursorContentY = startContentY;
 
-    for (const section of order) {
-      if (section === "PROJECTS" && data.mode !== "TASKS_ONLY") {
-        if (renderedFirst) bottomY += 16;
-        bottomY += drawProjectsSection(padX, bottomY, contentW);
-        renderedFirst = true;
-      } else if (section === "TASKS" && data.mode !== "PROJECTS_ONLY") {
-        if (renderedFirst) bottomY += 16;
-        bottomY += drawTasksSection(padX, bottomY, contentW);
-        renderedFirst = true;
+  if (viewStyle !== "LIST") {
+    // Calendar Legend Strip
+    ctx.font = `700 ${Math.round(16 * fontFactor)}px 'Segoe UI', system-ui, -apple-system, sans-serif`;
+    let legendX = padX;
+    if (data.mode !== "TASKS_ONLY") {
+      ctx.fillStyle = design.primaryColor;
+      ctx.beginPath();
+      ctx.arc(legendX + 7, cursorContentY + 12, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = palette.textPrimary;
+      ctx.fillText("Projects / Events", legendX + 20, cursorContentY + 18);
+      legendX += 185;
+    }
+    if (data.mode !== "PROJECTS_ONLY") {
+      ctx.fillStyle = "#EA580C";
+      ctx.beginPath();
+      ctx.arc(legendX + 7, cursorContentY + 12, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = palette.textPrimary;
+      ctx.fillText("☐ Open Tasks", legendX + 20, cursorContentY + 18);
+      legendX += 155;
+    }
+    ctx.fillStyle = design.accentColor;
+    ctx.fillText("★ Highlighted", legendX, cursorContentY + 18);
+    cursorContentY += 34;
+
+    if (calendarMonths.length === 0) {
+      fillAndStrokeCard(
+        ctx,
+        padX,
+        cursorContentY,
+        contentW,
+        78,
+        radiusPx,
+        palette.cardBg,
+        palette.cardBorder,
+      );
+      ctx.font = "500 20px 'Segoe UI', system-ui, -apple-system, sans-serif";
+      ctx.fillStyle = palette.textMuted;
+      ctx.fillText(
+        "No calendar months selected for this summary.",
+        padX + 22,
+        cursorContentY + 46,
+      );
+      cursorContentY += 96;
+    } else {
+      for (const month of calendarMonths) {
+        const mh = drawCalendarMonth(
+          ctx,
+          month,
+          padX,
+          cursorContentY,
+          contentW,
+          palette,
+          design,
+          radiusPx,
+          fontFactor,
+          isDark,
+        );
+        cursorContentY += mh + 22;
+      }
+    }
+    cursorContentY += calendarListGap;
+  }
+
+  if (viewStyle !== "CALENDAR") {
+    if (twoCol) {
+      if (design.sectionOrder === "TASKS_FIRST") {
+        drawTasksSection(padX, cursorContentY, colW);
+        drawProjectsSection(padX + colW + 28, cursorContentY, colW);
+      } else {
+        drawProjectsSection(padX, cursorContentY, colW);
+        drawTasksSection(padX + colW + 28, cursorContentY, colW);
+      }
+    } else {
+      let bottomY = cursorContentY;
+      const order: ("PROJECTS" | "TASKS")[] =
+        design.sectionOrder === "TASKS_FIRST"
+          ? ["TASKS", "PROJECTS"]
+          : ["PROJECTS", "TASKS"];
+      let renderedFirst = false;
+
+      for (const section of order) {
+        if (section === "PROJECTS" && data.mode !== "TASKS_ONLY") {
+          if (renderedFirst) bottomY += 16;
+          bottomY += drawProjectsSection(padX, bottomY, contentW);
+          renderedFirst = true;
+        } else if (section === "TASKS" && data.mode !== "PROJECTS_ONLY") {
+          if (renderedFirst) bottomY += 16;
+          bottomY += drawTasksSection(padX, bottomY, contentW);
+          renderedFirst = true;
+        }
       }
     }
   }
