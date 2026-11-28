@@ -48,6 +48,27 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 npm test
 ```
 
+### Broadcast generation
+
+`POST /api/broadcasts/generate` requires an active signed-in account with
+`NOTIFICATION_SEND` for the configured default club (platform admins bypass
+the permission check). Configure `GEMINI_API_KEY` on the server only;
+`GOOGLE_GENAI_API_KEY` remains a server-side alias. Browser-supplied keys are
+rejected and the UI removes the old locally stored key on mount.
+
+The JSON request contains `rawText`, optional `tone`, and optional `messageType`.
+Prompts are limited to 10,000 characters and bodies to 32 KiB, including streamed
+requests. Each instance allows 5 requests per user and 30 per IP per minute.
+The IP headers must be supplied by a trusted deployment proxy; these in-memory
+limits are not a global quota across serverless instances.
+
+Provider requests time out after 15 seconds. The route returns 401/403 for
+access failures, 400/413 for invalid/oversized bodies, 429 with `Retry-After`
+for throttling, and 502/504 for provider failure/timeout. Generation errors
+remain visible without replacing the current composition. A missing server
+provider key intentionally uses the local parser; a failing configured provider
+does not silently fall back.
+
 ## 2. Bootstrapping the First Administrator
 
 Because initial registration produces `PENDING` accounts, bootstrap the first Platform Administrator safely:

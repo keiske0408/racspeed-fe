@@ -34,7 +34,7 @@ import {
   BroadcastMessageType,
   VolunteerActivityCategory,
 } from "@/features/broadcasts/types";
-import { STARTER_PRESETS, parseRawTextToBroadcastDraft } from "@/features/broadcasts/parser";
+import { STARTER_PRESETS } from "@/features/broadcasts/parser";
 import { formatBroadcastMessage } from "@/features/broadcasts/formatter";
 import { BroadcastSourceItem } from "@/features/broadcasts/queries";
 
@@ -85,18 +85,17 @@ export function BroadcastsClient({
   const [copied, setCopied] = useState(false);
   const [isAiProcessing, setIsAiProcessing] = useState(false);
   const [aiEngineUsed, setAiEngineUsed] = useState<"smart_local_nlp" | "gemini">("smart_local_nlp");
-  const [geminiApiKey, setGeminiApiKey] = useState("");
+  const [generationError, setGenerationError] = useState<string | null>(null);
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
 
   // Telegram group dispatch
   const [isSendingWebhook, setIsSendingWebhook] = useState(false);
   const [webhookStatus, setWebhookStatus] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
-  // Load the optional AI API key and remove legacy arbitrary webhook targets.
+  // Remove legacy browser credentials and arbitrary webhook targets.
   useEffect(() => {
     try {
-      const savedKey = localStorage.getItem("racspeed_gemini_key");
-      if (savedKey) setGeminiApiKey(savedKey);
+      localStorage.removeItem("racspeed_gemini_key");
       localStorage.removeItem("racspeed_broadcast_webhook");
       localStorage.removeItem("racspeed_broadcast_platform");
     } catch {
@@ -129,6 +128,7 @@ export function BroadcastsClient({
   // Convert raw text using smart AI engine
   const handleProcessRawText = async () => {
     setIsAiProcessing(true);
+    setGenerationError(null);
     try {
       const res = await fetch("/api/broadcasts/generate", {
         method: "POST",
@@ -137,7 +137,6 @@ export function BroadcastsClient({
           rawText: rawInputText,
           tone,
           messageType,
-          apiKey: geminiApiKey.trim() || undefined,
         }),
       });
 
@@ -146,15 +145,10 @@ export function BroadcastsClient({
         setDraft(data.draft);
         setAiEngineUsed(data.poweredBy === "gemini" ? "gemini" : "smart_local_nlp");
       } else {
-        // Fallback to local parser
-        const local = parseRawTextToBroadcastDraft(rawInputText, draft);
-        setDraft(local);
-        setAiEngineUsed("smart_local_nlp");
+        setGenerationError(typeof data.error === "string" ? data.error : "Generation failed. Please try again.");
       }
     } catch {
-      const local = parseRawTextToBroadcastDraft(rawInputText, draft);
-      setDraft(local);
-      setAiEngineUsed("smart_local_nlp");
+      setGenerationError("Could not reach the generation service. Please try again.");
     } finally {
       setIsAiProcessing(false);
     }
@@ -201,15 +195,6 @@ export function BroadcastsClient({
     if (!preset) return;
     setDraft(preset.draft);
     setRawInputText(preset.sampleInput);
-  };
-
-  // Save custom Gemini API key
-  const handleSaveApiKey = (key: string) => {
-    setGeminiApiKey(key);
-    try {
-      localStorage.setItem("racspeed_gemini_key", key);
-    } catch {}
-    setShowApiKeyModal(false);
   };
 
   // Webhook dispatch execution
@@ -286,7 +271,7 @@ export function BroadcastsClient({
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 shadow-xs transition"
           >
             <Bot className="w-3.5 h-3.5 text-rose-600" />
-            {geminiApiKey ? "AI Engine: Custom Gemini" : "AI Engine: Built-in (Free)"}
+            AI Engine Information
           </button>
         </div>
       </div>
@@ -436,6 +421,12 @@ export function BroadcastsClient({
                 {aiEngineUsed === "gemini" ? "✨ Gemini Enhanced" : "⚡ Local Parser Ready"}
               </span>
             </div>
+
+            {generationError && (
+              <p role="alert" className="text-xs text-rose-600 dark:text-rose-400">
+                {generationError}
+              </p>
+            )}
 
             {/* TAB 1: Raw Facebook Post / Freeform Notes */}
             {activeTab === "ai_parser" && (
@@ -804,7 +795,7 @@ export function BroadcastsClient({
         </div>
       </div>
 
-      {/* Optional Gemini API Key Modal */}
+      {/* Server-managed AI engine information */}
       {showApiKeyModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
@@ -823,24 +814,10 @@ export function BroadcastsClient({
             </div>
 
             <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-              RACSPEED includes a high-speed local smart parser that works 100% offline with zero setup. You can optionally attach a Google Gemini API key to enable deeper creative rewriting.
+              Broadcast generation requires an active account with broadcast permissions.
+              Administrators configure Gemini on the server. When no provider key is
+              configured, generation uses the built-in local parser.
             </p>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                Google Gemini API Key (Optional)
-              </label>
-              <input
-                type="password"
-                value={geminiApiKey}
-                onChange={(e) => setGeminiApiKey(e.target.value)}
-                placeholder="AIzaSy..."
-                className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-rose-500 focus:outline-none"
-              />
-              <span className="text-[10px] text-slate-400 mt-1 block">
-                Saved securely in your browser&apos;s localStorage only.
-              </span>
-            </div>
 
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
@@ -848,14 +825,7 @@ export function BroadcastsClient({
                 onClick={() => setShowApiKeyModal(false)}
                 className="px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
               >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSaveApiKey(geminiApiKey)}
-                className="px-4 py-1.5 text-xs font-bold rounded-lg bg-rose-600 hover:bg-rose-700 text-white shadow-xs"
-              >
-                Save Engine Preference
+                Close
               </button>
             </div>
           </div>
